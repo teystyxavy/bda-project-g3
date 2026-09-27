@@ -14,8 +14,9 @@ dataset/    downloaded dataset files (gitignored, see below)
 
 ## Downloading the dataset
 
-The dataset (~39GB across all variants) is not committed to this repo — you need
-to download it locally before running `scripts/eda.ipynb`.
+The complete dataset is about 39GB across all variants and is not committed to
+this repo. The download script fetches only the two `HI-Small` files used by the
+notebook (about 510MB total).
 
 ### 1. Get a Kaggle API token
 
@@ -48,27 +49,14 @@ pip install kagglehub pandas numpy matplotlib jupyter nbconvert ipykernel
 python scripts/kaggle-download.py
 ```
 
-This uses `kagglehub` to download and cache the dataset outside the project
-(typically `~/.cache/kagglehub/datasets/ealtman2019/...`), and prints the local
-cache path.
-
-### 4. Move the files into `dataset/`
-
-The notebook and planning docs expect the raw files directly under `dataset/` at
-the project root. Move everything from the printed cache path into `dataset/`:
-
-```powershell
-Move-Item -Path "<printed cache path>\*" -Destination ".\dataset" -Force
-```
-
-(`Move-Item` on the same drive is a fast rename, not a byte-for-byte copy, so this
-is quick even though the files are large.)
+This uses `kagglehub`'s per-file download option and writes the files directly to
+`dataset/` at the project root. Existing valid downloads are reused.
 
 ### Resulting structure
 
-`dataset/` ends up with 18 files: two illicit-ratio variants (`HI` = higher illicit
-ratio, `LI` = lower) × three sizes (`Small`, `Medium`, `Large`), each with three
-files:
+The complete Kaggle dataset contains 18 files: two illicit-ratio variants (`HI` =
+higher illicit ratio, `LI` = lower) × three sizes (`Small`, `Medium`, `Large`),
+each with three files:
 
 | File | Contents |
 |---|---|
@@ -76,6 +64,8 @@ files:
 | `{PREFIX}-{SIZE}_accounts.csv` | Account → Bank / Entity mapping |
 | `{PREFIX}-{SIZE}_Patterns.txt` | Ground-truth laundering "attempts" (cycles, fan-out, etc.) |
 
-Sizes range from ~34MB (`HI-Small_accounts.csv`) to ~17GB (`HI-Large_Trans.csv`).
-`scripts/eda.ipynb` defaults to `HI-Small` (475MB, 5M rows) — change the
-`PREFIX`/`SIZE` config cell to analyze a different variant.
+The downloader selects `HI-Small_Trans.csv` (about 475MB, 5M rows) and
+`HI-Small_accounts.csv` (about 34MB). To analyze another variant, select one of
+the commented `PREFIX`/`SIZE` options in `scripts/kaggle-download.py` and use the
+same `PREFIX`/`SIZE` in the notebook config. Set `INCLUDE_PATTERNS = True` only if
+the optional laundering-pattern descriptions are needed.

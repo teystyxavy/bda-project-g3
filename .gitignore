@@ -4,8 +4,11 @@ dataset/
 # Python virtual environment
 kaggle_venv/
 
-# Jupyter checkpoints
-.ipynb_checkpoints/
+# Jupyter-generated metadata and temporary files
+**/.ipynb_checkpoints/
+**/.virtual_documents/
+.jupyter_cache/
+*.nbconvert.ipynb
 
 # Office temp/lock files
 ~$*
@@ -16,3 +19,4 @@ Thumbs.db
 
 # pptx files
 *.pptx
+scripts/eda.ipynb
