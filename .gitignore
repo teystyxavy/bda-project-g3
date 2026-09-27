@@ -1,0 +1,18 @@
+# Dataset (39GB, downloaded via kaggle-download.py — not committed)
+dataset/
+
+# Python virtual environment
+kaggle_venv/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Office temp/lock files
+~$*
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# pptx files
+*.pptx

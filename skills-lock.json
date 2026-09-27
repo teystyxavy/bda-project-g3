@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "aws-architecture-diagram": {
+      "source": "vidanov/aws-architecture-diagram-skill",
+      "sourceType": "github",
+      "skillPath": "claude/SKILL.md",
+      "computedHash": "4b0f9c37c172c6c7e8e253a6bd57ce3b3e3f613b8e98a6d58f7bf92354d10520"
+    }
+  }
+}
