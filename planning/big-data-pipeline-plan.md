@@ -19,6 +19,8 @@ on false positives.
 
 **Method shape:** per-transaction, supervised/rule-based classification, near-real-time.
 
+## frrom the discussion: use the score to rank the laundering attempts in order of priority.
+
 ### BQ2 — Where is our transaction volume concentrated, and are we too dependent on a few banks or currencies? (Treasury / Risk Management)
 
 **Question:** When we add up transaction volume (converted to a common currency)
@@ -37,6 +39,8 @@ These two are deliberately non-overlapping: BQ1 is predictive and row-level
 (compliance use case); BQ2 is descriptive and network/aggregate-level (treasury use
 case) — different stakeholders, different analytical technique, different pipeline
 branch.
+
+## benefits the risk teams
 
 ### Data augmentation
 
@@ -143,19 +147,19 @@ instead of near-real-time. Either way, the batch backbone itself is never option
 
 ### Stage-by-stage detail
 
-| Stage | Layer | Tier | Service | Purpose | Cost control |
-|---|---|---|---|---|---|
-| Ingestion (batch) | Batch backbone | Core | S3 (raw zone) | Land Transactions/Accounts/Patterns CSVs | Standard storage, lifecycle → IA after processing |
-| Ingestion (FX) | Batch backbone | Core | Lambda + EventBridge schedule | Pull daily FX rates once, land as CSV | Runs once per demo, negligible cost |
-| Cataloging | Batch backbone | Core | Glue Crawler + Data Catalog | Schema discovery for Athena/Glue | Crawler runs on trigger, not scheduled continuously |
-| Transform | Batch backbone | Core | Glue ETL (PySpark, serverless) | Join, clean, engineer features, write Parquet — builds BQ1's training set *and* BQ2's queryable table | Small G.1X worker count (2–5), partitioned output |
-| Orchestration | Batch backbone | **X-factor** | Step Functions + EventBridge | Chain crawl → ETL → BQ1 training / BQ2 Athena → viz → notify | Pay-per-state-transition, pennies at this scale |
-| Model training | Batch backbone | Core | Glue Python Shell or SageMaker Training (small/spot instance) | Train laundering classifier (XGBoost) on the curated, labeled Parquet → `model.joblib` in S3 | Runs for minutes, on-demand only, no persistent endpoint |
-| Batch flow analytics | Batch backbone | Core | Athena over partitioned Parquet | Corridor/bank concentration aggregates — this alone completes BQ2 | Partition pruning keeps bytes-scanned (and cost) tiny |
-| Ingestion (stream) | Streaming (BQ1 only) | **X-factor** | Kinesis Data Streams | Replay CSV rows to simulate a live feed, independent of Step Functions | 1 shard, on-demand mode, run producer only during demo windows |
-| Real-time scoring | Streaming (BQ1 only) | **X-factor** | Lambda (Kinesis event source) + DynamoDB | Load `model.joblib` from the batch backbone, score each streamed transaction, flag high-risk | Lambda pay-per-invocation; DynamoDB on-demand capacity |
-| Visualization | Shared | Core | Lambda/Glue → static HTML (Plotly/Chart.js) on S3 + CloudFront | Interactive dashboards reading from both layers' outputs | Static hosting, no compute cost after generation |
-| Monitoring | Shared | Core | CloudWatch + SNS | Pipeline health, AML alert delivery | Free tier covers this scale |
+| Stage                | Layer                | Tier               | Service                                                         | Purpose                                                                                                 | Cost control                                                   |
+| -------------------- | -------------------- | ------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Ingestion (batch)    | Batch backbone       | Core               | S3 (raw zone)                                                   | Land Transactions/Accounts/Patterns CSVs                                                                | Standard storage, lifecycle → IA after processing             |
+| Ingestion (FX)       | Batch backbone       | Core               | Lambda + EventBridge schedule                                   | Pull daily FX rates once, land as CSV                                                                   | Runs once per demo, negligible cost                            |
+| Cataloging           | Batch backbone       | Core               | Glue Crawler + Data Catalog                                     | Schema discovery for Athena/Glue                                                                        | Crawler runs on trigger, not scheduled continuously            |
+| Transform            | Batch backbone       | Core               | Glue ETL (PySpark, serverless)                                  | Join, clean, engineer features, write Parquet — builds BQ1's training set*and* BQ2's queryable table | Small G.1X worker count (2–5), partitioned output             |
+| Orchestration        | Batch backbone       | **X-factor** | Step Functions + EventBridge                                    | Chain crawl → ETL → BQ1 training / BQ2 Athena → viz → notify                                        | Pay-per-state-transition, pennies at this scale                |
+| Model training       | Batch backbone       | Core               | Glue Python Shell or SageMaker Training (small/spot instance)   | Train laundering classifier (XGBoost) on the curated, labeled Parquet →`model.joblib` in S3          | Runs for minutes, on-demand only, no persistent endpoint       |
+| Batch flow analytics | Batch backbone       | Core               | Athena over partitioned Parquet                                 | Corridor/bank concentration aggregates — this alone completes BQ2                                      | Partition pruning keeps bytes-scanned (and cost) tiny          |
+| Ingestion (stream)   | Streaming (BQ1 only) | **X-factor** | Kinesis Data Streams                                            | Replay CSV rows to simulate a live feed, independent of Step Functions                                  | 1 shard, on-demand mode, run producer only during demo windows |
+| Real-time scoring    | Streaming (BQ1 only) | **X-factor** | Lambda (Kinesis event source) + DynamoDB                        | Load`model.joblib` from the batch backbone, score each streamed transaction, flag high-risk           | Lambda pay-per-invocation; DynamoDB on-demand capacity         |
+| Visualization        | Shared               | Core               | Lambda/Glue → static HTML (Plotly/Chart.js) on S3 + CloudFront | Interactive dashboards reading from both layers' outputs                                                | Static hosting, no compute cost after generation               |
+| Monitoring           | Shared               | Core               | CloudWatch + SNS                                                | Pipeline health, AML alert delivery                                                                     | Free tier covers this scale                                    |
 
 ### Why these choices avoid the banned/expensive services
 
@@ -215,3 +219,233 @@ outliers, risky payment formats). Treat a trained classifier (XGBoost) as a stre
 goal only if time/budget allow, since adding ML isn't credited unless it
 measurably improves BQ1's answer (e.g., better precision/recall@k than the
 rule-based baseline).
+
+## 4. Implementation details (resolving the gaps above)
+
+### 4.1 Raw schema quirks and join keys
+
+- **`{PREFIX}-{SIZE}_Trans.csv` has two columns literally both named `Account`**
+  (the 3rd column is *From* Account, the 5th is *To* Account — confirmed by
+  inspecting the header row). A Glue Crawler/pandas `read_csv` will silently
+  dedupe or mis-infer this. The Glue ETL job must read by **column position**,
+  not by inferred header name, and rename explicitly to `from_account` /
+  `to_account`.
+- **`{PREFIX}-{SIZE}_accounts.csv` columns:** `Bank Name, Bank ID, Account Number,
+  Entity ID, Entity Name`.
+- **Trans ↔ Accounts join key is composite, not just `Account Number`.**
+  Verified on `HI-Small_accounts.csv`: of 518,581 account rows, `Account Number`
+  alone has only 518,573 distinct values (8 collisions across different banks),
+  while `(Bank ID, Account Number)` is fully unique (518,581/518,581). Join on
+  `(from_bank = Bank ID, from_account = Account Number)` and the same for the
+  `to_*` side — joining on `Account Number` alone will mis-attribute ~8 accounts
+  even at `Small` scale, and that error scales with dataset size.
+- **Trans ↔ Patterns join key: no shared ID exists.** `Patterns.txt` repeats the
+  same fields as `Trans.csv` with no transaction ID, so join on the full natural
+  key: `(Timestamp, From Bank, From Account, To Bank, To Account, Amount
+  Received, Receiving Currency, Amount Paid, Payment Currency, Payment Format)`.
+  Verified zero duplicate natural keys among `HI-Small`'s `Is Laundering=1` rows,
+  so this is safe to join directly at that scale. As a safeguard for
+  `Medium`/`Large` (where collisions become more likely), add
+  `ROW_NUMBER() OVER (PARTITION BY <natural key> ORDER BY source_row_index)` on
+  both sides and join on key + row number.
+- **`Patterns.txt` is not exhaustive of `Is Laundering=1` rows — document this,
+  don't "fix" it.** Verified on `HI-Small`: `Trans.csv` has 5,177 rows with
+  `Is Laundering=1`, but `Patterns.txt` has only 3,209 data rows. ~38% of labeled
+  laundering transactions belong to no named attempt. The curated table's
+  `attempt_id`/`pattern_type` columns will be `NULL` for those rows by design —
+  `is_laundering` (from `Trans.csv`) remains the ground-truth label for BQ1
+  training regardless of whether a pattern match exists.
+
+### 4.2 Curated table schema
+
+`s3://.../curated/transactions/`, Parquet, **partitioned by `txn_date`** (the date
+part of `Timestamp`). Rejected partitioning by bank as well: bank cardinality is
+in the thousands, which would fragment the table into too many small files for
+Athena to scan efficiently — column-level stats on `from_bank`/`to_bank` inside
+each day's partition already give adequate pruning for BQ2's bank-pair queries.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `transaction_id` | bigint | surrogate key: `monotonically_increasing_id()` after sorting raw input by `(Timestamp, source_row_index)` |
+| `timestamp` | timestamp | parsed from raw `Timestamp` |
+| `txn_date` | date | **partition column** |
+| `from_bank`, `to_bank` | string | raw `Bank ID`-style fields, kept as string (values have leading zeros, e.g. `"020"`) |
+| `from_account`, `to_account` | string | see §4.1 column-position fix |
+| `amount_received`, `amount_paid` | double | |
+| `receiving_currency`, `payment_currency` | string | |
+| `amount_usd` | double | see formula below |
+| `payment_format` | string | |
+| `is_laundering` | int | ground truth, from `Trans.csv` |
+| `is_self_txn` | boolean | see §4.3 |
+| `currency_mismatch` | boolean | see §4.3 |
+| `from_entity_id`, `from_entity_type`, `to_entity_id`, `to_entity_type` | string | joined from `accounts.csv` via composite key |
+| `attempt_id`, `pattern_type` | string, nullable | joined from `Patterns.txt`; `NULL` is expected (§4.1) |
+| `txn_count_1h`, `txn_count_24h`, `txn_count_7d` | bigint | velocity, see §4.3 |
+| `distinct_counterparties_24h`, `distinct_counterparties_7d` | bigint | fan-out signal |
+| `is_new_account` | boolean | first transaction seen for this `from_account` |
+
+### 4.3 Feature formulas (concrete, not just names)
+
+- `is_self_txn` = `from_bank == to_bank AND from_account == to_account`
+- `currency_mismatch` = `receiving_currency != payment_currency`
+- `amount_usd` = `amount_paid` if `payment_currency == "US Dollar"`, else
+  `amount_paid * fx_rate(payment_currency → USD, date = txn_date)` (rate from the
+  FX ingestion job, §2)
+- Velocity features are computed **per `from_account`**, over a trailing window
+  ending at (and excluding) the current transaction's timestamp, using a Spark
+  window function — `Window.partitionBy("from_account").orderBy("timestamp")
+  .rangeBetween(-window_seconds, 0)` — not a self-join, to avoid an expensive
+  cross join at scale:
+  - `txn_count_1h` / `txn_count_24h` / `txn_count_7d`
+  - `distinct_counterparties_24h` / `_7d` (count distinct `to_account`)
+  - `is_new_account` = `to_account` not seen for this `from_account` in the prior
+    30 days
+- The dataset spans **2022-09-01 to 2022-09-18** (verified on `HI-Small`), so 1h/24h/7d
+  windows all fit comfortably within the available history.
+- **Rule-based risk score** (0–100) — revised against the actual EDA numbers
+  from `HI-Small` (5,078,345 transactions; see `eda.ipynb` §4 Summary), which
+  **overturned the original placeholder assumptions below**:
+  - **`payment_format == "ACH"` → `+50`.** By far the strongest signal found:
+    ACH's laundering rate is 0.746%, ~7.3x the 0.102% base rate. Every other
+    format (`Bitcoin` 0.038%, `Cash` 0.022%, `Cheque` 0.017%, `Credit Card`
+    0.016%, `Reinvestment`/`Wire` 0%) is at or below baseline and contributes
+    nothing.
+  - **`is_self_txn` → dropped from the score (was `+25`).** Measured laundering
+    rate for self-transactions is 0.0037%, *lower* than cross-account transfers
+    (0.115%) — the opposite of the assumed direction. Kept as a feature for
+    model training/explainability, but not rewarded in the rule-based score.
+  - **`currency_mismatch` → dropped from the score (was `+15`).** Measured
+    laundering rate among currency-mismatched transactions is 0% (0 of 5,177
+    labeled laundering transactions involve a mismatch). Same treatment as
+    `is_self_txn` above.
+  - `+20` if `amount_usd` > P99 of the amount distribution **for that
+    `payment_format`** (unchanged, but now confirmed necessary: raw
+    `Amount Paid` has mean ~$4.5M and max >$1 trillion, almost entirely a
+    currency-denomination artifact — e.g. Yen/Rupiah face values — not real
+    outliers, so this must run on FX-normalized `amount_usd`, never the raw
+    columns).
+  - `+30` if `txn_count_1h > 10` OR `distinct_counterparties_24h > 15` (chosen
+    just under the `Max 16-degree Fan-Out` ceiling stated in `HI-Small_Patterns.txt`'s
+    own attempt header). **Still unvalidated by EDA** — the notebook only
+    profiles transaction-level fields, not per-account rolling behavior, so
+    this weight is a hypothesis to confirm once the Glue ETL actually computes
+    `txn_count_1h`/`distinct_counterparties_24h`, not an EDA-measured number
+    like the two above.
+  - **Flag threshold:** score ≥ 60 → write to DynamoDB `flagged_transactions` +
+    SNS alert. With these revised weights, ACH alone (50) no longer crosses the
+    threshold — it needs one more corroborating signal (amount outlier or
+    fan-out), which is the intended behavior given ACH's 0.75% hit rate is
+    still far from a near-certainty on its own. Used identically by the batch
+    scorer and the streaming Lambda so the two layers agree before any ML model
+    replaces the rule-based score.
+  - **Caveat for the report:** the self-transaction/currency-mismatch reversal
+    is counterintuitive relative to general AML domain knowledge (real-world
+    layering schemes do lean on self-transfers and cross-currency mixing) — call
+    this out explicitly as a property of this synthetic generator rather than a
+    general AML finding, since it's worth a sentence in the writeup either way.
+
+### 4.4 Model training specifics (BQ1)
+
+- **Split by `txn_date`, not randomly:** train on days 1–13, validate on 14–15,
+  test on 16–18. A random row split would leak behavioral/velocity features
+  (which aggregate trailing history) across train/test and would also split
+  individual multi-hop laundering attempts across both sets.
+- **Class imbalance:** ~0.1% positive rate (5,177/5M on `HI-Small`). Use
+  XGBoost's `scale_pos_weight = neg_count/pos_count` rather than
+  oversampling/SMOTE, to keep output probabilities calibrated for ranking
+  (BQ1's actual use case is "rank transactions for a triage queue," per the
+  business question — calibration matters more than a fixed 0.5 threshold).
+- **Metrics:** primary = PR-AUC, not ROC-AUC (ROC-AUC is misleadingly high under
+  this class imbalance). Report `precision@100` / `recall@100` as the headline
+  numbers, since they map directly to "how many of the top 100 ranked
+  transactions an investigator reviews are actually laundering."
+- **Model versioning:** write each training run to
+  `s3://.../models/{run_id}/model.joblib` (`run_id` = Step Functions execution
+  ID), and maintain a separate `s3://.../models/current_model_pointer.json`
+  (`{run_id, metrics}`) that the streaming Lambda reads. Promoting or rolling
+  back a model means updating the pointer file, not redeploying Lambda code.
+
+### 4.5 Streaming layer specifics
+
+- **DynamoDB `account_velocity_state` table:** partition key `from_account`;
+  attributes `window_1h`, `window_24h`, `window_7d` (rolling counters/sets
+  maintained via atomic `UpdateExpression` ADD, not read-modify-write, to stay
+  correct under concurrent updates), `last_seen_counterparties` (set),
+  `updated_at`. TTL attribute `expires_at = now + 7d` to auto-evict dormant
+  accounts and keep the table small.
+- **Cold start:** an account with no existing DynamoDB item scores with all
+  rolling counts at 0 and `is_new_account = true` — itself treated as a mild
+  risk signal (per §4.3), not skipped or defaulted to "unknown."
+- **Kinesis replay producer:** partition key = `from_account` (keeps one
+  account's events in order within a shard, required for correct rolling-state
+  updates). For the demo, compress the 18-day span into a fixed short window
+  (e.g. 10 minutes) by replaying in original relative order with a constant
+  time-scaling factor, rather than claiming true wall-clock real-time replay.
+- **Alert threshold:** reuse the score ≥ 60 cutoff from §4.3 so the streaming
+  Lambda and the batch scorer agree.
+
+### 4.6 Orchestration (Step Functions) — concrete state machine
+
+`StartCrawlerRaw → RunGlueETL (sync) → Parallel[RunAthenaFlowSummary (BQ2),
+RunModelTraining (BQ1)] → UpdateModelPointer → RenderDashboards → NotifySuccess`.
+Every state gets `Retry` (`IntervalSeconds: 30, MaxAttempts: 3, BackoffRate: 2`)
+and a `Catch` branch to `NotifyFailure` (SNS). Triggered by a daily EventBridge
+schedule (e.g. 02:00 UTC) — a fixed cadence is appropriate here since the dataset
+is static/historical for the project, not a live feed arriving on its own schedule.
+
+### 4.7 Visualization — concrete mechanism
+
+The Lambda/Glue "renders dashboards" step produces **data, not HTML**: it writes
+`marts/bq1_dashboard_data.json` and `marts/bq2_dashboard_data.json` to S3. A
+static `dashboard.html` (checked into the repo, never regenerated) loads
+Plotly.js/Chart.js from a CDN and fetches those JSON files client-side. This
+avoids trying to generate interactive JS charts from inside a Lambda.
+
+- **Dashboard 1 (BQ1):** ranked table of flagged accounts (score desc), alerts-per-day
+  time series, score distribution histogram.
+- **Dashboard 2 (BQ2):** Sankey diagram of bank-to-bank USD flow (top-N
+  corridors), corridor-volume-by-day heatmap, stacked-area payment-format mix
+  over time.
+
+### 4.8 Infra/ops gaps
+
+- **IaC:** Terraform (HCL) — declarative, widely used for AWS, and decouples
+  infra provisioning from the Glue PySpark/Lambda application code's language.
+- **IAM:** least-privilege, one role per component (`GlueETLRole`,
+  `LambdaScoringRole`, `StepFunctionsRole`) — no wildcard resource policies.
+- **Encryption:** default SSE-S3 on all buckets, DynamoDB encryption-at-rest
+  (on by default). No VPC — stated as a deliberate decision (everything here is
+  serverless, talking to S3/DynamoDB over the AWS network), not an omission.
+- **Data quality gate:** a Glue step validates no nulls in
+  `Timestamp`/`From Bank`/`To Bank`/amount fields, amounts ≥ 0, and timestamps
+  within the expected Sept 2022 range, *before* feature engineering runs — on
+  failure, the Step Functions execution goes to `Catch → NotifyFailure` instead
+  of silently writing bad curated data.
+- **Testing:** `pytest` unit tests for the feature functions in §4.3 against
+  small fixture DataFrames (no AWS needed), plus one integration smoke test that
+  runs the full state machine against a 1,000-row sample before the real
+  `HI-Small` demo run.
+- **Cost estimate (HI-Small, worked):** `Trans.csv` 475MB → curated Parquet
+  roughly 150MB after columnar compression. Athena at ~$5/TB scanned → a full-table
+  query costs ~$0.0008, negligible even run hundreds of times. Glue ETL on
+  2–5 G.1X workers for a 475MB job finishes in a few minutes → low single-digit
+  DPU-hours → a few dollars. SageMaker training on a small instance for minutes →
+  under $5. Kinesis (1 on-demand shard) + Lambda invocations for a demo window →
+  cents. **Estimated total demo cost: well under $50**, against the $250 cap —
+  included here so the budget claim in §2 is checkable rather than asserted.
+
+## 5. EDA write-up — done, one gap remains
+
+`scripts/eda.ipynb` has been run against `HI-Small` and its "4. Summary" section
+is filled in; §4.3's rule-based weights above are now calibrated against those
+real numbers rather than placeholders. One gap is still open: the notebook only
+profiles **transaction-level** fields (payment format, self-txn, currency
+mismatch, raw amounts) — it does not compute the **behavior-level** velocity
+features (`txn_count_1h`, `distinct_counterparties_24h`, etc.), since those
+require per-account rolling aggregation that's a Glue ETL/Spark job, not a
+pandas notebook scan. The `+30` fan-out weight in §4.3 is therefore still a
+hypothesis (grounded in the `Patterns.txt` attempt headers) rather than an
+EDA-measured number, and should be re-validated once the ETL actually computes
+those columns. Re-running the notebook against `LI-Small` to compare illicit
+ratios across variants (mentioned in §4's summary) is also still open but not
+blocking.
