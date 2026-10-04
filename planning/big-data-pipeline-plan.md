@@ -430,6 +430,18 @@ without these extra charts. Neither local view is a live alerting system.
 
 ### 4.8 Infra/ops gaps
 
+Current foundation: `infra/terraform/`, `jobs/curate_transactions.py`, and
+`planning/aws-batch-runbook.md` define a manual 1,000-row curation smoke path.
+Terraform validates locally and passes three mocked planning tests. All 21
+Python tests, including Spark parity, pass in the official Glue 5 container;
+the 24-resource foundation was deployed with user approval on 2026-10-05 and
+verified with a no-change plan. Cloud workload execution is pending approval.
+See `planning/aws-deployment-status.md`. This first version uses an explicit catalog schema plus Athena
+partition projection instead of crawlers. The failure EventBridge rule only
+notifies; orchestration and scheduled runs remain future enhancements. AWS
+rolling features, scoring/training and dashboard publication are not implemented
+by this foundation. See the runbook for verified checks and remaining gates.
+
 - **IaC:** Terraform (HCL) — declarative, widely used for AWS, and decouples
   infra provisioning from the Glue PySpark/Lambda application code's language.
 - **IAM:** least-privilege, one role per component (`GlueETLRole`,

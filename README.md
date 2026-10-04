@@ -189,3 +189,25 @@ Checked-in assets live in `dashboard/`; the exporter writes `dashboard.json`
 with source hashes and `validation-diagnostics.json`. There are no external
 JavaScript dependencies. These are local static views, not deployed or live
 alerts. BQ1 remains a sender cohort; BQ2 covers all 5,078,345 transactions.
+
+## AWS batch foundation
+
+Start with [local AWS login](planning/aws-login.md). The
+`scripts/configure-aws.ps1` helper opens AWS browser authentication and saves
+project settings outside the repository; enter passwords only on the AWS page.
+
+`infra/terraform/` defines the private S3 bucket, Glue sample job, projected
+catalog table, Athena workgroup and saved queries, failure notifications and
+budget. `jobs/curate_transactions.py` implements PySpark curation with account
+and FX validation. `scripts/prepare-aws-smoke.py` creates 1,000 raw sample rows,
+the required account subset and a local reference result without AWS calls.
+
+Follow [the AWS batch runbook](planning/aws-batch-runbook.md) for local parity
+tests, configuration, approval-gated deployment, reconciliation and cleanup.
+Terraform validation and three mocked planning tests pass. All 21 Python tests
+pass in the official Glue 5 container, including Spark parity; run them with
+`.\scripts\test-glue-local.ps1` after preparing the sample. An authenticated
+[deployment plan](planning/aws-plan-review.md) was applied with user approval.
+[Deployment checks](planning/aws-deployment-status.md) confirm 24 resources and
+no drift. Dataset upload and AWS job/query execution remain pending approval.
+AWS behaviour features, scoring, training and dashboard publishing remain pending.
