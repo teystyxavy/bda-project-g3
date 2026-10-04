@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bda-project-g3"
+version = "0.1.0"
+description = "Local transformation foundation for the IS459 IBM AML pipeline"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.2,<3",
+    "pyarrow>=18,<24",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

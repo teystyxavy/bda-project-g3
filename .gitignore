@@ -1,8 +1,13 @@
 # Dataset (39GB, downloaded via kaggle-download.py — not committed)
 dataset/
 
+# Local pipeline outputs
+output/
+
 # Python virtual environment
 kaggle_venv/
+__pycache__/
+*.py[cod]
 
 # Jupyter-generated metadata and temporary files
 **/.ipynb_checkpoints/
