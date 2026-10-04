@@ -44,12 +44,14 @@ branch.
 
 ### Data augmentation
 
-To make BQ2's USD-equivalent comparisons meaningful across the dataset's ~15
-currencies, augment with daily FX reference rates for Sept 2022 from a free public
-source, e.g. the [Frankfurter API](https://www.frankfurter.app/) (ECB-backed
-historical rates) or the
-[ECB euro reference rates](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html).
-Rates are joined in by date + currency during ETL to compute an `amount_usd` field.
+To make BQ2's USD-equivalent comparisons meaningful across the dataset's 15
+currencies, augment with daily historical rates for Sept 2022. The implemented
+local ingestion uses the [Frankfurter API](https://frankfurter.dev/) for its
+covered central-bank-backed fiat rates, with Yahoo Finance daily history for
+Bitcoin, Ruble, and Saudi Riyal because Frankfurter has no queryable Sept 2022
+records for those pairs. Each row records its source and actual observation date;
+weekends use the latest prior observation. Rates are joined by date + currency
+during ETL to compute an `amount_usd` field.
 
 ## 2. Pipeline architecture
 
@@ -150,7 +152,7 @@ instead of near-real-time. Either way, the batch backbone itself is never option
 | Stage                | Layer                | Tier               | Service                                                         | Purpose                                                                                                 | Cost control                                                   |
 | -------------------- | -------------------- | ------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | Ingestion (batch)    | Batch backbone       | Core               | S3 (raw zone)                                                   | Land Transactions/Accounts/Patterns CSVs                                                                | Standard storage, lifecycle → IA after processing             |
-| Ingestion (FX)       | Batch backbone       | Core               | Lambda + EventBridge schedule                                   | Pull daily FX rates once, land as CSV                                                                   | Runs once per demo, negligible cost                            |
+| Ingestion (FX)       | Batch backbone       | Core               | Lambda + EventBridge schedule                                   | Pull historical Frankfurter/Yahoo rates once, retain source metadata, land as CSV                       | Runs once per demo, negligible cost                            |
 | Cataloging           | Batch backbone       | Core               | Glue Crawler + Data Catalog                                     | Schema discovery for Athena/Glue                                                                        | Crawler runs on trigger, not scheduled continuously            |
 | Transform            | Batch backbone       | Core               | Glue ETL (PySpark, serverless)                                  | Join, clean, engineer features, write Parquet — builds BQ1's training set*and* BQ2's queryable table | Small G.1X worker count (2–5), partitioned output             |
 | Orchestration        | Batch backbone       | **X-factor** | Step Functions + EventBridge                                    | Chain crawl → ETL → BQ1 training / BQ2 Athena → viz → notify                                        | Pay-per-state-transition, pennies at this scale                |

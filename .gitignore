@@ -8,6 +8,7 @@ output/
 kaggle_venv/
 __pycache__/
 *.py[cod]
+*.egg-info/
 
 # Jupyter-generated metadata and temporary files
 **/.ipynb_checkpoints/

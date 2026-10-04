@@ -83,15 +83,24 @@ resources are created. It validates the raw schema, joins account metadata on
 `(Bank ID, Account Number)`, creates the initial transaction features, converts
 amounts to USD, and writes Parquet partitioned by `txn_date`.
 
-Prepare a daily FX CSV with these columns:
+Generate the daily FX CSV from the currencies and date range present in the
+transaction file:
 
-```text
-txn_date,currency,usd_rate
-2022-09-01,Euro,1.0018
+```powershell
+python scripts/fetch-fx-rates.py
 ```
 
-Each non-USD payment currency and transaction date in the input sample must have
-one rate. US Dollar rows automatically use a rate of `1.0`. Then run:
+For a quicker first run, inspect only the same 1,000 rows used by the smoke test:
+
+```powershell
+python scripts/fetch-fx-rates.py --rows 1000
+```
+
+The downloader uses Frankfurter's historical central-bank-backed rates for the
+covered fiat currencies. September 2022 rates for Bitcoin, Ruble, and Saudi
+Riyal are obtained from Yahoo Finance daily history because Frankfurter has no
+queryable records for those three pairs. The output records the source and
+actual observation date; weekends use the latest prior observation. Then run:
 
 ```powershell
 python scripts/run-local-pipeline.py --fx-rates dataset/fx_rates.csv --rows 1000
