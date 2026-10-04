@@ -60,7 +60,7 @@ def test_build_curated_uses_composite_account_key_and_fx_rate():
     accounts = pd.DataFrame(
         {
             "bank_name": ["Bank A", "Bank B"],
-            "bank_id": pd.Series(["020", "021"], dtype="string"),
+            "bank_id": pd.Series(["20", "21"], dtype="string"),
             "account_number": pd.Series(["0007", "0007"], dtype="string"),
             "entity_id": ["E-A", "E-B"],
             "entity_name": ["Alice", "Bob"],
@@ -74,6 +74,10 @@ def test_build_curated_uses_composite_account_key_and_fx_rate():
 
     assert curated["from_entity_id"].tolist() == ["E-A", "E-B"]
     assert curated["to_entity_id"].tolist() == ["E-B", "E-B"]
+    assert curated["from_bank_name"].tolist() == ["Bank A", "Bank B"]
+    assert curated["to_bank_name"].tolist() == ["Bank B", "Bank B"]
+    assert curated["from_bank"].tolist() == ["020", "021"]
+    assert curated["from_account"].tolist() == ["0007", "0007"]
     assert curated["amount_usd"].tolist() == pytest.approx([110.0, 20.0])
     assert curated["is_self_txn"].tolist() == [False, True]
     assert curated["currency_mismatch"].tolist() == [True, False]

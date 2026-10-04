@@ -268,7 +268,7 @@ each day's partition already give adequate pruning for BQ2's bank-pair queries.
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `transaction_id` | bigint | surrogate key: `monotonically_increasing_id()` after sorting raw input by `(Timestamp, source_row_index)` |
+| `transaction_id` | string | local analysis uses `HI-Small:{source_row_index}`; stable for this unchanged source file, not a universal transaction ID |
 | `timestamp` | timestamp | parsed from raw `Timestamp` |
 | `txn_date` | date | **partition column** |
 | `from_bank`, `to_bank` | string | raw `Bank ID`-style fields, kept as string (values have leading zeros, e.g. `"020"`) |
@@ -293,17 +293,28 @@ each day's partition already give adequate pruning for BQ2's bank-pair queries.
 - `amount_usd` = `amount_paid` if `payment_currency == "US Dollar"`, else
   `amount_paid * fx_rate(payment_currency → USD, date = txn_date)` (rate from the
   FX ingestion job, §2)
-- Velocity features are computed **per `from_account`**, over a trailing window
-  ending at (and excluding) the current transaction's timestamp, using a Spark
-  window function — `Window.partitionBy("from_account").orderBy("timestamp")
-  .rangeBetween(-window_seconds, 0)` — not a self-join, to avoid an expensive
-  cross join at scale:
+- Velocity features are computed **per normalized `(from_bank, from_account)`**,
+  over `[timestamp - window, timestamp)`. Exclude all transactions sharing the
+  current timestamp. In Spark, use integer epoch seconds and
+  `Window.partitionBy("from_bank_key", "from_account").orderBy("epoch_seconds")
+  .rangeBetween(-window_seconds, -1)` for second-resolution input.
+  Local analysis uses per-sender queues and counterparty counters:
   - `txn_count_1h` / `txn_count_24h` / `txn_count_7d`
-  - `distinct_counterparties_24h` / `_7d` (count distinct `to_account`)
+  - `distinct_counterparties_24h` / `_7d` (count distinct normalized `(to_bank, to_account)`)
   - `is_new_account` = `to_account` not seen for this `from_account` in the prior
     30 days
 - The dataset spans **2022-09-01 to 2022-09-18** (verified on `HI-Small`), so 1h/24h/7d
-  windows all fit comfortably within the available history.
+  windows have incomplete history near the start; first-week values have a cold-start limitation.
+- Local BQ1 scoring uses `amount_usd_asof` with the previous calendar day's FX
+  reference (already carried backward over weekends). BQ2 retains same-day
+  `amount_usd` as a historical valuation. Same-day daily closes must not be used
+  to simulate intraday scoring. Dataset timestamps lack a verified timezone, so
+  this is a conservative calendar-day convention, not a verified publication-time feed.
+- Fit payment-format P99 thresholds on September 1–6 only. Validation is
+  September 7–8 and test September 9–10. Report September 11–18 separately as a
+  sparse, label-enriched tail. Unseen formats receive no amount
+  points. Rules are hypotheses; earlier whole-dataset EDA means these metrics
+  are exploratory, not an untouched confirmatory holdout.
 - **Rule-based risk score** (0–100) — revised against the actual EDA numbers
   from `HI-Small` (5,078,345 transactions; see `eda.ipynb` §4 Summary), which
   **overturned the original placeholder assumptions below**:
@@ -348,8 +359,10 @@ each day's partition already give adequate pruning for BQ2's bank-pair queries.
 
 ### 4.4 Model training specifics (BQ1)
 
-- **Split by `txn_date`, not randomly:** train on days 1–13, validate on 14–15,
-  test on 16–18. A random row split would leak behavioral/velocity features
+- **Split by `txn_date`, not randomly:** train on days 1–6, validate on 7–8,
+  test on 9–10, and report the sparse days 11–18 separately. The full local scan
+  found only 1,108 rows after September 10, of which 655 were positives; the
+  original days 16–18 test period was unsuitable. A random row split would leak behavioral/velocity features
   (which aggregate trailing history) across train/test and would also split
   individual multi-hop laundering attempts across both sets.
 - **Class imbalance:** ~0.1% positive rate (5,177/5M on `HI-Small`). Use
@@ -397,17 +410,23 @@ is static/historical for the project, not a live feed arriving on its own schedu
 
 ### 4.7 Visualization — concrete mechanism
 
-The Lambda/Glue "renders dashboards" step produces **data, not HTML**: it writes
-`marts/bq1_dashboard_data.json` and `marts/bq2_dashboard_data.json` to S3. A
-static `dashboard.html` (checked into the repo, never regenerated) loads
-Plotly.js/Chart.js from a CDN and fetches those JSON files client-side. This
-avoids trying to generate interactive JS charts from inside a Lambda.
+The local implementation uses checked-in HTML/CSS/JavaScript in `dashboard/`
+and a generated `dashboard.json` snapshot. `scripts/build-dashboard.py` exports
+data and copies those assets to a fresh output directory. Native SVG and HTML
+charts need no CDN. Future AWS jobs should generate this data contract, with
+static assets hosted separately on S3/CloudFront; that deployment is pending.
 
-- **Dashboard 1 (BQ1):** ranked table of flagged accounts (score desc), alerts-per-day
-  time series, score distribution histogram.
-- **Dashboard 2 (BQ2):** Sankey diagram of bank-to-bank USD flow (top-N
-  corridors), corridor-volume-by-day heatmap, stacked-area payment-format mix
-  over time.
+- **Dashboard 1 (BQ1):** ranked transaction queue (not an account ranking),
+  evidence drilldown, alerts by day, score distribution, period metrics and
+  validation-only baseline comparisons. It currently represents the sender cohort.
+- **Dashboard 2 (BQ2):** directed bank and currency corridor rankings, daily
+  USD volume and HHI trends, all-period/day selection, and CSV export. Shares
+  and HHI include all pairs, even when tables show only the top 15.
+
+Sankey, corridor-by-day heatmap, and payment-format mix are deferred enhancements.
+The current corridor aggregate does not retain payment format; adding the mix
+requires an additional mart. The initial views answer both business questions
+without these extra charts. Neither local view is a live alerting system.
 
 ### 4.8 Infra/ops gaps
 

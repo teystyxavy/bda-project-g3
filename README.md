@@ -114,3 +114,78 @@ Run the transformation tests with:
 ```powershell
 python -m pytest -q
 ```
+
+## Local business-question analysis
+
+After installing the package with `python -m pip install -e ".[dev]"`, run:
+
+```powershell
+python scripts/fetch-fx-rates.py --lookback-days 1 --output dataset/fx_rates_with_history.csv
+python scripts/run-local-analysis.py --fx-rates dataset/fx_rates_with_history.csv --output output/analysis-run-1
+```
+
+Use a new output directory for each run. The runner scans the complete transaction
+file in 250,000-row chunks and checks row counts, FX coverage, and account join
+coverage. It preserves original identifiers and uses normalized bank keys for
+joins and behaviour calculations. No AWS resources are needed.
+
+- BQ2 covers every input transaction: daily directed bank/currency corridors,
+  volume rankings, daily bank-pair HHI (0–1), and top-five volume share. High
+  concentration is a treasury observation, not an AML risk signal.
+- BQ1 defaults to a deterministic approximately 5% sender cohort (hash modulo 20).
+  All outgoing rows for selected senders are retained, preserving their history.
+  Set `--sender-modulus 1` for full-data scoring, which requires more memory/time.
+  These sample metrics and the queue describe the cohort, not all HI-Small.
+- Windows exclude the current timestamp and simultaneous peers. P99 amount
+  thresholds are fitted only on September 1–6. Reports evaluate September 7–8
+  and September 9–10 separately, with precision/recall/lift@100 and average
+  precision (stepwise PR area). Labels never enter scoring; equal scores sort
+  by timestamp and source row index. No-positive recall is reported as null.
+- AML amount features use prior-day FX to avoid same-day closing-price leakage;
+  treasury totals use same-day historical valuation. Pre-dataset account history
+  is unavailable. Rule weights remain exploratory because the earlier EDA used
+  the full dataset. Pattern enrichment, new-counterparty flags, and ML are pending.
+
+September 11–18 is reported separately as a sparse tail: the full dataset has
+only 1,108 transactions in that period, including 655 laundering labels.
+It is unsuitable as the primary holdout for normal-volume operations.
+
+To re-evaluate previously saved features with the current split policy:
+
+```powershell
+python scripts/evaluate-local-risk.py --input output/analysis-20261004/bq1_scored.parquet --output output/evaluation-new
+```
+
+The evaluation command produces a test-period review queue and `evaluation.json`.
+See `planning/local-validation-results.md` for the first full scan and cohort results.
+
+Outputs: `bq1_scored.parquet`, `review_queue.csv` (top 100, without labels),
+`bq2_daily_corridors.parquet`, `corridor_rankings.csv`,
+`concentration_daily.csv`, and `run_report.json`. The queue is a retrospective
+cohort demonstration, not an operational live queue. Raw FX inputs retain source
+and observation-date provenance; retain them alongside each run for reproducibility.
+
+## Local dashboards
+
+Build a static snapshot from the revised AML scores and full-population corridors:
+
+```powershell
+python scripts/build-dashboard.py --scored output/evaluation-20261004/bq1_scored.parquet --corridors output/analysis-20261004/bq2_daily_corridors.parquet --output output/dashboard
+python -m http.server 4173 --bind 127.0.0.1 --directory output/dashboard
+```
+
+Open http://127.0.0.1:4173/ (not the HTML directly). Use a fresh output directory
+for subsequent builds. Substitute your own evaluation and analysis paths as needed.
+Stop the local server with Ctrl+C when finished.
+
+The AML view provides chronological evaluation-period selection, alert counts,
+score distribution, a top-100 queue with evidence drilldown, CSV export, and
+validation-only rule comparisons. Queue rows omit the label. The treasury view
+provides all-period or daily bank/currency rankings, volume and concentration
+trends, and CSV export. Trends always retain full-period context; the selected
+date is highlighted. HHI and shares use all bank pairs, not just the top 15 shown.
+
+Checked-in assets live in `dashboard/`; the exporter writes `dashboard.json`
+with source hashes and `validation-diagnostics.json`. There are no external
+JavaScript dependencies. These are local static views, not deployed or live
+alerts. BQ1 remains a sender cohort; BQ2 covers all 5,078,345 transactions.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import timedelta
 from pathlib import Path
 
 from bda_pipeline.fx import build_daily_rates, discover_requirements, write_rates_csv
@@ -13,6 +14,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--lookback-days', type=int, default=0,
+                        help='Include preceding calendar days for causal FX features')
     parser.add_argument(
         "--transactions",
         type=Path,
@@ -37,6 +40,9 @@ def main() -> None:
     start_date, end_date, currencies = discover_requirements(
         args.transactions, nrows=args.rows
     )
+    if args.lookback_days < 0:
+        raise ValueError('lookback-days must be non-negative')
+    start_date -= timedelta(days=args.lookback_days)
     rates = build_daily_rates(currencies, start_date, end_date)
     write_rates_csv(rates, args.output)
     print(

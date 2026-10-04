@@ -16,7 +16,7 @@ SIZE = "Small"
 # SIZE = "Large"
 
 # Pattern descriptions are optional and are not used by the current notebook.
-INCLUDE_PATTERNS = False
+INCLUDE_PATTERNS = True
 
 
 def selected_files() -> list[str]:

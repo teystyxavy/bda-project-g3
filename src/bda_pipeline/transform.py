@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 
 
 TRANSACTION_COLUMNS = [
@@ -83,6 +84,9 @@ def _validate_transactions(frame: pd.DataFrame) -> None:
         "to_account",
         "amount_received",
         "amount_paid",
+        "payment_currency",
+        "receiving_currency",
+        "payment_format",
     }
     missing = required - set(frame.columns)
     if missing:
@@ -92,6 +96,8 @@ def _validate_transactions(frame: pd.DataFrame) -> None:
         raise ValueError("Required transaction fields contain null values")
     if (frame[["amount_received", "amount_paid"]] < 0).any().any():
         raise ValueError("Transaction amounts must be non-negative")
+    if not np.isfinite(frame[["amount_received", "amount_paid"]]).all().all():
+        raise ValueError('Transaction amounts must be finite')
 
 
 def _attach_account_metadata(
@@ -101,19 +107,29 @@ def _attach_account_metadata(
     result = transactions
 
     for side in ("from", "to"):
+        # Transactions pad numeric bank IDs (e.g. 010); account metadata uses 10.
+        # Normalize only the join key, preserving the original source identifiers.
+        bank_key = f"_{side}_bank_key"
+        normalized_bank = (
+            result[f"{side}_bank"].astype("string").str.lstrip("0").replace("", "0")
+        )
+        result = result.assign(**{bank_key: normalized_bank})
         renamed = accounts.rename(
             columns={
-                "bank_id": f"{side}_bank",
+                "bank_id": bank_key,
                 "account_number": f"{side}_account",
                 **{column: f"{side}_{column}" for column in metadata},
             }
         )
+        renamed[bank_key] = (
+            renamed[bank_key].astype("string").str.lstrip("0").replace("", "0")
+        )
         result = result.merge(
             renamed,
-            on=[f"{side}_bank", f"{side}_account"],
+            on=[bank_key, f"{side}_account"],
             how="left",
             validate="many_to_one",
-        )
+        ).drop(columns=[bank_key])
     return result
 
 
@@ -128,6 +144,9 @@ def _attach_usd_amounts(
     rates = fx_rates.copy()
     rates["txn_date"] = pd.to_datetime(rates["txn_date"], errors="raise").dt.date
     rates["currency"] = rates["currency"].astype("string")
+    rates['usd_rate'] = pd.to_numeric(rates.usd_rate, errors='raise')
+    if not (np.isfinite(rates.usd_rate) & rates.usd_rate.gt(0)).all():
+        raise ValueError('FX rates must be positive and finite')
     if rates.duplicated(["txn_date", "currency"]).any():
         raise ValueError("FX rates must be unique by (txn_date, currency)")
 
@@ -161,9 +180,10 @@ def build_curated_transactions(
     result["timestamp"] = pd.to_datetime(result["timestamp"], errors="raise")
     result["amount_received"] = pd.to_numeric(result["amount_received"], errors="raise")
     result["amount_paid"] = pd.to_numeric(result["amount_paid"], errors="raise")
-    result["is_laundering"] = pd.to_numeric(
-        result["is_laundering"], errors="raise"
-    ).astype("int8")
+    labels = pd.to_numeric(result['is_laundering'], errors='raise')
+    if not labels.isin([0, 1]).all():
+        raise ValueError('is_laundering must contain only 0 or 1')
+    result['is_laundering'] = labels.astype('int8')
     _validate_transactions(result)
 
     result["txn_date"] = result["timestamp"].dt.date
