@@ -33,9 +33,9 @@ variable "alert_email" {
 
 variable "monthly_budget_usd" {
   type    = number
-  default = 5
+  default = 10
   validation {
-    condition     = var.monthly_budget_usd > 0 && var.monthly_budget_usd <= 250
-    error_message = "Budget must be positive and no higher than the course's USD 250 cap."
+    condition     = var.monthly_budget_usd > 0 && var.monthly_budget_usd <= 10
+    error_message = "Budget must be positive and no higher than the user's USD 10 monthly maximum."
   }
 }

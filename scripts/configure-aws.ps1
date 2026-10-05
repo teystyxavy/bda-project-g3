@@ -69,7 +69,7 @@ if (Test-Path -LiteralPath $variablesPath) {
         aws_region = $Region
         project_name = 'is459-g3'
         alert_email = $alertEmail
-        monthly_budget_usd = 5
+        monthly_budget_usd = 10
     }
     $settingsJson = $settings | ConvertTo-Json
     [System.IO.File]::WriteAllText($variablesPath, $settingsJson, [System.Text.UTF8Encoding]::new($false))

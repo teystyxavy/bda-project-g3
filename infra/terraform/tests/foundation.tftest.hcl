@@ -41,14 +41,14 @@ run "smoke_plan_controls" {
   }
 
   assert {
-    condition     = length(aws_budgets_budget.account.notification) == 3 && tonumber(aws_budgets_budget.account.limit_amount) == 5
-    error_message = "Default budget notices must use the requested USD 5 threshold."
+    condition     = length(aws_budgets_budget.account.notification) == 3 && tonumber(aws_budgets_budget.account.limit_amount) == 10
+    error_message = "Default budget notices must use the requested USD 10 threshold."
   }
 }
 
 run "reject_over_budget" {
   command = plan
-  variables { monthly_budget_usd = 251 }
+  variables { monthly_budget_usd = 11 }
   expect_failures = [var.monthly_budget_usd]
 }
 
