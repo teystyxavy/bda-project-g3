@@ -144,7 +144,8 @@ joins and behaviour calculations. No AWS resources are needed.
 - AML amount features use prior-day FX to avoid same-day closing-price leakage;
   treasury totals use same-day historical valuation. Pre-dataset account history
   is unavailable. Rule weights remain exploratory because the earlier EDA used
-  the full dataset. Pattern enrichment, new-counterparty flags, and ML are pending.
+  the full dataset. Pattern enrichment and new-counterparty flags are pending;
+  the local ML comparison below is now implemented separately.
 
 September 11–18 is reported separately as a sparse tail: the full dataset has
 only 1,108 transactions in that period, including 655 laundering labels.
@@ -188,9 +189,123 @@ date is highlighted. HHI and shares use all bank pairs, not just the top 15 show
 Checked-in assets live in `dashboard/`; the exporter writes `dashboard.json`
 with source hashes and `validation-diagnostics.json`. There are no external
 JavaScript dependencies. These are local static views, not deployed or live
-alerts. BQ1 remains a sender cohort; BQ2 covers all 5,078,345 transactions.
+alerts. This earlier export represents a sender cohort for BQ1; BQ2 covers all
+5,078,345 transactions. The verified-cloud export below covers the full population
+for both questions.
+
+## Full-population insights from verified AWS data
+
+After downloading and verifying a successful full Glue run, score its curated
+Parquet and export both dashboard views locally:
+
+```powershell
+python scripts/export-verified-batch.py --curated output/full-cloud-optimized-20261005/curated --verification output/full-cloud-optimized-20261005/parity.json --output output/cloud-insights-new
+python -m http.server 4174 --bind 127.0.0.1 --directory output/cloud-insights-new/dashboard
+```
+
+Use a fresh output directory. The successful 2026-10-05 export is already saved
+under `output/cloud-insights-20261005/`. Open http://127.0.0.1:4174/ while its
+local server is running; stop the server with Ctrl+C when finished.
+
+The exporter requires a passed verification report, checks complete unique source
+IDs, positive-label counts and treasury count/USD reconciliation, then generates
+scores in batches. Training-only amount thresholds and globally ranked top-100
+queues preserve the existing chronological policy. The scored Parquet contains
+all rows but is not globally sorted; queue CSVs are ranked and omit labels.
+Artifacts include `bq1_scored.parquet`, `bq2_daily_corridors.parquet`, corridor
+rankings, concentration, period-specific review queues, `run_report.json`, and
+the static dashboard folder. Outputs remain gitignored.
+
+[Full-population validation](planning/cloud-insights-validation.md) records
+5,078,345 scored rows and browser checks. The exploratory baseline finds two
+labelled positives in the validation top 100 and zero in the test top 100;
+it is not a validated production AML model. No extra AWS jobs are needed for this
+export. The local ML comparison below is complete; cloud scoring/hosting remain
+separate future work.
+
+## Local model comparison
+
+Create an isolated environment for the optional ML dependencies:
+
+```powershell
+python -m venv output/ml-venv
+output/ml-venv/Scripts/python.exe -m pip install -e ".[dev,ml]"
+output/ml-venv/Scripts/python.exe -m pytest -q
+output/ml-venv/Scripts/python.exe scripts/compare-local-model.py --scored output/cloud-insights-20261005/bq1_scored.parquet --snapshot output/cloud-insights-20261005/dashboard/dashboard.json --output output/model-comparison-new
+```
+
+Use a fresh output directory. The input must match the full-population export's
+SHA256 manifest. Two CPU histogram XGBoost candidates (depths 3 and 5) train only
+on September 1–6, with at most 120 rounds, four threads and validation-only early
+stopping. Exact validation average precision selects the candidate; precision@100
+breaks ties. `selection.json` is saved before test data is loaded. The selected
+model is evaluated against the same rule baseline on validation, test and sparse
+tail; no test-set tuning or automatic promotion occurs.
+
+Features use prior-day USD amounts, strictly trailing history, current-time hour,
+self-transfer/currency-mismatch flags and training-only categorical vocabularies.
+IDs, labels, absolute dates and same-day FX valuation are excluded from model
+inputs. Class weights come only from training labels. Weighted outputs are ranking
+scores, **not calibrated laundering probabilities**.
+
+Outputs include native `.ubj` model files, `features.json`, `selection.json`,
+`comparison.json`, and label-free top-100 model queues with signed TreeSHAP margin
+contributions. Load a model with XGBoost and apply its saved feature schema; do
+not unpickle arbitrary artifacts. The original dashboard build remains the rule
+baseline; the model-enabled build below preserves it as a comparison. Training and comparison run locally,
+without AWS charges.
+
+[Model comparison results](planning/local-model-validation.md): the selected
+depth-5 model finds 44 labelled positives in the main test top 100 versus zero
+for the rule baseline. This is an exploratory synthetic-data result, not a
+production AML validation. The saved 2026-10-05 run is under
+`output/model-comparison-20261005/`.
+
+## Dashboard with the frozen model
+
+Reuse the saved model without fitting or tuning again:
+
+```powershell
+output/ml-venv/Scripts/python.exe scripts/build-model-dashboard.py --scored output/cloud-insights-20261005/bq1_scored.parquet --baseline output/cloud-insights-20261005/dashboard/dashboard.json --model-dir output/model-comparison-20261005 --output output/model-dashboard-new
+python -m http.server 4175 --bind 127.0.0.1 --directory output/model-dashboard-new
+```
+
+Use a fresh output directory. The existing built preview is at
+`output/model-dashboard-20261005/`, served at http://127.0.0.1:4175/ while its
+local server is running. Stop the server with Ctrl+C when finished.
+
+The build verifies source, model, selection and feature-schema hashes; reloads
+the frozen model; and reproduces all three period metrics before exporting.
+`SavedRanker.predict()` also works on feature rows without evaluation labels.
+Both queues and a side-by-side comparison are available. Model scores use 0–1,
+rules use 0–100, and neither is a probability. Model evidence uses readable feature
+names with signed margin contributions; synthetic bank/account strings retain
+leading zeros. CSV queues omit labels. Rule alert charts remain explicitly
+rule-only; no model threshold or model-alert counts are invented. Treasury data
+and original rule results are preserved unchanged. See
+[dashboard integration checks](planning/model-dashboard-validation.md).
 
 ## AWS batch foundation
+
+Dashboard hosting is now prepared locally in the separate, disabled-by-default
+`infra/hosting/` stack. An allowlisted four-file release can be built with:
+
+```powershell
+output/ml-venv/Scripts/python.exe scripts/prepare-dashboard-release.py --source output/model-dashboard-20261005 --output output/dashboard-release-new
+```
+
+Nothing has been published. See [hosting and cost review](planning/dashboard-hosting-review.md)
+for the private-origin/public-viewer distinction and approval gates. Cloud scoring
+now has a separate local inference entry point, frozen artifact packaging and
+Linux-container parity tooling; [cloud scoring status and commands](planning/cloud-scoring-preparation.md)
+describe the runtime compatibility checks. No scoring job is deployed in AWS yet.
+
+`infra/scoring/` now defines the separate, opt-in scoring job and run-scoped IAM
+permissions. It validates locally and passes five mocked tests; see the
+[scoring infrastructure review](planning/scoring-infrastructure-review.md) for
+trust compatibility, artifact staging and deployment/run approval gates.
+The user updated the live monthly budget alert to USD 10 on 2026-10-05; the local
+default and validation maximum are also 10. This is not a hard AWS spend cap.
 
 Start with [local AWS login](planning/aws-login.md). The
 `scripts/configure-aws.ps1` helper opens AWS browser authentication and saves
@@ -204,17 +319,27 @@ the required account subset and a local reference result without AWS calls.
 
 Follow [the AWS batch runbook](planning/aws-batch-runbook.md) for local parity
 tests, configuration, approval-gated deployment, reconciliation and cleanup.
-Terraform validation and three mocked planning tests pass. All 24 Python tests
+Terraform validation and three mocked planning tests pass. All 30 Python tests
 pass in the official Glue 5 container, including Spark parity; run them with
 `.\scripts\test-glue-local.ps1` after preparing the sample. An authenticated
 [deployment plan](planning/aws-plan-review.md) was applied with user approval.
-[Deployment checks](planning/aws-deployment-status.md) confirm 24 resources and
+[Deployment checks](planning/aws-deployment-status.md) confirm 25 resources and
 no drift. The approved 1,000-row cloud smoke run and both Athena queries succeeded;
 all 22 original curated fields match the local reference. The extended job now
 adds stable source-row IDs and opt-in exact rolling behaviour features; Spark
 parity tests pass. The user approved a bounded full-data run; see the deployment
-status document for its result: it timed out at ten minutes, so the full output
-is incomplete and must not be used for insights. Full-data verification uses
+status document for its results: the first run timed out, but the optimized
+retry succeeded in 386 execution seconds and passed full reconciliation.
+The original partial output remains invalid. Full-data verification uses
 `scripts/verify-aws-full.py` and `sql/reconcile-full.sql` against the separate
-`full_transactions` catalog table. AWS scoring, training and dashboard publishing
-remain pending.
+`full_transactions` catalog table. Full-population rule scoring and dashboard
+export from the verified cloud data now work locally; AWS scoring, ML training
+and dashboard publishing remain pending.
+
+[Local performance validation](planning/glue-performance-validation.md) records
+the queue-based optimization: full history features took 38.6 seconds locally,
+with exact agreement across the saved sender cohort. The optimized version is
+now deployed. The complete optimized local job finished in 163
+seconds and passed full ID/corridor reconciliation plus cohort feature parity.
+The approved cloud retry also passed these checks, including Athena.
+Further paid runs still require approval and a fresh output prefix.

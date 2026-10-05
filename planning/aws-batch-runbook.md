@@ -198,8 +198,8 @@ reordered or changed source files. Set `--behaviour true` to compute exact
 1h/24h/7d velocity and 24h/7d distinct-counterparty windows. All same-timestamp
 peers are excluded and bank keys are normalized for history calculations.
 
-The approved 2026-10-05 run uses `raw/full-20261005/` inputs and
-`curated/full-20261005/transactions/` output, with 5,078,345 expected rows,
+The successful optimized 2026-10-05 retry uses `raw/full-20261005/` inputs and
+`curated/full-optimized-20261005/transactions/` output, with 5,078,345 expected rows,
 two G.1X workers, ten-minute timeout, and zero retries. Terraform manages the
 separate `full_transactions` table. Its location is run-specific: future runs
 must use a new output prefix and a reviewed catalog-location change, not append
@@ -210,7 +210,7 @@ completed Parquet to a new local directory, then run (after installing the
 local package as described in README):
 
 ```powershell
-python scripts/verify-aws-full.py --curated output/full-20261005/curated --report output/full-20261005/parity.json
+python scripts/verify-aws-full.py --curated output/full-cloud-optimized-20261005/curated --report output/full-cloud-optimized-20261005/parity-recheck.json
 ```
 
 This checks every source ID for uniqueness and complete coverage, all daily
@@ -219,7 +219,18 @@ history features plus key transaction fields against the saved 256,557-row
 sender cohort. It does not claim full-population model validation or scoring.
 See the deployment-status document for actual results and run identifiers.
 
-## 6. Cleanup after the presentation
+## 6. Separate frozen-model scorer (local validation complete)
+
+The curation job remains unchanged. `jobs/score_transactions.py` is now locally
+tested in the pinned Glue 5 container: 44 tests pass, including a 1,024-row
+distributed inference/Parquet round-trip comparison with the frozen native model.
+See [scoring preparation and validation](cloud-scoring-preparation.md) for commands,
+Linux wheel packaging, trusted hashes and the XGBoost runtime-version difference.
+No cloud scoring resources, uploads or paid runs have occurred. Next prepare and
+review separate scoring IaC/IAM, refresh costs, and obtain explicit approval for
+one bounded smoke job. Do not rerun curation just to test scoring.
+
+## 7. Cleanup after the presentation
 
 Cleanup needs separate explicit approval. First inventory this Terraform
 state's resources and export evidence you need to retain. Review a destroy plan.

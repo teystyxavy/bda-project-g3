@@ -295,10 +295,11 @@ each day's partition already give adequate pruning for BQ2's bank-pair queries.
   FX ingestion job, §2)
 - Velocity features are computed **per normalized `(from_bank, from_account)`**,
   over `[timestamp - window, timestamp)`. Exclude all transactions sharing the
-  current timestamp. In Spark, use integer epoch seconds and
-  `Window.partitionBy("from_bank_key", "from_account").orderBy("epoch_seconds")
-  .rangeBetween(-window_seconds, -1)` for second-resolution input.
-  Local analysis uses per-sender queues and counterparty counters:
+  current timestamp. Spark now partitions by normalized sender, sorts by epoch
+  seconds/source index, then streams queues and counterparty counters. Each
+  timestamp reuses a snapshot taken before any of its peers are added. This
+  preserves exact range-window semantics while avoiding repeated distinct-set
+  construction for busy senders. Local analysis also uses per-sender queues:
   - `txn_count_1h` / `txn_count_24h` / `txn_count_7d`
   - `distinct_counterparties_24h` / `_7d` (count distinct normalized `(to_bank, to_account)`)
   - `is_new_account` = `to_account` not seen for this `from_account` in the prior
@@ -367,9 +368,12 @@ each day's partition already give adequate pruning for BQ2's bank-pair queries.
   individual multi-hop laundering attempts across both sets.
 - **Class imbalance:** ~0.1% positive rate (5,177/5M on `HI-Small`). Use
   XGBoost's `scale_pos_weight = neg_count/pos_count` rather than
-  oversampling/SMOTE, to keep output probabilities calibrated for ranking
-  (BQ1's actual use case is "rank transactions for a triage queue," per the
-  business question — calibration matters more than a fixed 0.5 threshold).
+  oversampling/SMOTE for this initial ranking experiment. Weighted logistic
+  outputs are **not calibrated probabilities**; do not present them as the
+  chance of laundering or apply an operational 0.5 threshold. BQ1 ranks
+  transactions for a fixed investigation capacity. Calibration would require
+  a separate chronological validation design before probability-based decisions.
+  See [XGBoost's imbalance guidance](https://xgboost.readthedocs.io/en/stable/tutorials/param_tuning.html).
 - **Metrics:** primary = PR-AUC, not ROC-AUC (ROC-AUC is misleadingly high under
   this class imbalance). Report `precision@100` / `recall@100` as the headline
   numbers, since they map directly to "how many of the top 100 ranked
@@ -379,6 +383,15 @@ each day's partition already give adequate pruning for BQ2's bank-pair queries.
   ID), and maintain a separate `s3://.../models/current_model_pointer.json`
   (`{run_id, metrics}`) that the streaming Lambda reads. Promoting or rolling
   back a model means updating the pointer file, not redeploying Lambda code.
+
+Local comparison is now implemented by `scripts/compare-local-model.py` using
+native XGBoost `.ubj` models plus a separate JSON feature vocabulary/schema.
+This replaces the planned local pickle/joblib format for portable, explicit
+model loading; future cloud/streaming code must consume the same saved schema.
+The validation-selected depth-5 model achieves 44/100 positives in the main
+test queue versus 0/100 for rules. See `planning/local-model-validation.md` for
+the frozen selection, reproducibility and exploratory-data limitations. No cloud
+model pointer or production promotion exists yet.
 
 ### 4.5 Streaming layer specifics
 
@@ -418,7 +431,13 @@ static assets hosted separately on S3/CloudFront; that deployment is pending.
 
 - **Dashboard 1 (BQ1):** ranked transaction queue (not an account ranking),
   evidence drilldown, alerts by day, score distribution, period metrics and
-  validation-only baseline comparisons. It currently represents the sender cohort.
+  validation-only baseline comparisons. The original local export represents
+  the sender cohort; `scripts/export-verified-batch.py` now exports all 5,078,345
+  verified cloud transactions, with full-population scope shown explicitly.
+  `scripts/build-model-dashboard.py` reloads the frozen model and adds a separately
+  labelled experimental queue, same-period model/rule comparison and margin
+  evidence. The original rule outputs and BQ2 data are retained; rule charts do
+  not pretend to be model alerts. This integration is local, not AWS hosting.
 - **Dashboard 2 (BQ2):** directed bank and currency corridor rankings, daily
   USD volume and HHI trends, all-period/day selection, and CSV export. Shares
   and HHI include all pairs, even when tables show only the top 15.
@@ -430,9 +449,24 @@ without these extra charts. Neither local view is a live alerting system.
 
 ### 4.8 Infra/ops gaps
 
+The live monthly budget is now USD 10 at the user's request, with the same alert
+thresholds and no hard spending cap. `infra/scoring/` is prepared separately and
+passes five mocked tests; no scoring deployment/run occurred. See
+`scoring-infrastructure-review.md` for scoped writes and strict Glue trust
+compatibility still requiring verification before a paid smoke run.
+
+2026-10-05 hosting preparation: `infra/hosting/` is a separate, locally validated
+stack with zero resources by default and explicit public-demo opt-in. Four mocked
+tests pass. The offline release packager allowlists only runtime dashboard assets;
+no deployment, uploads or publishing occurred. See `dashboard-hosting-review.md`.
+Cloud scoring now has a locally implemented entry point and frozen artifact
+packaging; `cloud-scoring-preparation.md` records Linux runtime parity and paid-run
+approval gates. No scorer is deployed in AWS. This does not change the verified
+batch infrastructure or optional X-factor priorities.
+
 Current foundation: `infra/terraform/`, `jobs/curate_transactions.py`, and
 `planning/aws-batch-runbook.md` define a manual 1,000-row curation smoke path.
-Terraform validates locally and passes three mocked planning tests. All 24
+Terraform validates locally and passes three mocked planning tests. All 30
 Python tests, including Spark parity, pass in the official Glue 5 container;
 the 24-resource foundation was deployed with user approval on 2026-10-05 and
 verified with a no-change plan. The approved 1,000-row Glue/Athena smoke path now
@@ -441,8 +475,13 @@ See `planning/aws-deployment-status.md`. This first version uses an explicit cat
 partition projection instead of crawlers. The failure EventBridge rule only
 notifies; orchestration and scheduled runs remain future enhancements. AWS
 rolling features and stable source IDs are now implemented and Spark parity-tested;
-scoring/training and dashboard publication remain pending. See the deployment
-status and runbook for actual full-run results and remaining gates.
+full-population rule scoring and dashboard export now run locally from the
+reconciled optimized cloud output. AWS scoring/training and dashboard publication
+remain pending. The rule baseline's full-population test top 100 contains zero
+positives; the locally validation-selected model finds 44. Keep both experiments
+exploratory and do not tune further on this already-used holdout. See
+`planning/cloud-insights-validation.md`, deployment status and the runbook for
+actual full-run results and remaining gates.
 
 - **IaC:** Terraform (HCL) — declarative, widely used for AWS, and decouples
   infra provisioning from the Glue PySpark/Lambda application code's language.
