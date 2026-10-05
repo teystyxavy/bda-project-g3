@@ -62,14 +62,14 @@ resource "aws_glue_catalog_table" "full" {
   database_name = aws_glue_catalog_database.curated.name
   table_type    = "EXTERNAL_TABLE"
   parameters = merge(aws_glue_catalog_table.smoke.parameters, {
-    "storage.location.template" = "s3://${aws_s3_bucket.pipeline.id}/curated/full-20261005/transactions/txn_date=$${txn_date}/"
+    "storage.location.template" = "s3://${aws_s3_bucket.pipeline.id}/curated/full-optimized-20261005/transactions/txn_date=$${txn_date}/"
   })
   partition_keys {
     name = "txn_date"
     type = "string"
   }
   storage_descriptor {
-    location      = "s3://${aws_s3_bucket.pipeline.id}/curated/full-20261005/transactions/"
+    location      = "s3://${aws_s3_bucket.pipeline.id}/curated/full-optimized-20261005/transactions/"
     input_format  = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
     ser_de_info {
