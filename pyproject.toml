@@ -14,6 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
+ml = ["xgboost>=3,<4"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
