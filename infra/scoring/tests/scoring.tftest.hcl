@@ -37,6 +37,25 @@ run "reject_input_escape" {
   variables { input_prefix = "curated/../raw" }
   expect_failures = [var.input_prefix]
 }
+run "exact_emrfs_markers" {
+  command = plan
+  variables { provision_scoring = true }
+  assert {
+    condition = toset(output.runtime_permissions.Statement[5].Resource) == toset([
+      "arn:aws:s3:::is459-g3-123456789012-ap-southeast-1/scored/smoke-20261005/transactions_$folder$",
+      "arn:aws:s3:::is459-g3-123456789012-ap-southeast-1/tmp/scoring/smoke-20261005_$folder$"
+    ]) && length(output.runtime_permissions.Statement[1].Condition.StringLike["s3:prefix"]) == 10
+    error_message = "Permit only the two exact EMRFS root markers; never broaden to sibling prefixes."
+  }
+}
+run "explicit_success_marker" {
+  command = plan
+  variables { provision_scoring = true }
+  assert {
+    condition = aws_glue_job.scoring[0].non_overridable_arguments["--conf"] == "spark.hadoop.mapreduce.fileoutputcommitter.marksuccessfuljobs=true"
+    error_message = "Select direct _SUCCESS creation rather than EMRFS ancestor mkdirs at final commit."
+  }
+}
 run "reject_run_escape" {
   command = plan
   variables { run_id = "../curated" }

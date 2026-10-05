@@ -1,0 +1,73 @@
+{
+  "status": "verified-1024-row-smoke",
+  "job_run_id": "jr_16bd257e4e249cac514b5088672bac7e04aee598ad08eed033275a4f87d99339",
+  "started_on": "2026-10-06T00:22:07.882000+08:00",
+  "completed_on": "2026-10-06T00:24:16.168000+08:00",
+  "execution_seconds": 120,
+  "output_uri": "s3://is459-g3-588738581042-ap-southeast-1/scored/smoke-success-20261006/transactions/",
+  "success_marker_verified": true,
+  "marker_encryption": "AES256",
+  "infrastructure_changes": {
+    "added": 0,
+    "updated": 2,
+    "destroyed": 0,
+    "uploaded": 0
+  },
+  "compute_estimate_usd": 0.029333333333333333,
+  "all_four_smokes_compute_estimate_usd": 0.1051111111111111,
+  "cost_scope": "Compute estimates at verified Singapore Glue rate; ancillary costs and billing lag excluded",
+  "parity": {
+    "status": "passed",
+    "job_run_id": "jr_16bd257e4e249cac514b5088672bac7e04aee598ad08eed033275a4f87d99339",
+    "job_state": "SUCCEEDED",
+    "pipeline_passed": true,
+    "rows": 1024,
+    "unique_ids": 1024,
+    "feature_columns_checked": [
+      "transaction_id",
+      "source_row_index",
+      "timestamp",
+      "from_bank",
+      "from_account",
+      "to_bank",
+      "to_account",
+      "amount_usd_asof",
+      "amount_usd",
+      "txn_count_1h",
+      "txn_count_24h",
+      "txn_count_7d",
+      "distinct_counterparties_24h",
+      "distinct_counterparties_7d",
+      "payment_format",
+      "payment_currency",
+      "receiving_currency"
+    ],
+    "labels_excluded": true,
+    "score_rtol": 1e-06,
+    "score_atol": 1e-07,
+    "max_absolute_score_difference": 0.0,
+    "date_partitions": [
+      "2022-09-01",
+      "2022-09-07",
+      "2022-09-09",
+      "2022-09-12"
+    ],
+    "cohort_top100_ids_match": true,
+    "explanations": "reconstructed locally from cloud features and frozen model; not emitted by cloud job",
+    "manifest_sha256": "323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f",
+    "native_fixture_sha256": "5b8c9e61d431a1b67ddc0654d41b69227863c106cca059bb24a0ff49e9b6e21c",
+    "output_parquet_sha256": {
+      "txn_date=2022-09-01\\part-00000-2ee56a60-2a08-4d1d-9757-9bf28389704e.c000.snappy.parquet": "92787604217b8b9440f567b89d262a429e271063a03ab25c00cef43a6fb46287",
+      "txn_date=2022-09-07\\part-00000-2ee56a60-2a08-4d1d-9757-9bf28389704e.c000.snappy.parquet": "4719bb81cdfef7faef5648fe1464dee0286439859c7ee9ed057eda09e25c3d39",
+      "txn_date=2022-09-09\\part-00000-2ee56a60-2a08-4d1d-9757-9bf28389704e.c000.snappy.parquet": "655ee98d891f03e5bb1e6fac0787385bdd5d48f1d254651d3ff5c980b057c0a6",
+      "txn_date=2022-09-12\\part-00000-2ee56a60-2a08-4d1d-9757-9bf28389704e.c000.snappy.parquet": "5b43753b3b0001bba3906308a71a2b8a3a62caf2398bca63e3b39b4d6a564969"
+    },
+    "scope": "1024-row cohort parity only; no full-data evaluation or model retuning"
+  },
+  "limitations": [
+    "1,024-row smoke only",
+    "explanations reconstructed locally",
+    "full-data scoring not run",
+    "dashboard not published"
+  ]
+}

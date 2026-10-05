@@ -17,6 +17,16 @@ SCORING_COLUMNS = ['transaction_id', 'source_row_index', 'timestamp', 'from_bank
                    'amount_usd', *FEATURES, *CATEGORICAL]
 
 
+def resolve_model_directory(directory, localized_manifest):
+    """Default to Spark's localized files, never assume the Glue working directory."""
+    if str(directory) == '.':
+        manifest = Path(localized_manifest)
+        if not manifest.is_file():
+            raise ValueError('Spark-localized model manifest is missing')
+        return manifest.resolve().parent
+    return Path(directory).resolve()
+
+
 def verify_artifacts(directory, manifest_sha256):
     directory = Path(directory)
     manifest_path = directory / 'model-manifest.json'
@@ -30,8 +40,11 @@ def verify_artifacts(directory, manifest_sha256):
     if set(manifest['files']) != expected_names:
         raise ValueError('Invalid artifact allowlist')
     for name, expected in manifest['files'].items():
-        if (directory / name).is_symlink() or digest(directory / name) != expected:
-            raise ValueError(f'Artifact manifest mismatch: {name}')
+        if (directory / name).is_symlink():
+            raise ValueError(f'Artifact must not be a symlink: {name}')
+        actual = digest(directory / name)
+        if actual != expected:
+            raise ValueError(f'Artifact manifest mismatch: {name}; expected={expected}; actual={actual}')
     return manifest
 
 

@@ -226,9 +226,39 @@ tested in the pinned Glue 5 container: 44 tests pass, including a 1,024-row
 distributed inference/Parquet round-trip comparison with the frozen native model.
 See [scoring preparation and validation](cloud-scoring-preparation.md) for commands,
 Linux wheel packaging, trusted hashes and the XGBoost runtime-version difference.
-No cloud scoring resources, uploads or paid runs have occurred. Next prepare and
-review separate scoring IaC/IAM, refresh costs, and obtain explicit approval for
-one bounded smoke job. Do not rerun curation just to test scoring.
+The separate scoring stack and both approved artifact releases are deployed.
+The localization retry scored all 1,024 rows with exact native parity but FAILED
+at output commit. Exact Glue job/account trust worked. Four partial Parquet files
+are retained for diagnosis, with no success marker. See
+[smoke and retry history](scoring-infrastructure-review.md). The third smoke also
+FAILED with exact parity; root-marker permissions were insufficient. See
+[current commit review](scoring-success-marker-review.md) for the tested explicit
+success-marker setting. The approved fourth run **SUCCEEDED** in 120 execution
+seconds, with a real S3 `_SUCCESS` and ordinary 1,024-row reconciliation showing
+zero score difference. Two updates applied, zero uploads; the post-apply plan
+showed no changes. Another paid run needs its own approval. Do not rerun curation to test
+scoring, overwrite original artifacts, or treat the failed prefix as validated.
+
+The successful run's Parquet was downloaded privately to
+`C:/Users/lowth/AppData/Local/IS459-G3/scoring-success-verification/curated`.
+Verification already passed and its report exists. To repeat only local
+reconciliation, choose a fresh report filename (existing reports are protected):
+
+```powershell
+output/ml-venv/Scripts/python.exe scripts/verify-cloud-scoring-smoke.py --curated C:/Users/lowth/AppData/Local/IS459-G3/scoring-success-verification/curated --package output/cloud-scoring-retry-prepared-20261005 --run-report C:/Users/lowth/AppData/Local/IS459-G3/scoring-success-status.json --report output/scoring-smoke-success/parity-repeat.json
+```
+
+For future approved runs, also verify the run's `_SUCCESS` object exists in S3;
+never create it manually. The verifier
+requires SUCCEEDED and checks count/IDs, features, scores, date partitions and
+cohort queues; locally reconstructed explanations are identified explicitly.
+Preserve failed-run evidence and require approval before a full-data run.
+For diagnosis only, `--forensic` allows FAILED reports and explicitly returns
+`pipeline_passed=false`; it never promotes a partial prefix. The saved
+`output/scoring-localized-forensics-20261005/forensic-parity.json` checks all
+1,024 partial rows, features, partitions and top-100 order. Explanations were
+reconstructed locally. Five verifier tests cover the success gate and diagnostic
+mode; the failed prefix must never be reused or published.
 
 ## 7. Cleanup after the presentation
 

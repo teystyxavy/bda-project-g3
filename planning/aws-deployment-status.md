@@ -3,9 +3,25 @@
 Latest budget update: the user requested USD 10 monthly. AWS UpdateBudget and
 subsequent DescribeBudget verified USD 10, with the existing actual-spend alerts
 retained. Terraform defaults/examples/tests and private variables match; this is
-an alert, not a hard spend cap. No scoring resources or paid jobs were started.
+an alert, not a hard spend cap. That budget-only step started no scoring jobs.
 USD 5 figures below describe earlier plans and billing snapshots, not the current
-budget. See `scoring-infrastructure-review.md` for the prepared scoring stack.
+budget. Subsequent authorized scoring smoke work deployed nine separate
+resources and staged nine checked files. One 1,024-row run failed before scoring
+on the artifact guard after 79 execution seconds; strict Glue trust worked for
+this execution. The approved localization retry then applied two updates, staged
+eight verified artifacts and FAILED at output commit after 126 execution seconds.
+Its four partial Parquet files contain 1,024 rows with exact native score parity;
+there is no success marker, and they are not valid pipeline output. A narrow
+EMRFS marker fix was approved and applied, but the third paid run also FAILED at
+the folder check after 105 execution seconds. Its partial 1,024-row scores match
+the native fixture exactly. The user then approved explicit success-marker
+configuration and one fourth run. It **SUCCEEDED** on 2026-10-06 after 120
+execution seconds, with a real `_SUCCESS` and ordinary 1,024-row reconciliation
+showing exact native score parity. Two updates applied with zero uploads;
+post-apply plan showed no changes. See `scoring-success-marker-review.md`.
+No full-data cloud scoring or dashboard publishing occurred.
+See `scoring-infrastructure-review.md` for run evidence, retained private state
+and retry review. Foundation resources and verified curation remain unchanged.
 
 The user approved infrastructure deployment. Terraform applied the reviewed
 USD 5 monthly-budget plan: **24 resources added, zero changed, zero destroyed**.

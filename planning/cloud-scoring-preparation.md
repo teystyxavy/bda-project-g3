@@ -1,8 +1,21 @@
 # Cloud scoring implementation gate
 
-Status: a separate scoring entry point and offline artifact tooling are now
-implemented locally. Nothing has been uploaded, deployed or run in AWS. The
-existing Glue curation job is unchanged; ML training has only run locally.
+Latest status: the approved fourth smoke **SUCCEEDED** on 2026-10-06 in 120
+execution seconds after explicitly enabling Hadoop success markers. The real S3
+`_SUCCESS` exists; ordinary reconciliation passed all 1,024 rows with zero score
+difference, exact features/identities, correct partitions and matching top-100
+order. Two updates applied, zero uploads. Seven infrastructure tests pass and the
+post-apply plan showed no changes. See [verified smoke evidence](scoring-success-marker-review.md).
+This verifies the 1,024-row path, not full-data scoring or cloud-emitted explanations.
+
+Earlier status: the approved localization retry deployed two updates, staged eight
+verified artifacts and ran once. All 1,024 cloud scores matched the native fixture
+exactly, but Glue FAILED while committing output (S3 ListBucket denied). Partial
+output is forensic evidence only. A narrow EMRFS marker fix, six infrastructure
+tests and 23 IAM boundary checks pass. A fresh two-update plan reuses those
+artifacts without uploads; its third paid run awaits approval.
+See [smoke evidence and retry review](scoring-infrastructure-review.md).
+The existing curation job is unchanged; ML training has only run locally.
 
 ## Implemented local path
 
@@ -101,8 +114,9 @@ dataset's unverified real-world timezone.
 4. Prepared locally in `infra/scoring/`: separate Terraform scoring job and narrowly scoped
    model/input reads and fresh output-prefix writes. Keep the existing rule
    baseline and curated data immutable. BQ2 remains full-population, not queue-only.
-   Five mocked tests pass; no deployment has occurred. See `scoring-infrastructure-review.md`
-   for strict trust-context compatibility and staging checks still needed.
+   Five mocked tests pass; the original stack is now deployed. See
+   `scoring-infrastructure-review.md` for empirical strict-trust compatibility,
+   the failed first smoke and the locally prepared retry.
 5. Review current spend and a bounded smoke-run plan, obtain explicit approval,
    then run one small cohort before any full dataset run. Proposed guardrails:
    two G.1X workers, at most ten minutes, zero retries, one concurrent run. These

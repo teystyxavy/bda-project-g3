@@ -451,9 +451,20 @@ without these extra charts. Neither local view is a live alerting system.
 
 The live monthly budget is now USD 10 at the user's request, with the same alert
 thresholds and no hard spending cap. `infra/scoring/` is prepared separately and
-passes five mocked tests; no scoring deployment/run occurred. See
-`scoring-infrastructure-review.md` for scoped writes and strict Glue trust
-compatibility still requiring verification before a paid smoke run.
+passes seven mocked tests. The separately approved scoring stack is now deployed;
+its first 1,024-row run failed before scoring on the artifact guard. Exact Glue
+job/account trust worked for that execution. See `scoring-infrastructure-review.md`
+for scoped writes and evidence. The approved localization retry scored all 1,024
+rows exactly like the native fixture, then FAILED at S3 output commit; those
+partial files are not valid pipeline output. A narrow EMRFS marker-permission fix
+was applied, but the third run still FAILED at the folder check, with exact
+1,024-row score parity. A direct offline test of Glue's Hadoop library confirms
+the marker-disabled commit branch calls `mkdirs`. A fresh two-update, no-upload
+plan explicitly enabled `_SUCCESS`; the approved fourth run **SUCCEEDED** after
+120 execution seconds with the real S3 marker and exact native parity on all
+1,024 rows. IDs, features, partitions and cohort top-100 order also reconcile.
+This verifies the smoke path only; full-data scoring and publishing require
+separate approval. See `scoring-success-marker-review.md`.
 
 2026-10-05 hosting preparation: `infra/hosting/` is a separate, locally validated
 stack with zero resources by default and explicit public-demo opt-in. Four mocked
@@ -476,8 +487,8 @@ partition projection instead of crawlers. The failure EventBridge rule only
 notifies; orchestration and scheduled runs remain future enhancements. AWS
 rolling features and stable source IDs are now implemented and Spark parity-tested;
 full-population rule scoring and dashboard export now run locally from the
-reconciled optimized cloud output. AWS scoring/training and dashboard publication
-remain pending. The rule baseline's full-population test top 100 contains zero
+reconciled optimized cloud output. Successful AWS scoring, cloud training and
+dashboard publication remain pending. The rule baseline's full-population test top 100 contains zero
 positives; the locally validation-selected model finds 44. Keep both experiments
 exploratory and do not tune further on this already-used holdout. See
 `planning/cloud-insights-validation.md`, deployment status and the runbook for

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from bda_pipeline.inference import SCORING_COLUMNS, score_frame, verify_artifacts
+from bda_pipeline.inference import SCORING_COLUMNS, resolve_model_directory, score_frame, verify_artifacts
 
 
 def test_label_free_scoring_and_fail_closed_inputs():
@@ -32,3 +32,53 @@ def test_manifest_external_anchor(tmp_path):
     (tmp_path / 'model-manifest.json').write_text('{}')
     with pytest.raises(ValueError, match='Trusted'):
         verify_artifacts(tmp_path, '0'*64)
+
+
+def test_default_directory_uses_localized_manifest_instead_of_cwd(tmp_path, monkeypatch):
+    localized = tmp_path / 'localized'
+    localized.mkdir()
+    manifest = localized / 'model-manifest.json'
+    manifest.write_text('{}')
+    working = tmp_path / 'working'
+    working.mkdir()
+    (working / 'model-manifest.json').write_text('wrong working-directory file')
+    monkeypatch.chdir(working)
+    assert resolve_model_directory('.', manifest) == localized.resolve()
+    with pytest.raises(ValueError, match='localized model manifest is missing'):
+        resolve_model_directory('.', tmp_path / 'absent.json')
+    assert resolve_model_directory(localized, tmp_path / 'absent.json') == localized.resolve()
+
+
+def test_manifest_diagnostics_distinguish_symlink_and_changed_bytes(tmp_path):
+    import json
+    from bda_pipeline.model import digest
+    names = ['comparison.json', 'features.json', 'selection.json', 'hist-depth5.ubj']
+    for name in names:
+        (tmp_path / name).write_bytes(b'original')
+    manifest = dict(model_file='hist-depth5.ubj', files={n: digest(tmp_path / n) for n in names})
+    anchor = tmp_path / 'model-manifest.json'
+    anchor.write_text(json.dumps(manifest))
+    trusted = digest(anchor)
+    (tmp_path / 'comparison.json').write_bytes(b'changed')
+    with pytest.raises(ValueError, match='expected=.*actual='):
+        verify_artifacts(tmp_path, trusted)
+
+
+def test_symlink_rejection_is_explicit(tmp_path):
+    import json
+    from bda_pipeline.model import digest
+    names = ['comparison.json', 'features.json', 'selection.json', 'hist-depth5.ubj']
+    for name in names:
+        (tmp_path / name).write_bytes(b'original')
+    manifest = dict(model_file='hist-depth5.ubj', files={n: digest(tmp_path / n) for n in names})
+    anchor = tmp_path / 'model-manifest.json'
+    anchor.write_text(json.dumps(manifest))
+    trusted = digest(anchor)
+    original = tmp_path / 'comparison-original.json'
+    (tmp_path / 'comparison.json').rename(original)
+    try:
+        (tmp_path / 'comparison.json').symlink_to(original)
+    except OSError:
+        pytest.skip('Symlinks unavailable; covered in the Glue Linux container')
+    with pytest.raises(ValueError, match='must not be a symlink'):
+        verify_artifacts(tmp_path, trusted)

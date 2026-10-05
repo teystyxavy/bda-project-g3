@@ -7,7 +7,7 @@ from pyspark import SparkFiles, StorageLevel
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import DoubleType, LongType, StringType, StructField, StructType, TimestampType, TimestampNTZType
 
-from bda_pipeline.inference import SCORING_COLUMNS, score_frame, verify_artifacts, worker_ranker
+from bda_pipeline.inference import SCORING_COLUMNS, resolve_model_directory, score_frame, verify_artifacts, worker_ranker
 
 
 def score(spark, input_path, output_path, model_dir, manifest_sha256, expected_rows):
@@ -18,10 +18,14 @@ def score(spark, input_path, output_path, model_dir, manifest_sha256, expected_r
     filesystem = target.getFileSystem(spark._jsc.hadoopConfiguration())
     if filesystem.exists(target):
         raise ValueError('Use a fresh scoring output prefix')
+    already_localized = str(model_dir) == '.'
+    if already_localized:
+        model_dir = resolve_model_directory(model_dir, SparkFiles.get('model-manifest.json'))
     manifest = verify_artifacts(model_dir, manifest_sha256)
     worker_ranker(str(Path(model_dir).resolve()), manifest_sha256, 1)
-    for name in [*manifest['files'], 'model-manifest.json']:
-        spark.sparkContext.addFile(str((Path(model_dir) / name).resolve()))
+    if not already_localized:
+        for name in [*manifest['files'], 'model-manifest.json']:
+            spark.sparkContext.addFile(str((Path(model_dir) / name).resolve()))
     spark.conf.set('spark.sql.session.timeZone', 'UTC')
     spark.conf.set('spark.sql.execution.arrow.maxRecordsPerBatch', '10000')
     incoming = spark.read.parquet(input_path).select(*SCORING_COLUMNS)

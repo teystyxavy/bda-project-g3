@@ -1,14 +1,17 @@
 locals {
-  count          = var.provision_scoring ? 1 : 0
-  bucket         = "is459-g3-${var.aws_account_id}-${var.aws_region}"
-  bucket_arn     = "arn:aws:s3:::${local.bucket}"
-  job_name       = "is459-g3-score-frozen"
-  job_arn        = "arn:aws:glue:${var.aws_region}:${var.aws_account_id}:job/${local.job_name}"
-  output_prefix  = "scored/${var.run_id}/transactions"
-  temp_prefix    = "tmp/scoring/${var.run_id}"
-  log_prefix     = "/is459-g3/scoring/glue"
-  readable       = [var.input_prefix, var.artifact_prefix, local.output_prefix, local.temp_prefix]
-  writable       = [local.output_prefix, local.temp_prefix]
+  count         = var.provision_scoring ? 1 : 0
+  bucket        = "is459-g3-${var.aws_account_id}-${var.aws_region}"
+  bucket_arn    = "arn:aws:s3:::${local.bucket}"
+  job_name      = "is459-g3-score-frozen"
+  job_arn       = "arn:aws:glue:${var.aws_region}:${var.aws_account_id}:job/${local.job_name}"
+  output_prefix = "scored/${var.run_id}/transactions"
+  temp_prefix   = "tmp/scoring/${var.run_id}"
+  log_prefix    = "/is459-g3/scoring/glue"
+  readable      = [var.input_prefix, var.artifact_prefix, local.output_prefix, local.temp_prefix]
+  writable      = [local.output_prefix, local.temp_prefix]
+  # EMRFS probes a sibling _$folder$ key when committing a directory.
+  # Limit this exception to the two exact run roots, never prefix*.
+  folder_markers = [for prefix in local.writable : "${prefix}_$folder$"]
   artifact_files = ["comparison.json", "features.json", "selection.json", var.model_filename, "model-manifest.json"]
   logs           = [for suffix in ["error", "output"] : "arn:aws:logs:${var.aws_region}:${var.aws_account_id}:log-group:${local.log_prefix}/${suffix}:*"]
   # Complete runtime permissions. No broad AWS-managed policy is attached.
@@ -18,7 +21,7 @@ locals {
       { Sid = "BucketLocation", Effect = "Allow", Action = ["s3:GetBucketLocation"], Resource = [local.bucket_arn] },
       {
         Sid       = "ListOnlyRunPrefixes", Effect = "Allow", Action = ["s3:ListBucket"], Resource = [local.bucket_arn]
-        Condition = { StringLike = { "s3:prefix" = flatten([for prefix in local.readable : [prefix, "${prefix}/*"]]) } }
+        Condition = { StringLike = { "s3:prefix" = concat(flatten([for prefix in local.readable : [prefix, "${prefix}/*"]]), local.folder_markers) } }
       },
       {
         Sid      = "ReadInputArtifactsAndOwnOutput", Effect = "Allow", Action = ["s3:GetObject"]
@@ -32,6 +35,11 @@ locals {
       {
         Sid      = "WriteOnlyScoringLogs", Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents"]
         Resource = local.logs
+      },
+      {
+        Sid      = "CommitExactRunRootMarkers", Effect = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = [for marker in local.folder_markers : "${local.bucket_arn}/${marker}"]
       }
     ]
   }
@@ -89,8 +97,11 @@ resource "aws_glue_job" "scoring" {
     "--additional-python-modules"       = "s3://${local.bucket}/${var.artifact_prefix}/runtime.gluewheels.zip"
     "--python-modules-installer-option" = "--no-index"
     "--job-bookmark-option"             = "job-bookmark-disable"
-    "--custom-logGroup-prefix"          = local.log_prefix
-    "--TempDir"                         = "s3://${local.bucket}/${local.temp_prefix}/"
+    # Glue's marker-disabled final commit calls EMRFS mkdirs.
+    # A success marker stays inside the output prefix and makes completion explicit.
+    "--conf"                   = "spark.hadoop.mapreduce.fileoutputcommitter.marksuccessfuljobs=true"
+    "--custom-logGroup-prefix" = local.log_prefix
+    "--TempDir"                = "s3://${local.bucket}/${local.temp_prefix}/"
   }
   depends_on = [aws_iam_role_policy.scoring, aws_cloudwatch_log_group.scoring]
 }

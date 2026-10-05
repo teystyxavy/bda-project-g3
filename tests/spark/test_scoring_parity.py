@@ -53,6 +53,13 @@ def test_saved_model_spark_arrow_and_partition_roundtrip(tmp_path):
         assert queue.model_evidence.tolist() == expected_queue.model_evidence.tolist()
         np.testing.assert_allclose(queue.explanation_total_margin, expected_queue.explanation_total_margin,
                                    rtol=1e-6, atol=1e-6)
+        # Glue has already registered --extra-files in Spark. The default must
+        # read those copies without re-registering a conflicting source path.
+        MODULE.score(session, str(PACKAGE / 'fixture/input.parquet'),
+                     str(tmp_path / 'localized-scored'), '.', metadata['manifest_sha256'], len(expected))
+        localized = session.read.parquet(str(tmp_path / 'localized-scored')).toPandas()
+        localized = localized.sort_values('source_row_index').reset_index(drop=True)
+        np.testing.assert_allclose(localized.model_score, expected.model_score, rtol=1e-6, atol=1e-7)
         with pytest.raises(ValueError, match='fresh'):
             MODULE.score(session, str(PACKAGE / 'fixture/input.parquet'), str(tmp_path / 'scored'),
                          str(PACKAGE / 'artifacts'), metadata['manifest_sha256'], len(expected))

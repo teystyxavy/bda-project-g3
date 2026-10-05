@@ -220,8 +220,8 @@ the static dashboard folder. Outputs remain gitignored.
 5,078,345 scored rows and browser checks. The exploratory baseline finds two
 labelled positives in the validation top 100 and zero in the test top 100;
 it is not a validated production AML model. No extra AWS jobs are needed for this
-export. The local ML comparison below is complete; cloud scoring/hosting remain
-separate future work.
+export. The local ML comparison below is complete; successful cloud scoring and
+hosting remain separate milestones.
 
 ## Local model comparison
 
@@ -298,12 +298,19 @@ Nothing has been published. See [hosting and cost review](planning/dashboard-hos
 for the private-origin/public-viewer distinction and approval gates. Cloud scoring
 now has a separate local inference entry point, frozen artifact packaging and
 Linux-container parity tooling; [cloud scoring status and commands](planning/cloud-scoring-preparation.md)
-describe the runtime compatibility checks. No scoring job is deployed in AWS yet.
+describe the runtime compatibility checks. The scoring stack is now deployed.
+The approved fourth 1,024-row smoke **SUCCEEDED** on 2026-10-06 in 120 execution
+seconds after explicitly enabling Hadoop success markers. S3 `_SUCCESS` exists;
+all scores match the frozen native fixture exactly, with matching features,
+identities, partitions and cohort top-100 order. Strict Glue trust worked.
+See [verified smoke evidence](planning/scoring-success-marker-review.md).
+Earlier failed prefixes remain forensic evidence only. Full-data cloud scoring
+and dashboard publishing have not run and need separate approval.
 
 `infra/scoring/` now defines the separate, opt-in scoring job and run-scoped IAM
-permissions. It validates locally and passes five mocked tests; see the
+permissions. It validates locally and passes seven mocked tests; see the
 [scoring infrastructure review](planning/scoring-infrastructure-review.md) for
-trust compatibility, artifact staging and deployment/run approval gates.
+trust evidence, artifact staging and the historical failed smoke attempts.
 The user updated the live monthly budget alert to USD 10 on 2026-10-05; the local
 default and validation maximum are also 10. This is not a hard AWS spend cap.
 
@@ -333,8 +340,8 @@ retry succeeded in 386 execution seconds and passed full reconciliation.
 The original partial output remains invalid. Full-data verification uses
 `scripts/verify-aws-full.py` and `sql/reconcile-full.sql` against the separate
 `full_transactions` catalog table. Full-population rule scoring and dashboard
-export from the verified cloud data now work locally; AWS scoring, ML training
-and dashboard publishing remain pending.
+export from the verified cloud data now work locally; successful AWS scoring,
+cloud ML training and dashboard publishing remain pending.
 
 [Local performance validation](planning/glue-performance-validation.md) records
 the queue-based optimization: full history features took 38.6 seconds locally,

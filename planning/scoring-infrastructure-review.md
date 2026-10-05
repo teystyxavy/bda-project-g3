@@ -1,9 +1,22 @@
 # Frozen scoring infrastructure review — 2026-10-05
 
-Terraform in `infra/scoring/` validates and passes five mocked planning tests.
-No scoring resources have been deployed, artifacts uploaded or jobs started.
-The only live change this step was the explicitly requested monthly budget
-update from USD 5 to **USD 10**.
+Latest status (2026-10-06): the approved fourth smoke **SUCCEEDED** in 120
+execution seconds. Two updates applied with zero uploads. Explicit Hadoop
+success-marker creation resolved the observed commit failure; S3 `_SUCCESS`
+exists and ordinary reconciliation passed all 1,024 rows with zero score
+difference, exact features/IDs, partitions and cohort top-100 order. Strict
+account/job trust remains verified. Seven infrastructure tests pass and the
+post-apply plan showed no changes. See [verified smoke evidence](scoring-success-marker-review.md).
+Earlier failed prefixes remain invalid; full-data scoring and publishing have
+not run and require separate approval.
+
+Earlier status: the approved localization retry applied two updates,
+uploaded eight verified artifacts and ran once. Its 1,024 scores exactly match
+the native fixture, but the job FAILED at output commit (S3 ListBucket denied).
+Partial output is forensic evidence only. A narrow EMRFS marker fix and fresh
+two-update plan pass local and IAM checks; one third paid smoke awaits approval.
+No further uploads are needed. Earlier sections are historical snapshots;
+the final section below supersedes their pending-retry status.
 
 ## Isolation and limits
 
@@ -201,13 +214,209 @@ least-privilege deployment policy**:
   only creates. It does not grant Glue StartJobRun or S3 artifact uploads;
   deployment, staging, execution and eventual cleanup remain separate scopes.
 
-No manually reconstructed substitute policy was created. Before using a new
-deployment identity, refine the tool-generated result against the reviewed plan
-and official action/resource support, validate it, and review any remaining
-wildcards. Generation does not simulate the actual deployment identity, prove
-complete provider permissions, or resolve Glue service trust context. Existing
-short-lived login credentials remain the current authentication approach.
+The generated baseline is preserved. The user's subsequent instruction to
+proceed with refinement authorized narrowing that baseline; the following
+local candidate selects actions from it and scopes them against AWS's official
+authorization reference. This is a refinement, not a new inference of provider
+actions from Terraform. Existing short-lived login credentials remain the
+current authentication approach.
 
-Approval remains required for the nine-resource apply, the manifest's exact
-uploads and one bounded 1,024-row smoke run. No apply, upload, paid scoring run,
-dashboard publication or changes to the existing curation role occurred.
+### Completed local refinement and validation — 2026-10-05
+
+Final candidate, outside OneDrive:
+`C:/Users/lowth/AppData/Local/IS459-G3/scoring-deployment-policy-refined-v2.json`.
+SHA256: `9b65b6c899cf4143c45f4902cb98b8069383153913c4ab1f643beebdca7ed925`.
+Its `.review.json` companion records baseline/plan/reference hashes and removed
+actions. Earlier candidate/results are preserved as historical reviews; use v2.
+
+The final candidate has nine statements and removes 30 distinct baseline
+actions, including deletion, managed-policy attachment/removal and unrelated
+IAM tagging. IAM actions address only the two named roles; each PassRole
+statement binds one exact role to its intended service. Job/rule permissions
+address their exact names. Log creation/retention/legacy tagging use the named
+group ARNs with `:*`; modern tag/list-tag actions use the corresponding ARNs
+without that suffix, per [AWS LogGroup ARN guidance](https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_LogGroup.html).
+
+Two read-only broad scopes remain deliberately:
+
+- `logs:DescribeLogGroups` has `Resource: "*"` because the action does not
+  support resource-level permissions. This lists account log groups; it grants
+  no log contents or changes to other log groups.
+- `glue:GetUsageProfile` has the account/region `usageProfile/*` scope. AWS's
+  [programmatic Glue reference](https://servicereference.us-east-1.amazonaws.com/v1/glue/glue.json)
+  lists it among CreateJob authorized actions. No specific usage profile is
+  named in this plan, so retaining the generated read dependency avoids assuming
+  it is unnecessary. No usage-profile writes or unrestricted Glue access exist.
+
+IAM role creation and PutRolePolicy necessarily allow setting the two roles'
+trust and inline permissions; scoping their ARNs does not constrain the policy
+contents to Terraform's intended JSON. This is a deployment-operator candidate,
+not an enforced permissions boundary. Do not attach it to untrusted automation.
+
+Reproducible offline refinement from the project root:
+
+```powershell
+output/ml-venv/Scripts/python.exe scripts/refine-scoring-deployment-policy.py --baseline C:/Users/lowth/AppData/Local/IS459-G3/scoring-deployment-policy-review.json --plan C:/Users/lowth/AppData/Local/IS459-G3/scoring-plan.json --references output/scoring-policy-refinement-20261005 --output C:/Users/lowth/AppData/Local/IS459-G3/scoring-deployment-policy-refined-new.json
+output/ml-venv/Scripts/python.exe -m pytest -q tests/test_scoring_policy_refinement.py
+```
+
+Use a fresh output filename. Reference snapshots are gitignored public AWS
+service-reference JSON files, with hashes in the review companion. The refiner
+rejects different accounts/regions, resources/names, non-create actions and
+weakened Glue trust, selects only actions already in the Autopilot baseline,
+checks AWS resource-type support and makes no network requests or AWS changes.
+It is tailored to this nine-resource stack, not a general policy generator.
+
+Verification:
+
+- All **8 local adversarial tests passed**, covering account/region changes,
+  extra/renamed resources, deletion/update/replacement and weaker Glue trust.
+- AWS Access Analyzer standard ValidatePolicy returned **no findings** for v2;
+  result is privately saved as `scoring-deployment-policy-validation-v2.json`.
+  No paid custom check was invoked. See [AWS validation guidance](https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-policy-validation.html).
+- Final IAM custom-policy simulations allowed the scoring role only for Glue
+  and the failure role only for EventBridge, denied cross-role use and an
+  unrelated administrator role, and denied all three roles for Lambda.
+  Sixteen named-resource checks denied StartJobRun, S3 PutObject, DeleteRole and
+  AttachRolePolicy. Results are the private `scoring-final-*-simulation.json`
+  files. Split per-statement inputs preserved the policy union while respecting
+  the simulator's per-input size limit; use ResourceSpecificResults for the
+  per-ARN decisions rather than the combined decision summary.
+
+These checks evaluate this candidate in isolation. They do not prove the actual
+deployment identity's permissions, provider apply success, cleanup coverage or
+Glue-populated STS context. No deployment policy was attached. The strict trust
+gate above is unchanged; resolving it still requires AWS confirmation or the
+explicitly approved fail-closed cloud smoke path.
+
+### Authorized cloud smoke and prepared retry — 2026-10-05
+
+After reviewing the cost, plan, exact uploads and limits, the user instructed
+the agent to proceed with strict-trust verification. The stated execution scope
+was nine-resource provisioning, the nine-file manifest and one 1,024-row run.
+Fresh preflight rechecked hashes, empty destinations, account and runtime limits.
+
+The private `scoring-smoke-approved.tfplan` applied **9 additions, 0 changes,
+0 deletions**. All nine S3 objects were uploaded with `If-None-Match: *`, AES256
+and SHA256 checksums, then checked with HeadObject. Receipts/version IDs are in
+private `scoring-smoke-upload-receipts.json`. No generated deployment policy was
+attached; the existing approved CLI login performed the deployment.
+
+Run `jr_fe07e06068eb3d61eaf7f71c25a184d0a7c18996e17fd3ceda8ff74b5c9d3f54`
+started 2026-10-05 **23:30:03.840 SGT**, ended **23:31:35.215 SGT**, and reported
+**FAILED**, 79 execution seconds, two G.1X workers and a ten-minute timeout.
+Error: `ValueError: Artifact manifest mismatch: comparison.json`.
+No output objects exist at `scored/smoke-20261005/transactions/`; the failure
+occurred before input loading and scoring. No second run was started.
+
+Live trust was checked before starting and remained exact SourceAccount/job
+SourceArn. The job downloaded its dependencies and executed the scorer, with
+CloudWatch logs saved privately. **Strict-trust compatibility is empirically
+verified for this job/account/region**, not a claim for every Glue role use case.
+The failure-delivery target is deployed, but SNS receipt has not been verified.
+
+The downloaded S3 `comparison.json` has the expected SHA256
+`eba4f4993aa2a26d62c6640814c11ef54d835d141eb552a8784e1ca2a88aed36`.
+The original guard used one error message for either symlink rejection or
+checksum mismatch, so the error does not establish byte corruption. Glue logs
+showed artifacts under `extra-files/` and Spark's localized directory; the
+scorer assumed the process working directory. Working-directory symlinks or
+localization are suspected; exact root cause is not established by these logs.
+Executor connection errors followed the driver's exit and are not the primary
+failure. The original objects and failure evidence remain unchanged.
+
+Locally, the default now resolves the manifest through SparkFiles and reads its
+canonical directory. Already localized files are not added to Spark again with
+conflicting source paths. Explicit local model paths still work. The hash guard
+still rejects tampering and symlinks, with distinct messages and expected/actual
+hashes for byte mismatches. **12 native targeted tests passed, 1 symlink test
+skipped on Windows; all 6 relevant pinned Glue-container tests passed**, including
+that symlink test and distributed parity through the default localized path.
+The container used offline wheels, no network and no AWS credentials.
+
+Fresh local package: `output/cloud-scoring-retry-prepared-20261005/`.
+Frozen model/manifest unchanged; source ZIP SHA256 is
+`c75a2558ac400a1668575911370c1896ee259d191b8cbe826c9b003f1b34f153`.
+Its `upload-review.json` lists **8 files** at
+`scoring-artifacts/frozen-localized-20261005/`; the existing verified input is
+reused. The private `scoring-localized-retry.tfplan` updates only the scoring job
+and its inline runtime policy: **0 additions, 2 updates, 0 deletions**, to the new
+artifact prefix and `smoke-localized-20261005` output/temp prefixes. Trust,
+worker/timeout/retry limits, curation and model selection remain unchanged.
+All three proposed fresh destinations were empty when checked. This plan was
+not applied and the new release was not uploaded.
+
+The failed run's compute estimate is **USD 0.019311** using reported execution
+seconds and the verified rate, excluding ancillary charges and billing timing.
+This is not a reconciled bill. Retry planning retains the earlier approximately
+USD 0.225 illustrative total scenario and ten-minute compute estimate of
+USD 0.146667; actual logs, requests and storage may differ.
+
+`scripts/verify-cloud-scoring-smoke.py` is prepared to reconcile downloaded
+successful output with native fixtures: unique IDs, all features, label
+exclusion, score tolerances, partitions and cohort top-100 order. It requires a
+SUCCEEDED run report; it has not verified cloud output from this failed run.
+Explanation comparison is reconstructed locally from cloud features and the
+frozen model, not claimed as cloud-emitted explanation output.
+
+**Fresh approval is required for the eight-file uploads, two-update plan and one
+second paid smoke run.** No automatic retry, trust relaxation, destructive
+cleanup, dashboard publication or full-data scoring occurred. A post-apply
+plan with the original smoke settings reported no drift. Keep the scoring
+backend enabled when checking this live stack; defaulting provision_scoring to
+false would propose destruction.
+
+## Approved localization retry and prepared commit fix — 2026-10-06
+
+The user approved the eight-file upload, two-update plan and one retry. All eight
+new artifact objects were uploaded with verified bytes, SHA256 and encryption;
+the immutable original input was reused. The plan applied **0 additions,
+2 updates, 0 deletions**. No trust or worker/time/retry limit changed.
+
+Run `jr_86b9d7e6c34c8b88c2df4f5ae65f0bc27c4fea9620b8ff76edfcb2d0367ef20a`
+started **2026-10-05 23:47:36.558 SGT**, ended **23:49:51.248 SGT**, and
+reported **FAILED**, **126 execution seconds**. Artifact verification, input
+reading, distributed scoring and four Parquet writes completed. Final commit
+failed with **S3 ListBucket 403**, through EMRFS `isFolderUsingFolderObject`,
+`mkdirs` and `createSuccessMarkerOrEnsureOutputPathExists`. There is no `_SUCCESS`.
+The prefix `scored/smoke-localized-20261005/transactions/` remains unvalidated;
+do not reuse, promote, publish or delete it without applicable approval.
+
+Downloaded partial files remain outside OneDrive in the private
+`scoring-localized-forensics/curated` folder. Diagnostic report:
+`output/scoring-localized-forensics-20261005/forensic-parity.json`.
+It confirms **1,024 unique rows**, exact source/features, label exclusion,
+correct date partitions, **zero absolute score difference**, and matching
+cohort top-100 IDs/order. Explanation comparison is reconstructed locally,
+not cloud-emitted. Its explicit status is `forensic-parity-only-failed-run` and
+`pipeline_passed=false`. The ordinary verifier still requires SUCCEEDED.
+Five verifier tests pass, including refusal to promote failed forensic output.
+
+AWS documents [EMRFS directory markers with the `_$folder$` suffix](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-s3a-migrate.html).
+The old prefix condition allows only `prefix` and `prefix/*`, excluding sibling
+root markers. The failing stack and documented convention support that diagnosis;
+the exact denied request prefix was not recorded, so the marker root cause is
+an inference pending cloud verification. No additional paid telemetry was enabled.
+
+Prepared `infra/scoring/main.tf` adds exact marker listing and Get/Put/Delete
+permission for only the output and temporary roots of a fresh run. No bucket-wide
+listing or `prefix*` exception is added. Six mocked infrastructure tests pass;
+Access Analyzer ValidatePolicy has no findings. Read-only IAM custom simulations
+pass **8 prefix contexts and 15 object/action boundaries**, including denials for
+empty/shared prefixes, other runs, marker suffix extensions and input writes.
+Simulations do not prove real EMRFS behavior or replace a successful cloud commit.
+
+Private `scoring-commit-retry.tfplan`: **0 additions, 2 updates, 0 deletions**.
+SHA256: `d106ebe35041976a2accaedb8e9f3ee106cd655b662db50d00dbc0053ec7a4ae`.
+Only job output/temp destinations and the inline runtime policy change. Fresh
+run ID: `smoke-commit-20261006`; both destination inventories were empty when
+checked. Reuse `scoring-artifacts/frozen-localized-20261005/` and the verified
+1,024-row input; **zero uploads**. Two G.1X workers, ten-minute timeout, zero
+automatic retries and concurrency one remain fixed. The plan is not applied;
+no third run has started. Applying it and starting one paid run require approval.
+
+Retry compute estimate: **USD 0.030800**; the two smoke attempts total an
+estimated **USD 0.050111**, excluding ancillary charges and billing lag.
+A third run's ten-minute compute estimate remains **USD 0.146667**, plus actual
+logs, requests and storage. These are estimates, not reconciled bills or caps.
+No full-data scoring, dashboard publication, curation rerun or cleanup occurred.
