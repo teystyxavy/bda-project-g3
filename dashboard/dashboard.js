@@ -35,13 +35,23 @@ function trend(target, rows, field, formatter, selected) {
   table(`${target}-values`,['Date',field==='hhi'?'HHI':'USD volume'],rows.map(row=>[row.day,row[field]==null?'Unavailable':formatter(row[field])]));
 }
 
+function isModelQueue() {return Boolean(snapshot.model) && element('scoring').value==='model';}
+function currentQueue() {return isModelQueue()?snapshot.model.views[element('split').value]:snapshot.aml[element('split').value];}
+
 function renderAml() {
-  const current=snapshot.aml[element('split').value], metrics=current.metrics;
-  cards('aml-kpis', [['Cohort transactions',integer(metrics.rows),'Selected period'],['Flagged transactions',integer(current.flagged),'Score ≥60'],[`Precision@${metrics.k}`,percent(metrics.precision_at_k),'Label-positive fraction of top queue'],[`Recall@${metrics.k}`,percent(metrics.recall_at_k),`${integer(metrics.positives)} labelled positives in period`]]);
-  element('aml-note').textContent=element('split').value==='tail'?'Sparse tail: unusually few transactions and high positive-label prevalence. Do not compare directly with the main test period.':`Exploratory baseline · average precision ${metrics.average_precision==null?'unavailable':metrics.average_precision.toFixed(4)} · lift@${metrics.k} ${metrics.lift_at_k==null?'unavailable':metrics.lift_at_k.toFixed(2)+'×'}. Low precision means many selected transactions are false positives.`;
-  bars('alerts', current.daily, row=>row.day, 'alerts');
-  bars('scores', current.histogram, row=>`Score ${row.risk_score}`, 'transactions');
-  table('queue',['Transaction','Time','Score','Payment','Prior-day USD','Reasons'],current.queue.map(row=>[row.transaction_id,row.timestamp.replace('T',' ').slice(0,16),row.risk_score,row.payment_format,dollars(row.amount_usd_asof),row.risk_reasons||'No rule triggered']));
+  const rules=snapshot.aml[element('split').value], current=currentQueue(), metrics=current.metrics, model=isModelQueue();
+  cards('aml-kpis', [[snapshot.aml_scope==='full'?'Transactions':'Cohort transactions',integer(metrics.rows),'Selected period'],model?['Review capacity',integer(metrics.k),'Top-ranked queue · no model threshold']:['Rule-flagged transactions',integer(rules.flagged),'Rule score ≥60'],[`Precision@${metrics.k}`,percent(metrics.precision_at_k),'Label-positive fraction of top queue'],[`Recall@${metrics.k}`,percent(metrics.recall_at_k),`${integer(metrics.positives)} labelled positives in period`]]);
+  const note=`Exploratory ${model?'frozen model':'rule baseline'} · average precision ${metrics.average_precision==null?'unavailable':metrics.average_precision.toFixed(4)} · lift@${metrics.k} ${metrics.lift_at_k==null?'unavailable':metrics.lift_at_k.toFixed(2)+'×'}.`;
+  element('aml-note').textContent=note+(element('split').value==='tail'?' Sparse tail: unusually few transactions and high positive-label prevalence. Do not compare directly with the main test period.':' Positive labels evaluate the queue; scores are not probabilities.');
+  if (snapshot.model) {
+    table('comparison',['Scorer','Positive labels in top queue','Precision@100','Recall@100','Average precision'],
+      [['Rule baseline',rules.metrics],['Frozen model · experimental',snapshot.model.views[element('split').value].metrics]].map(([name,m])=>[name,`${Math.round(m.precision_at_k*m.k)} / ${m.k}`,percent(m.precision_at_k),percent(m.recall_at_k),m.average_precision==null?'Unavailable':m.average_precision.toFixed(4)]));
+  }
+  bars('alerts', rules.daily, row=>row.day, 'alerts');
+  bars('scores', rules.histogram, row=>`Rule score ${row.risk_score}`, 'transactions');
+  element('queue-title').textContent=model?'Frozen-model investigation queue':'Rule-baseline investigation queue';
+  element('queue-note').textContent=`Top ${metrics.k} in this period; ties use timestamp then source row. ${model?'Model score 0–1 is uncalibrated; evidence explains model margins.':'Rule score 0–100 is a priority.'} Select a row for evidence.`;
+  table('queue',['Transaction','Time',model?'Model score (0–1)':'Rule score (0–100)','Payment','Prior-day USD',model?'Model margin evidence':'Rule reasons'],current.queue.map(row=>[row.transaction_id,row.timestamp.replace('T',' ').slice(0,16),model?Number(row.model_score).toFixed(4):row.risk_score,row.payment_format,dollars(row.amount_usd_asof),model?row.model_evidence:row.risk_reasons||'No rule triggered']));
   element('queue').querySelectorAll('tbody tr').forEach((row,index)=>{
     const button=document.createElement('button'); button.textContent=current.queue[index].transaction_id;
     button.addEventListener('click',()=>showDetail(current.queue[index])); row.firstChild.replaceChildren(button);
@@ -50,8 +60,9 @@ function renderAml() {
 }
 
 function showDetail(row) {
+  const model=isModelQueue();
   element('detail').hidden=false;
-  element('detail').innerHTML=`<h3>${escapeText(row.transaction_id)}</h3><p>Sender ${escapeText(row.from_bank)} / ${escapeText(row.from_account)} → receiver ${escapeText(row.to_bank)} / ${escapeText(row.to_account)}</p><p>${escapeText(row.risk_reasons||'No rule triggered')}. Prior hour: ${integer(row.txn_count_1h)} transactions. Prior 24 hours: ${integer(row.distinct_counterparties_24h)} distinct counterparties. Original payment currency: ${escapeText(row.payment_currency)}.</p><button id="close-detail">Close detail</button>`;
+  element('detail').innerHTML=`<h3>${escapeText(row.transaction_id)}</h3><p>Sender ${escapeText(row.from_bank)} / ${escapeText(row.from_account)} → receiver ${escapeText(row.to_bank)} / ${escapeText(row.to_account)}</p><p>${escapeText(model?row.model_evidence:row.risk_reasons||'No rule triggered')}. Prior hour: ${integer(row.txn_count_1h)} transactions. Prior 24 hours: ${integer(row.distinct_counterparties_24h)} distinct counterparties. Original payment currency: ${escapeText(row.payment_currency)}.</p>${model?`<p>Top three signed model-margin contributions; positive values push the score up, negative values push it down. Bias margin ${Number(row.explanation_bias_margin).toFixed(4)}; full total margin ${Number(row.explanation_total_margin).toFixed(4)} includes all features. This is not causal evidence or a calibrated probability.</p>`:''}<button id="close-detail">Close detail</button>`;
   element('close-detail').onclick=()=>{element('detail').hidden=true;};
 }
 
@@ -81,16 +92,27 @@ async function start() {
     if(!response.ok) throw new Error(`Data request failed (${response.status})`);
     snapshot=await response.json();
     if(snapshot.schema_version!==1) throw new Error('Unsupported snapshot version');
-    element('status').textContent=`Snapshot generated ${snapshot.generated_at.slice(0,10)} · AML cohort ${integer(snapshot.cohort_rows)} rows · Treasury ${integer(snapshot.full_rows)} rows`;
+    const fullAml = snapshot.aml_scope === 'full';
+    element('status').textContent=`Snapshot generated ${snapshot.generated_at.slice(0,10)} · AML ${fullAml ? 'full population' : 'cohort'} ${integer(snapshot.cohort_rows)} rows · Treasury ${integer(snapshot.full_rows)} rows`;
+    if (fullAml) {
+      element('aml-scope').textContent='Retrospective full-population queue. Rule scores are priorities, not probabilities.';
+      element('score-scope').textContent='All transactions in the selected period.';
+      element('method-scope').textContent='Both views cover the full HI-Small population. Features come from the verified AWS Glue run; rule scoring and snapshot export run locally.';
+    }
+    if (snapshot.model) {
+      element('scoring-control').hidden=false;element('model-comparison').hidden=false;element('model-methods').hidden=false;
+      element('aml-scope').textContent='Retrospective full-population queues. Compare frozen-model ranking with the rule baseline; neither score is a probability.';
+      element('scoring').onchange=renderAml;
+    }
     snapshot.treasury_daily.forEach(row=>{const option=document.createElement('option');option.value=row.day;option.textContent=row.day;element('day').appendChild(option);});
     element('aml-tab').onclick=()=>{element('aml').hidden=false;element('treasury').hidden=true;element('aml-tab').setAttribute('aria-pressed','true');element('treasury-tab').setAttribute('aria-pressed','false');};
     element('treasury-tab').onclick=()=>{element('aml').hidden=true;element('treasury').hidden=false;element('aml-tab').setAttribute('aria-pressed','false');element('treasury-tab').setAttribute('aria-pressed','true');renderTreasury();};
     element('split').onchange=renderAml;element('day').onchange=renderTreasury;
-    element('export-queue').onclick=()=>download(snapshot.aml[element('split').value].queue,`queue-${element('split').value}.csv`);
+    element('export-queue').onclick=()=>download(currentQueue().queue,`queue-${isModelQueue()?'model':'rules'}-${element('split').value}.csv`);
     element('export-corridors').onclick=()=>download(snapshot.treasury[element('day').value].banks,`corridors-${element('day').value}.csv`);
     table('variants',['Variant','Precision@100','Recall@100','Average precision'],snapshot.diagnostics.variants.map(row=>[row.variant,percent(row.precision_at_k),percent(row.recall_at_k),row.average_precision==null?'Unavailable':row.average_precision.toFixed(4)]));
     table('reasons',['Score','Reasons','Reviewed','Positives','False positives'],snapshot.diagnostics.top100_reasons.map(row=>[row.risk_score,row.risk_reasons,row.reviewed,row.positives,row.false_positives]));
-    element('provenance').textContent=JSON.stringify({generated_at:snapshot.generated_at,sources:snapshot.sources},null,2);
+    element('provenance').textContent=JSON.stringify({generated_at:snapshot.generated_at,sources:snapshot.sources,provenance:snapshot.provenance,model:snapshot.model?{name:snapshot.model.name,provenance:snapshot.model.provenance}:undefined},null,2);
     element('aml').hidden=false;renderAml();
   } catch(error) {element('status').textContent=`Unable to load dashboard: ${error.message}. Serve this folder over HTTP and rebuild the snapshot if needed.`;}
 }
