@@ -204,10 +204,17 @@ the required account subset and a local reference result without AWS calls.
 
 Follow [the AWS batch runbook](planning/aws-batch-runbook.md) for local parity
 tests, configuration, approval-gated deployment, reconciliation and cleanup.
-Terraform validation and three mocked planning tests pass. All 21 Python tests
+Terraform validation and three mocked planning tests pass. All 24 Python tests
 pass in the official Glue 5 container, including Spark parity; run them with
 `.\scripts\test-glue-local.ps1` after preparing the sample. An authenticated
 [deployment plan](planning/aws-plan-review.md) was applied with user approval.
 [Deployment checks](planning/aws-deployment-status.md) confirm 24 resources and
-no drift. Dataset upload and AWS job/query execution remain pending approval.
-AWS behaviour features, scoring, training and dashboard publishing remain pending.
+no drift. The approved 1,000-row cloud smoke run and both Athena queries succeeded;
+all 22 original curated fields match the local reference. The extended job now
+adds stable source-row IDs and opt-in exact rolling behaviour features; Spark
+parity tests pass. The user approved a bounded full-data run; see the deployment
+status document for its result: it timed out at ten minutes, so the full output
+is incomplete and must not be used for insights. Full-data verification uses
+`scripts/verify-aws-full.py` and `sql/reconcile-full.sql` against the separate
+`full_transactions` catalog table. AWS scoring, training and dashboard publishing
+remain pending.

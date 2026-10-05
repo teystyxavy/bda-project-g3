@@ -1,7 +1,8 @@
 # AWS batch foundation runbook
 
 Status: foundation deployed from `feature/aws-batch-foundation` on 2026-10-05.
-See [deployment verification](aws-deployment-status.md). No workload has run yet.
+See [deployment verification](aws-deployment-status.md). The approved 1,000-row
+Glue smoke run and both Athena checks have now succeeded.
 Terraform formatting, provider validation, and three mocked planning tests pass.
 All 21 Python tests pass in the official Glue 5 container, including the 1,000-row
 Spark/Parquet parity test and non-USD same-day/prior-day FX checks. The native
@@ -9,7 +10,8 @@ Windows Python suite still skips the Spark module; use the container runner for
 the complete suite. An authenticated plan completed on 2026-10-05 with 24
 additions and no changes/deletions; see [the saved-plan review](aws-plan-review.md).
 That infrastructure plan has now been applied with user approval; the follow-up
-plan reports no changes. Service execution remains pending separate approval.
+plan reports no changes. The sample execution was separately approved and verified;
+full-data execution remains pending approval.
 
 Verified on 2026-10-04: the actual job entry point also completed through
 `spark-submit --master local[2]` in that container using the sample inputs,
@@ -187,7 +189,37 @@ implement stable row IDs and exact behaviour-window parity, then full-history
 scoring and dashboard export. A full run needs its own raw and curated prefixes,
 expected row count, catalog table, and measured timeout/worker sizing.
 
-## 5. Cleanup after the presentation
+## 5. Full-data run and verification
+
+The extended job preserves physical source row IDs from one immutable CSV
+(`HI-Small:<zero-based row>`). It rejects directory input. Keep the original
+one-record-per-line source and record its SHA256; IDs are not stable across
+reordered or changed source files. Set `--behaviour true` to compute exact
+1h/24h/7d velocity and 24h/7d distinct-counterparty windows. All same-timestamp
+peers are excluded and bank keys are normalized for history calculations.
+
+The approved 2026-10-05 run uses `raw/full-20261005/` inputs and
+`curated/full-20261005/transactions/` output, with 5,078,345 expected rows,
+two G.1X workers, ten-minute timeout, and zero retries. Terraform manages the
+separate `full_transactions` table. Its location is run-specific: future runs
+must use a new output prefix and a reviewed catalog-location change, not append
+another run under the existing table. Do not query until Glue is SUCCEEDED.
+
+Run `sql/reconcile-full.sql` in the existing Athena workgroup. Download the
+completed Parquet to a new local directory, then run (after installing the
+local package as described in README):
+
+```powershell
+python scripts/verify-aws-full.py --curated output/full-20261005/curated --report output/full-20261005/parity.json
+```
+
+This checks every source ID for uniqueness and complete coverage, all daily
+currency/bank corridor aggregates against the full local reference, and five
+history features plus key transaction fields against the saved 256,557-row
+sender cohort. It does not claim full-population model validation or scoring.
+See the deployment-status document for actual results and run identifiers.
+
+## 6. Cleanup after the presentation
 
 Cleanup needs separate explicit approval. First inventory this Terraform
 state's resources and export evidence you need to retain. Review a destroy plan.

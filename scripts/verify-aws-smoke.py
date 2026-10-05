@@ -5,11 +5,19 @@ import json
 from pathlib import Path
 
 import pandas as pd
+from bda_pipeline.analytics import add_behaviour
 
 
 def verify(expected_path, curated_path):
-    expected = pd.read_parquet(expected_path).drop(columns=["source_row_index"])
+    expected = pd.read_parquet(expected_path)
     actual = pd.read_parquet(curated_path)
+    # Support both the original deployed smoke schema and the extended job.
+    if "transaction_id" in actual:
+        expected["transaction_id"] = "HI-Small:" + expected.source_row_index.astype(str)
+    if "txn_count_1h" in actual:
+        expected = add_behaviour(expected)
+    if "source_row_index" not in actual:
+        expected = expected.drop(columns=["source_row_index"])
     if set(actual.columns) != set(expected.columns):
         raise ValueError("Cloud and local output schemas differ")
     columns = sorted(expected.columns)
