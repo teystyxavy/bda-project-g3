@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-07",
+  "timezone": "Asia/Singapore",
+  "implementation_commit": "24d282780f90cb2995388a4a82fb39bcca5d91d0",
+  "branch": "feature/aws-batch-foundation",
+  "status_stack": {
+    "plan": {
+      "add": 10,
+      "change": 0,
+      "delete": 0
+    },
+    "apply": {
+      "added": 10,
+      "changed": 0,
+      "deleted": 0
+    },
+    "post_apply_no_drift": true,
+    "endpoint": "https://i5xro01dni.execute-api.ap-southeast-1.amazonaws.com/status"
+  },
+  "checks": {
+    "requested_python": "38 passed",
+    "dashboard_tests": "13 passed",
+    "all_non_spark_python": "208 passed, 1 skipped",
+    "terraform_validate": "passed",
+    "terraform_mock_test": "1 passed",
+    "offline_container_export": "passed",
+    "live_status_render_harness": "14 passed including live-response render check",
+    "step_5": {
+      "get_status": 200,
+      "post_status": 404,
+      "get_runs": 404,
+      "latest_run": "opt-release-cache-20261006-aws1",
+      "latest_status": "SUCCEEDED",
+      "recent_runs": 6,
+      "stages": 8,
+      "cors": "existing CloudFront origin only",
+      "private_identifiers_exposed": false,
+      "visual_browser": "unverified: browser tool failed to initialize before page access; no screenshot claimed"
+    }
+  },
+  "dashboard": {
+    "status": "passed",
+    "public_asset_hashes": {
+      "index.html": "8c91bf006c829407cd331eb1a18ecc55cf8ebe91621c0ebb96339a2b7a241ecb",
+      "dashboard.css": "373d641558d8e2487ec314306737a01dbf7ec6dcebd8c114fced682b938fe29e",
+      "dashboard.js": "41d6862644f143cdce49929e66b888d3a216b791ecec037790566b4586617c51",
+      "dashboard.json": "db01a52c9e3d0f5eef88f8d8aa3e88c88c037df6430ce7ac6701907ef4b1731f"
+    },
+    "ui_release": "insights-ui-20261007-v1",
+    "source_pipeline_run": "opt-train-cache-20261006-aws1",
+    "status_endpoint": "https://i5xro01dni.execute-api.ap-southeast-1.amazonaws.com/status",
+    "latest_run": "opt-release-cache-20261006-aws1",
+    "latest_status": "SUCCEEDED",
+    "recent_runs": 6,
+    "stage_count": 8
+  },
+  "full_snapshot_validation": {
+    "status": "passed",
+    "source_rows": 5078345,
+    "capacity_metric_checks": 462,
+    "heatmaps_reconciled": 19,
+    "original_top100_metrics_unchanged": true,
+    "queue_labels_absent": true,
+    "records": 9587,
+    "account_histories": 1445,
+    "tracked_corridors": 203
+  },
+  "worker": {
+    "previous_artifacts_retained": 11,
+    "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:32da460583c29718c409ed0c78b06c5e6de930bbe7472f7d261da472ffa0dd0c",
+    "deployment_sha256": "ef314af9401c8dad96fb20c04b45b0158b509ccbc1612933527c8e98ac53441c",
+    "apply": {
+      "added": 11,
+      "changed": 4,
+      "deleted": 0
+    },
+    "post_apply_no_drift": true,
+    "paid_jobs_started": false
+  },
+  "paid_pipeline_jobs_started": false,
+  "operator_control_stack_deployed": false
+}

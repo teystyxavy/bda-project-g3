@@ -1,6 +1,15 @@
 # Dashboard pipeline status (public, read-only)
 
-**Implemented locally; not deployed.** Gives the deployed dashboard's Ingestion tab a
+**Deployed 7 October 2026:** 10 additions, 0 changes, 0 deletions; post-apply plan
+shows no drift. Public endpoint:
+<https://i5xro01dni.execute-api.ap-southeast-1.amazonaws.com/status>.
+Dashboard assets, endpoint configuration and the bundled processing image are
+published. GET returns the latest run plus six recent runs; POST `/status` and
+GET `/runs` return 404. The live response passes the dashboard render harness.
+Final browser visual acceptance remains unverified because the browser tool
+failed to initialize. See [deployment evidence](../../planning/evidence/dashboard-status-exploration-result-20261007.json).
+
+Gives the deployed dashboard's Ingestion tab a
 live view of the AWS pipeline without sign-in. One unauthenticated `GET /status` route
 on an HTTP API calls a small Lambda that reads Step Functions status for
 `is459-g3-cloud-ingest` and its `is459-g3-ingest` child. It returns the 10 most recent

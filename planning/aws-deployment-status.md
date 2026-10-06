@@ -1,5 +1,15 @@
 # AWS foundation deployment â€” 2026-10-05
 
+**Dashboard update, 7 October 2026:** BQ1/BQ2 exploration and the public read-only
+Ingestion status feed are deployed. The status stack added 10 resources with no
+updates/deletions. The separately reviewed bundled worker update retained its
+predecessor artifacts. Both post-apply plans show no drift. Public asset hashes,
+GET status and unsupported-route checks passed; the live-response render harness
+shows the latest run and six recent runs. Final browser visual acceptance remains
+unverified because the browser tool failed to initialize. No paid batch jobs were
+started. See [evidence](evidence/dashboard-status-exploration-result-20261007.json)
+and [status setup](../infra/dashboard-status/README.md).
+
 **Optimisation update, 6 October 2026:** the full batch optimisations are
 implemented and deployed. The fresh 5,078,345-row rebuild took **20m55s**, versus
 24m59s previously (**16.3% faster**, one observed run per configuration). Both

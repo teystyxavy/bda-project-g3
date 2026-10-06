@@ -1,9 +1,11 @@
 # Dashboard exploration and read-only pipeline status
 
-The merged dashboard has been verified locally against the existing 5,078,345-row
-verified snapshot and frozen model. Publication and status-stack deployment are
-recorded separately in deployment evidence; this document does not establish AWS
-deployment success by itself.
+The merged dashboard is deployed as UI release `insights-ui-20261007-v1`, using the
+existing 5,078,345-row verified snapshot and frozen model. Status-stack deployment,
+worker update and public asset verification are recorded in
+[deployment evidence](../evidence/dashboard-status-exploration-result-20261007.json).
+Final browser visual acceptance is unverified because the browser tool failed to
+initialize; the captured live status payload passed the dashboard render harness.
 
 ## Business views
 

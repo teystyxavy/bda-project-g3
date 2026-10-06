@@ -1,5 +1,17 @@
 # Big Data Pipeline Plan — IBM AML Transactions
 
+**Dashboard deployment, 7 October 2026:** expanded BQ1/BQ2 exploration and a public
+read-only Ingestion status feed are deployed. UI release `insights-ui-20261007-v1`
+retains the verified 5,078,345-row source run and frozen model. The status-only
+stack added 10 resources with zero updates/deletions; the separate worker update
+retained all predecessor artifacts and deployed the matching bundled dashboard.
+Both post-apply plans show no drift. Endpoint/asset checks and the live-response
+render harness passed; final browser visual acceptance is unverified because the
+browser tool failed to initialize. No paid pipeline jobs were started. See
+[evidence](evidence/dashboard-status-exploration-result-20261007.json) and
+[coverage/limits](runbooks/dashboard-exploration.md). The older pending-deployment
+note below describes only the protected operator-control stack.
+
 **Dashboard UI update, 6 October 2026:** an Ingestion tab, authenticated run-control
 API and separate Terraform stack are implemented locally. They reuse the existing
 acquisition/batch workflows and support HI-Small demo/full selection, candidate

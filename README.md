@@ -15,11 +15,14 @@ It answers two separate questions:
 [Documentation index](planning/README.md) ·
 [Demonstration runbook](planning/delivery/final-demo-runbook.md)
 
-The dashboard now includes an **Ingestion** tab for selecting HI-Small demo/full
-runs, launching ingestion and tracking workflow stages. The protected API and
-operator sign-in are implemented locally; their new infrastructure has **not**
-been deployed. Controls remain disabled until connected. See the
-[dashboard control setup](infra/dashboard-control/README.md).
+The dashboard includes expanded BQ1 investigation/evaluation and BQ2 corridor
+exploration; see [coverage and limits](planning/runbooks/dashboard-exploration.md).
+Its **Ingestion** tab has a deployed, public **read-only** AWS status feed showing
+the latest workflow and recent runs without sign-in. See the
+[status deployment and verification](infra/dashboard-status/README.md).
+HI-Small demo/full run controls and operator sign-in are implemented locally in
+the separate, undeployed [control stack](infra/dashboard-control/README.md).
+The public view cannot start or cancel jobs.
 Its AWS service map shows the current phase, parallel analysis branches and
 reused/failed stages. The [editable diagrams and guide](planning/architecture/dashboard-ingestion-flow.md)
 describe the same data flow.
