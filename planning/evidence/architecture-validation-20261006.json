@@ -1,0 +1,93 @@
+{
+  "status": "passed",
+  "verified_at": "2026-10-06T03:07:27.807791+00:00",
+  "render_method": "Signed official draw.io Desktop 31.7.0 local CLI",
+  "visual_review_pages": [
+    "bq1",
+    "bq2",
+    "orchestration",
+    "streaming"
+  ],
+  "diagrams": [
+    {
+      "file": "planning/aml-pipeline-architecture.drawio",
+      "sha256": "18ad7db79a2c7376c1931d98014a410ae3876a8bff0c1e294e1092beea67c5d9",
+      "pages": [
+        "BQ1 batch",
+        "BQ2 treasury"
+      ],
+      "verified_stencils": [
+        "athena",
+        "cloudfront",
+        "glue",
+        "s3"
+      ],
+      "proposal_archive_sha256": "6aa935f6b04122294004b52e60ad5aff7ccb9b51c3b23b06ca103fd5e28f0235"
+    },
+    {
+      "file": "planning/aml-pipeline-aws-icons.drawio",
+      "sha256": "7d1e0f998ad6c60591b9e9b6d1c150df7d4a8f89ecc1eb89344da06c684a085a",
+      "pages": [
+        "Batch orchestration",
+        "Bounded streaming"
+      ],
+      "verified_stencils": [
+        "athena",
+        "cloudwatch",
+        "dynamodb",
+        "glue",
+        "kinesis",
+        "lambda",
+        "s3",
+        "sns",
+        "step_functions"
+      ],
+      "proposal_archive_sha256": "288fd6c805f7cf4b6a200849cd59a6e67b11df69619cc84eb06ec9b0e7881de4"
+    }
+  ],
+  "exports": [
+    {
+      "file": "planning/architecture-exports/bq1.drawio.png",
+      "sha256": "337d401afc0116be09b4ecae405603857750294b21095f9b3aa910da4f0910fa",
+      "dimensions": [
+        2422,
+        1422
+      ],
+      "editable_xml_embedded": true,
+      "page_ids_and_labels_match_source": true
+    },
+    {
+      "file": "planning/architecture-exports/bq2.drawio.png",
+      "sha256": "b232642dff2c7a14b06e080d170939e3eb20417bcc8deee7c112ec4d553d992b",
+      "dimensions": [
+        2422,
+        1422
+      ],
+      "editable_xml_embedded": true,
+      "page_ids_and_labels_match_source": true
+    },
+    {
+      "file": "planning/architecture-exports/orchestration.drawio.png",
+      "sha256": "7a32ae85998283f1871184034d5e35e56ace63797c5430cd5502a5de3e630b2e",
+      "dimensions": [
+        2422,
+        1422
+      ],
+      "editable_xml_embedded": true,
+      "page_ids_and_labels_match_source": true
+    },
+    {
+      "file": "planning/architecture-exports/streaming.drawio.png",
+      "sha256": "41b8845d7e902b6ec9a1b41e75dab087b7c45a64d8abba7ea68eb166912c24aa",
+      "dimensions": [
+        2422,
+        1422
+      ],
+      "editable_xml_embedded": true,
+      "page_ids_and_labels_match_source": true
+    }
+  ],
+  "cloud_mutations": 0,
+  "paid_cloud_runs": 0,
+  "proposal_sources_archived": true
+}

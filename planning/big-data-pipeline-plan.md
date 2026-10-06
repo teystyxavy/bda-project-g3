@@ -1,5 +1,34 @@
 # Big Data Pipeline Plan — IBM AML Transactions
 
+**Optimisation update, 6 October 2026:** the full batch optimisations are
+implemented and deployed. The fresh 5,078,345-row rebuild took **20m55s**, versus
+24m59s previously (**16.3% faster**, one observed run per configuration). Both
+business views, all native scores and corridor reconciliation passed unchanged.
+The stage-cache run with SageMaker candidate training took **18m02s**, reused both
+curated/scored stages and started no Glue jobs. An unchanged ingestion returned its
+verified release in **33.85s** without starting the batch. Training never promotes
+the candidate automatically. The current dashboard selects
+`opt-train-cache-20261006-aws1`, Kaggle version 8.
+See the [implementation](runbooks/pipeline-optimisation-implementation.md) and
+[measured evidence](evidence/pipeline-optimisation-result-20261006.json).
+The existing `scripts/ingest.ps1` entry point runs AWS acquisition through publication;
+`-Train` adds candidate training and `-Rerun` bypasses caches.
+
+AWS acquisition revision: Kaggle and historical FX retrieval now have a dedicated
+Lambda container and a Standard Step Functions wrapper before the verified batch.
+The nine-resource addition is deployed; smoke and full source-to-dashboard runs
+passed reconciliation and public hashes. Full acquisition took 53 seconds and
+the complete run took about 25 minutes; see [deployment evidence](evidence/cloud-ingestion-deployment-result-20261006.json)
+and [review](archive/reviews/cloud-ingestion-review.md). The previous verified path remains available with
+`-LocalAcquisition`; its recorded results remain valid.
+
+Implementation update, 6 October 2026: command-driven Kaggle/FX acquisition,
+per-run cloud orchestration, verification/publication and optional SageMaker candidate
+training are implemented and their 33 Terraform additions are deployed.
+Both the 1,000-row AWS smoke and full 5,078,345-row training/publication run succeeded. See [the current review](archive/reviews/ingestion-implementation-review-20261006.md)
+and [runbook](runbooks/ingestion-runbook.md); earlier proposed architecture/cost discussion
+below is historical planning and does not establish live deployment success.
+
 Dataset: [IBM Transactions for Anti-Money Laundering (AML)](https://www.kaggle.com/datasets/ealtman2019/ibm-transactions-for-anti-money-laundering-aml)
 (local copy under `dataset/`, see [eda.ipynb](../scripts/eda.ipynb) for exploratory analysis).
 
@@ -54,6 +83,19 @@ weekends use the latest prior observation. Rates are joined by date + currency
 during ETL to compute an `amount_usd` field.
 
 ## 2. Pipeline architecture
+
+**Implemented status, 6 October 2026:** AWS curation, frozen-model scoring,
+Athena treasury queries and public static hosting are verified. Model training,
+explanation reconstruction, output reconciliation and dashboard export run
+locally. The first Step Functions workflow now coordinates guarded scoring and
+treasury queries over verified curated data; its approved full run reconciled
+both outputs. Scheduling is absent; the bounded streaming replay is verified and its consumer is disabled. The diagram
+below records the original target architecture, including future cloud training
+and broader orchestration; use §4.6 and the deployment status for actual scope.
+The current editable implementation diagrams are
+[core batch paths](architecture/aml-pipeline-architecture.drawio) and
+[optional enhancements](architecture/aml-pipeline-aws-icons.drawio), with companion guides
+and locally reviewed PNGs in `architecture-exports/`.
 
 Two layers, not two symmetric branches: a **batch backbone** that is the entire
 pipeline for BQ2 and also produces and trains the model BQ1 depends on, and a thin
@@ -155,11 +197,11 @@ instead of near-real-time. Either way, the batch backbone itself is never option
 | Ingestion (FX)       | Batch backbone       | Core               | Lambda + EventBridge schedule                                   | Pull historical Frankfurter/Yahoo rates once, retain source metadata, land as CSV                       | Runs once per demo, negligible cost                            |
 | Cataloging           | Batch backbone       | Core               | Glue Crawler + Data Catalog                                     | Schema discovery for Athena/Glue                                                                        | Crawler runs on trigger, not scheduled continuously            |
 | Transform            | Batch backbone       | Core               | Glue ETL (PySpark, serverless)                                  | Join, clean, engineer features, write Parquet — builds BQ1's training set*and* BQ2's queryable table | Small G.1X worker count (2–5), partitioned output             |
-| Orchestration        | Batch backbone       | **X-factor** | Step Functions + EventBridge                                    | Chain crawl → ETL → BQ1 training / BQ2 Athena → viz → notify                                        | Pay-per-state-transition, pennies at this scale                |
+| Orchestration        | Batch backbone       | **X-factor** | Step Functions; optional absent EventBridge Scheduler | Verify contracts/fresh output → parallel frozen BQ1 scoring / BQ2 Athena → marker check; catchable failure notification | Bounded compute, no automatic compute retry or historical daily replay |
 | Model training       | Batch backbone       | Core               | Glue Python Shell or SageMaker Training (small/spot instance)   | Train laundering classifier (XGBoost) on the curated, labeled Parquet →`model.joblib` in S3          | Runs for minutes, on-demand only, no persistent endpoint       |
 | Batch flow analytics | Batch backbone       | Core               | Athena over partitioned Parquet                                 | Corridor/bank concentration aggregates — this alone completes BQ2                                      | Partition pruning keeps bytes-scanned (and cost) tiny          |
-| Ingestion (stream)   | Streaming (BQ1 only) | **X-factor** | Kinesis Data Streams                                            | Replay CSV rows to simulate a live feed, independent of Step Functions                                  | 1 shard, on-demand mode, run producer only during demo windows |
-| Real-time scoring    | Streaming (BQ1 only) | **X-factor** | Lambda (Kinesis event source) + DynamoDB                        | Load`model.joblib` from the batch backbone, score each streamed transaction, flag high-risk           | Lambda pay-per-invocation; DynamoDB on-demand capacity         |
+| Ingestion (stream)   | Streaming (BQ1 only) | **X-factor** | Kinesis Data Streams                                            | Replay CSV rows to simulate a live feed, independent of Step Functions                                  | 1 provisioned shard; producer only during approved demo windows |
+| Real-time scoring    | Streaming (BQ1 only) | **X-factor** | Lambda (Kinesis event source) + DynamoDB                        | Load verified frozen model artifacts, recompute replay history, score each transaction           | Lambda pay-per-invocation; DynamoDB on-demand capacity         |
 | Visualization        | Shared               | Core               | Lambda/Glue → static HTML (Plotly/Chart.js) on S3 + CloudFront | Interactive dashboards reading from both layers' outputs                                                | Static hosting, no compute cost after generation               |
 | Monitoring           | Shared               | Core               | CloudWatch + SNS                                                | Pipeline health, AML alert delivery                                                                     | Free tier covers this scale                                    |
 
@@ -197,11 +239,13 @@ plan doing something the baseline pipeline wouldn't need, and both live entirely
 inside or alongside the batch backbone — neither one replaces it:
 
 1. **Step Functions orchestration** (inside the batch backbone). Without it,
-   running the pipeline means someone clicking through Glue Crawler → Glue Job →
-   Athena query → training job → viz script by hand (or a plain cron). Step
-   Functions chains those steps into one automated state machine with
-   retries/error branching, triggered by an EventBridge rule — this is the
-   "pipeline automation or orchestration" bullet, directly.
+   frozen scoring and treasury queries require separate manual starts. The
+   delivered workflow verifies their input/job contracts, rejects reused output,
+   coordinates both tasks, checks the real success marker and handles catchable
+   failures. It retries bounded reads, preserves failed compute output and runs
+   only after a reviewed approval. EventBridge Scheduler is an optional one-off
+   extension and is absent. Broader ingestion/training/publication automation
+   remains future scope; this delivers the orchestration X-factor directly.
 2. **Streaming for BQ1** (a separate layer, Kinesis → Lambda → DynamoDB, sitting
    downstream of the batch backbone). The baseline scores transactions once a day
    in a batch job, so a compliance officer would only learn about a suspicious
@@ -360,6 +404,15 @@ each day's partition already give adequate pruning for BQ2's bank-pair queries.
 
 ### 4.4 Model training specifics (BQ1)
 
+**SageMaker implementation, 6 October 2026:** `sagemaker/` and `infra/sagemaker/`
+add an on-demand custom CPU training container, bounded job launcher and isolated
+execution-role/ECR infrastructure. They reuse the existing chronological trainer
+and native `.ubj`/JSON format. See [the runbook](../sagemaker/README.md).
+This is locally tested source, not deployed cloud training; the current dashboard,
+Glue scorer and streaming artifacts continue to use the verified frozen model.
+Training is an explicit candidate-generation step, separate from normal ingestion.
+No automatic model pointer or dashboard promotion has been introduced.
+
 - **Split by `txn_date`, not randomly:** train on days 1–6, validate on 7–8,
   test on 9–10, and report the sparse days 11–18 separately. The full local scan
   found only 1,108 rows after September 10, of which 655 were positives; the
@@ -389,37 +442,60 @@ native XGBoost `.ubj` models plus a separate JSON feature vocabulary/schema.
 This replaces the planned local pickle/joblib format for portable, explicit
 model loading; future cloud/streaming code must consume the same saved schema.
 The validation-selected depth-5 model achieves 44/100 positives in the main
-test queue versus 0/100 for rules. See `planning/local-model-validation.md` for
+test queue versus 0/100 for rules. See `planning/archive/reviews/local-model-validation.md` for
 the frozen selection, reproducibility and exploratory-data limitations. No cloud
 model pointer or production promotion exists yet.
 
 ### 4.5 Streaming layer specifics
 
-- **DynamoDB `account_velocity_state` table:** partition key `from_account`;
-  attributes `window_1h`, `window_24h`, `window_7d` (rolling counters/sets
-  maintained via atomic `UpdateExpression` ADD, not read-modify-write, to stay
-  correct under concurrent updates), `last_seen_counterparties` (set),
-  `updated_at`. TTL attribute `expires_at = now + 7d` to auto-evict dormant
-  accounts and keep the table small.
-- **Cold start:** an account with no existing DynamoDB item scores with all
-  rolling counts at 0 and `is_new_account = true` — itself treated as a mild
-  risk signal (per §4.3), not skipped or defaulted to "unknown."
-- **Kinesis replay producer:** partition key = `from_account` (keeps one
-  account's events in order within a shard, required for correct rolling-state
-  updates). For the demo, compress the 18-day span into a fixed short window
-  (e.g. 10 minutes) by replaying in original relative order with a constant
-  time-scaling factor, rather than claiming true wall-clock real-time replay.
-- **Alert threshold:** reuse the score ≥ 60 cutoff from §4.3 so the streaming
-  Lambda and the batch scorer agree.
+The bounded implementation has fourteen deployed resources. **The single replay
+passed all 884 cloud result comparisons and 32 exact sender-history checks;
+consumption is Disabled and the retained stack has no drift.** See the
+[completed streaming result](archive/reviews/streaming-demo-result-20261006.md). See [the streaming deployment review](archive/reviews/streaming-demo-review-20261006.md)
+for exact image/data hashes, costs, permission exceptions and approval scope.
+
+- Replay all 884 transactions from 32 label-independently selected senders,
+  using verified curated CSV and existing prior-day FX. Original timestamps
+  remain unchanged. The producer caps its send rate at ten events/second, but
+  sequential acknowledgements made the actual run take 1,049.545 seconds.
+  This replay duration does not measure live ingestion latency.
+- Kinesis partition keys hash the composite `(bank, account)`. One provisioned
+  shard and Lambda concurrency/parallelization one preserve sender order.
+  Per-sender ordinals detect missing events. This replaces the earlier
+  account-only key and ambiguous "one shard, on-demand" sizing proposal.
+- DynamoDB retains bounded exact preceding history and versioned state;
+  conditional two-Put transactions commit state and unique results together.
+  Atomic ADD alone cannot expire exact windows. There is no TTL tied to the
+  historical dataset calendar; limits fail closed rather than truncating.
+- Same-timestamp peers are excluded, duplicates do not advance history, and
+  redelivery repairs S3 audit after a committed result. Failures stop at the
+  first sequence, with bounded retry and AWS S3 failure archives.
+- The same frozen model is used; scores are ranking outputs, not calibrated
+  probabilities. No extra new-account feature or rule-score-60 threshold is
+  inserted. SNS reports processing failures only. Transaction alerts and live
+  dashboard publication remain outside this first demo's scope.
+- All selected rolling features agree exactly and scores pass frozen tolerance
+  in the final Linux image. The approved AWS replay passed all 884 result checks
+  and 32 sender versions; consumption is Disabled. An idle shard costs about USD 13.69/month;
+  disabling consumption does not stop that cost.
 
 ### 4.6 Orchestration (Step Functions) — concrete state machine
 
-`StartCrawlerRaw → RunGlueETL (sync) → Parallel[RunAthenaFlowSummary (BQ2),
-RunModelTraining (BQ1)] → UpdateModelPointer → RenderDashboards → NotifySuccess`.
-Every state gets `Retry` (`IntervalSeconds: 30, MaxAttempts: 3, BackoffRate: 2`)
-and a `Catch` branch to `NotifyFailure` (SNS). Triggered by a daily EventBridge
-schedule (e.g. 02:00 UTC) — a fixed cadence is appropriate here since the dataset
-is static/historical for the project, not a live feed arriving on its own schedule.
+The first implementation in `infra/orchestration/` is deployed and verified:
+`ValidateRequest → VerifyJob/Table/Workgroup → RejectExistingOutput →
+Parallel[RunFrozenScoring (BQ1), RunTreasuryCorridors (BQ2)] →
+VerifySuccessMarker → BusinessOutputsReady`.
+It reuses verified curated data and the frozen model. Only read/notification
+operations retry; compute tasks do not retry or overwrite partial output.
+Catchable failures lead to SNS and FAILED. Every score and treasury aggregate
+must still reconcile locally before a separately reviewed publication.
+Training, ingestion, curation and dashboard export remain outside this version.
+No daily replay is needed for a static dataset. An optional one-off EventBridge
+Scheduler is implemented but absent from the reviewed plan and disabled by
+default; activation needs a separately approved fresh run and UTC time.
+See [the concrete orchestration review](archive/reviews/orchestration-review-20261006.md) for
+the three additions, two existing updates, successful full execution, all-row
+score/corridor reconciliation, tests, execution limits and costs.
 
 ### 4.7 Visualization — concrete mechanism
 
@@ -427,7 +503,8 @@ The local implementation uses checked-in HTML/CSS/JavaScript in `dashboard/`
 and a generated `dashboard.json` snapshot. `scripts/build-dashboard.py` exports
 data and copies those assets to a fresh output directory. Native SVG and HTML
 charts need no CDN. Future AWS jobs should generate this data contract, with
-static assets hosted separately on S3/CloudFront; that deployment is pending.
+static assets hosted separately on S3/CloudFront. The verified four-file snapshot
+is now published at `https://d1n61tlw9pcrog.cloudfront.net/`; its origin is private.
 
 - **Dashboard 1 (BQ1):** ranked transaction queue (not an account ranking),
   evidence drilldown, alerts by day, score distribution, period metrics and
@@ -437,7 +514,8 @@ static assets hosted separately on S3/CloudFront; that deployment is pending.
   `scripts/build-model-dashboard.py` reloads the frozen model and adds a separately
   labelled experimental queue, same-period model/rule comparison and margin
   evidence. The original rule outputs and BQ2 data are retained; rule charts do
-  not pretend to be model alerts. This integration is local, not AWS hosting.
+  not pretend to be model alerts. Training/explanations/export remain local;
+  full frozen-model scoring ran in AWS, and the exported snapshot is AWS-hosted.
 - **Dashboard 2 (BQ2):** directed bank and currency corridor rankings, daily
   USD volume and HHI trends, all-period/day selection, and CSV export. Shares
   and HHI include all pairs, even when tables show only the top 15.
@@ -453,7 +531,7 @@ The live monthly budget is now USD 10 at the user's request, with the same alert
 thresholds and no hard spending cap. `infra/scoring/` is prepared separately and
 passes seven mocked tests. The separately approved scoring stack is now deployed;
 its first 1,024-row run failed before scoring on the artifact guard. Exact Glue
-job/account trust worked for that execution. See `scoring-infrastructure-review.md`
+job/account trust worked for that execution. See `archive/reviews/scoring-infrastructure-review.md`
 for scoped writes and evidence. The approved localization retry scored all 1,024
 rows exactly like the native fixture, then FAILED at S3 output commit; those
 partial files are not valid pipeline output. A narrow EMRFS marker-permission fix
@@ -464,19 +542,37 @@ plan explicitly enabled `_SUCCESS`; the approved fourth run **SUCCEEDED** after
 120 execution seconds with the real S3 marker and exact native parity on all
 1,024 rows. IDs, features, partitions and cohort top-100 order also reconcile.
 This verifies the smoke path only; full-data scoring and publishing require
-separate approval. See `scoring-success-marker-review.md`.
+separate approval. See `archive/reviews/scoring-success-marker-review.md`.
+
+2026-10-06 full-data preparation: the private scoring plan changes only the
+input/output/temp scopes and expected count to 5,078,345, reusing frozen
+artifacts, workers, ten-minute timeout, zero retries and explicit success markers.
+`scripts/verify-cloud-scoring-full.py` checks all feature fingerprints and frozen
+scores before producing a checked cache. The model dashboard can consume that
+cache without replacing cloud scores with local predictions; rules and BQ2
+remain unchanged. 29 targeted tests pass. The user subsequently approved two
+updates and one full run: it succeeded in 205 execution seconds, and all
+5,078,345 rows passed verification within the frozen-score tolerance. The real
+encrypted success marker exists. The cloud-backed dashboard and four-file
+release were built and browser-checked locally, then separately approved for
+public hosting. Publication acceptance is recorded below.
+See `archive/reviews/full-cloud-scoring-review.md` and `evidence/full-cloud-scoring-result-20261006.json`.
 
 2026-10-05 hosting preparation: `infra/hosting/` is a separate, locally validated
 stack with zero resources by default and explicit public-demo opt-in. Four mocked
 tests pass. The offline release packager allowlists only runtime dashboard assets;
-no deployment, uploads or publishing occurred. See `dashboard-hosting-review.md`.
+no deployment, uploads or publishing occurred during that initial preparation.
+The separately approved 2026-10-06 hosting step added nine resources, uploaded
+four hash-verified files and enabled one distribution. Public HTTPS/security,
+origin restrictions and live browser acceptance passed with no Terraform drift.
+See `archive/reviews/dashboard-hosting-review.md` and `evidence/dashboard-publication-result-20261006.json`.
 Cloud scoring now has a locally implemented entry point and frozen artifact
-packaging; `cloud-scoring-preparation.md` records Linux runtime parity and paid-run
-approval gates. No scorer is deployed in AWS. This does not change the verified
+packaging; `archive/reviews/cloud-scoring-preparation.md` records Linux runtime parity and paid-run
+approval gates. The scorer is now deployed and its full run is verified. This does not change the verified
 batch infrastructure or optional X-factor priorities.
 
 Current foundation: `infra/terraform/`, `jobs/curate_transactions.py`, and
-`planning/aws-batch-runbook.md` define a manual 1,000-row curation smoke path.
+`planning/runbooks/aws-batch-runbook.md` define a manual 1,000-row curation smoke path.
 Terraform validates locally and passes three mocked planning tests. All 30
 Python tests, including Spark parity, pass in the official Glue 5 container;
 the 24-resource foundation was deployed with user approval on 2026-10-05 and
@@ -484,14 +580,16 @@ verified with a no-change plan. The approved 1,000-row Glue/Athena smoke path no
 passes cloud-to-local curation parity; a bounded full-data run was subsequently approved.
 See `planning/aws-deployment-status.md`. This first version uses an explicit catalog schema plus Athena
 partition projection instead of crawlers. The failure EventBridge rule only
-notifies; orchestration and scheduled runs remain future enhancements. AWS
+notifies; the first bounded scoring/treasury orchestration is now verified.
+Scheduled runs remain optional and absent. AWS
 rolling features and stable source IDs are now implemented and Spark parity-tested;
 full-population rule scoring and dashboard export now run locally from the
-reconciled optimized cloud output. Successful AWS scoring, cloud training and
-dashboard publication remain pending. The rule baseline's full-population test top 100 contains zero
+reconciled optimized cloud output. Full AWS scoring and dashboard publication
+are now verified; training remains local. The approved scoring/treasury workflow
+also passed full reconciliation. The bounded streaming replay passed all 884 result and 32 sender-history checks; its consumer is disabled. The rule baseline's full-population test top 100 contains zero
 positives; the locally validation-selected model finds 44. Keep both experiments
 exploratory and do not tune further on this already-used holdout. See
-`planning/cloud-insights-validation.md`, deployment status and the runbook for
+`planning/archive/reviews/cloud-insights-validation.md`, deployment status and the runbook for
 actual full-run results and remaining gates.
 
 - **IaC:** Terraform (HCL) — declarative, widely used for AWS, and decouples
@@ -503,13 +601,15 @@ actual full-run results and remaining gates.
   serverless, talking to S3/DynamoDB over the AWS network), not an omission.
 - **Data quality gate:** a Glue step validates no nulls in
   `Timestamp`/`From Bank`/`To Bank`/amount fields, amounts ≥ 0, and timestamps
-  within the expected Sept 2022 range, *before* feature engineering runs — on
-  failure, the Step Functions execution goes to `Catch → NotifyFailure` instead
-  of silently writing bad curated data.
+  within the expected Sept 2022 range before feature engineering. Curation ran
+  and reconciled separately. The scoring/treasury workflow checks contracts and
+  fresh outputs; catchable scoring/query failures lead to SNS and FAILED.
 - **Testing:** `pytest` unit tests for the feature functions in §4.3 against
-  small fixture DataFrames (no AWS needed), plus one integration smoke test that
-  runs the full state machine against a 1,000-row sample before the real
-  `HI-Small` demo run.
+  small fixture DataFrames, official Glue-container parity and manual AWS smoke
+  runs before full-data curation/scoring. The orchestration adds request/contract,
+  fresh-prefix, marker, failure-path and treasury tests plus mocked infrastructure
+  tests. Its approved full execution passed every scored row and daily corridor;
+  no separate small state-machine execution is claimed.
 - **Cost estimate (HI-Small, worked):** `Trans.csv` 475MB → curated Parquet
   roughly 150MB after columnar compression. Athena at ~$5/TB scanned → a full-table
   query costs ~$0.0008, negligible even run hundreds of times. Glue ETL on

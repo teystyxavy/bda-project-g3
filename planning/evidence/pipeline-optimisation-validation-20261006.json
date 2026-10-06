@@ -1,0 +1,128 @@
+{
+  "recorded_at": "2026-10-06T09:54:39.888513+00:00",
+  "status": "local-and-cloud-smoke-verified",
+  "account": "588738581042",
+  "region": "ap-southeast-1",
+  "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:f12b457cd0083452b3063bf5301356e98abca7e453e2b0eca54e62ae5b16f652",
+  "deployment": {
+    "schema_version": 1,
+    "artifact_prefix": "pipeline/deployments/aedde3c2f0e9da202fba451c4fd6b049f372213ee1122b7ae42e0c60d989f9bf",
+    "model_prefix": "pipeline/deployments/aedde3c2f0e9da202fba451c4fd6b049f372213ee1122b7ae42e0c60d989f9bf/model",
+    "model_manifest_sha256": "323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f",
+    "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:f12b457cd0083452b3063bf5301356e98abca7e453e2b0eca54e62ae5b16f652",
+    "processing_role_arn": "arn:aws:iam::588738581042:role/is459-g3-ingest-processing",
+    "distribution_id": "EU1WB6XM4GKHQ",
+    "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+    "stage_versions": {
+      "curated": "24d8d143cefc1831e3cc98cb4c3b97779883de42c331f0bf3a7016b377bf77c1",
+      "scored": "3a4fa60fa553303eec029376b728965a0bca01158bb59184c64a7d787b1d2650"
+    }
+  },
+  "local_tests": {
+    "non_spark_passed": 136,
+    "skipped": 1,
+    "focused_passed": 39,
+    "terraform_mock_passed": 1,
+    "powershell_helpers_parsed": true,
+    "initial_helper_validation_only": "passed"
+  },
+  "linux_network_disabled_fixture": {
+    "rows": 1000,
+    "baseline": {
+      "status": "passed",
+      "rows": 1000,
+      "positives": 0,
+      "amount_usd": 1644403430.3400002,
+      "raw_identity_comparison": "Every source row: ordered SHA256 fingerprint",
+      "fx_comparison": "All same-day and prior-day valuations",
+      "behaviour_reference_rows": 4,
+      "behaviour_scope": "Complete histories for deterministic label-independent approximately 1% sender cohort"
+    },
+    "release_verification": {
+      "scores": {
+        "status": "passed",
+        "rows": 1000,
+        "max_absolute_score_difference": 0.0,
+        "labels_excluded": true,
+        "model_sha256": "f0dc65ca43901f9f02c57c09605121d48570c64d49991eb952f2d2df6a7e4765"
+      },
+      "corridors": {
+        "status": "passed",
+        "reference_rows": 1000,
+        "corridor_rows": 177,
+        "days": [
+          "2022-09-01"
+        ],
+        "identifiers_preserved": true,
+        "max_absolute_differences": {
+          "transactions": 0.0,
+          "volume_usd": 2.9802322387695312e-08,
+          "volume_share": 9.8879238130678e-17,
+          "daily_hhi": 2.7755575615628914e-17
+        },
+        "volume_rtol": 1e-10,
+        "volume_atol_usd": 0.01
+      }
+    }
+  },
+  "aws_asl_validation": {
+    "result": "OK",
+    "diagnostics": []
+  },
+  "cloud_smoke": {
+    "run_id": "opt-smoke-20261006-aws1",
+    "verification": {
+      "scores": {
+        "status": "passed",
+        "rows": 1000,
+        "max_absolute_score_difference": 0.0,
+        "labels_excluded": true,
+        "model_sha256": "f0dc65ca43901f9f02c57c09605121d48570c64d49991eb952f2d2df6a7e4765"
+      },
+      "corridors": {
+        "status": "passed",
+        "reference_rows": 1000,
+        "corridor_rows": 177,
+        "days": [
+          "2022-09-01"
+        ],
+        "identifiers_preserved": true,
+        "max_absolute_differences": {
+          "transactions": 0.0,
+          "volume_usd": 3.5762786865234375e-06,
+          "volume_share": 1.6653345369377348e-16,
+          "daily_hhi": 1.3877787807814457e-16
+        },
+        "volume_rtol": 1e-10,
+        "volume_atol_usd": 0.01
+      }
+    },
+    "all_public_hashes_verified": true,
+    "global_lock_absent_at_verification": true
+  },
+  "source_sha256": {
+    "src/bda_pipeline/ingest_contract.py": "5f8f09c6486f8135e8a2621060fcdfcb4240c85e211e981f067b7ad22a4783e3",
+    "src/bda_pipeline/ingest_control.py": "4bc1ee3e88455fb880ce05012a67559c4619eaedd607ae4b26ddb3d2ed58ac57",
+    "src/bda_pipeline/ingest_compute.py": "c991439207dccf8a6f467e5c723dec83949931a09c0cd8d8e6e10ac5a84e8c9b",
+    "src/bda_pipeline/stage_cache.py": "9b1b16926662137095f6f4822b5322ca7147147726e9be62821f0e0c97715487",
+    "src/bda_pipeline/model.py": "33b6e1a369a57ec2a7f6a6911d9ed248a01c197c81af905889e81857e7a9e87c",
+    "src/bda_pipeline/batch.py": "45cda233e80a0c329e10e27ba37a0f245fea1f7f85b3ca564c970fb312d81321",
+    "infra/ingestion/main.tf": "b180330321aa72ed2199e7c868ae54934f830536c3907345834d95afb0c98308",
+    "infra/ingestion/build-workflow.py": "35dcf411ed5ae2e9d6d7287ea5b4f00da5240c2f05c1c58dc8087379da4439dc",
+    "infra/ingestion/workflow.asl.json": "6101da5cb433b0729e2a5525ae0cde9c17fb6a31183c169b20397586209019ae",
+    "scripts/prepare-ingestion.py": "30e538ec1df5ecc9740d8d674fbd2ea261b04981833efea3ab20f6239d0a5e07",
+    "scripts/prepare-sagemaker-container.py": "249c08be110a03d5d24344a7c917a1e24ad80d32352612681132e85616297e06",
+    "scripts/update-ingestion.ps1": "a37f661b05395689685db9a2df136784b95f95c877f1309690955fd3d8b9de26",
+    "scripts/deploy-ingestion.ps1": "ea1ffa194b395af20702ac7519af416f1b081482c8269933035f254a8c8e5579",
+    "scripts/benchmark-ingestion.py": "a74a7254814cf7cc62eddf001ea88a88b718bda71c71b12d43436a97a0b366aa",
+    "tests/test_pipeline_optimisation.py": "92cb07884be6ee694307c57cf5ae082add67fc0e2e540d1b92223a5d599cff6e"
+  },
+  "evidence_sha256": {
+    "output/optimisation-local-smoke-20261006/baseline-output/proof.json": "c29645811a6e91e480bb50d0c719cc61da23452980b9f044ec3202720d731575",
+    "output/optimisation-local-smoke-20261006/export-output/release/manifest.json": "09545588eccacc5fc14818ecdf2cd5b65bd3c279b60dbc61b153873685d1c7f0",
+    "output/optimisation-asl-validation-20261006.json": "63b9c3107ecb66f8b4915884c4bc0a5a6387f06ce214bc8ec56a57eb03d64534",
+    "output/optimisation-smoke-aws-20261006/public-release-verification.json": "00d12efb54d4987ae314f47a7ebad131bb2fa67f95a0c1be8be3f6584577f69a",
+    "output/optimisation-smoke-aws-20261006/benchmark.json": "391be289b47f57059cc8af047baf458ad8194da94a506f422e34fbcfb4b93c37"
+  },
+  "full_acceptance": "Recorded separately after full rebuild and stage-reuse/candidate-training acceptance; not claimed by this preparation record."
+}

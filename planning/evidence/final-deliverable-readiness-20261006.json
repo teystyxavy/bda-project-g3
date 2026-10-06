@@ -1,0 +1,103 @@
+{
+  "status": "local-demo-preparation-verified-submission-incomplete",
+  "prepared_at": "2026-10-06T02:50:39.110549+00:00",
+  "scope": "Local retained-evidence validation; no current AWS or public HTTP verification",
+  "course_requirements": {
+    "source": "../[IS459] Project_G1.pptx",
+    "source_slides": [
+      7,
+      9
+    ],
+    "submission_week": 13,
+    "presentation_week": 14,
+    "presentation_minutes": 15,
+    "qa_minutes": 5,
+    "every_member_presents_component": true
+  },
+  "verified_milestones": {
+    "full_cloud_scores": 5078345,
+    "published_cloud_rows": 5078345,
+    "orchestrated_daily_bank_currency_rows": 1082185,
+    "stream_transactions": 884,
+    "stream_sender_histories": 32,
+    "consumer_disabled_as_recorded": true
+  },
+  "local_asset_checks": [
+    {
+      "path": "output/cloud-dashboard-release-20261006/site/index.html",
+      "sha256": "65a08b3d7c4d472e4cd25adbce3aaacd918271462d1370c0ca936ee673118139",
+      "matches_published_release": true
+    },
+    {
+      "path": "output/cloud-dashboard-release-20261006/site/dashboard.css",
+      "sha256": "56e03035c0e726c961cf6a3b86d208d07aa7e9f63b62136a0d5ad68df41c3bd5",
+      "matches_published_release": true
+    },
+    {
+      "path": "output/cloud-dashboard-release-20261006/site/dashboard.js",
+      "sha256": "495bdd32c3d1cc2fc3edbd0cfd17c317cf60a465109388ebcdfb2ac4eddba098",
+      "matches_published_release": true
+    },
+    {
+      "path": "output/cloud-dashboard-release-20261006/site/dashboard.json",
+      "sha256": "02c034a4ee1e705bd8fa43d424495d40d44ed089e36d2003e8f6718131dc78de",
+      "matches_published_release": true
+    },
+    {
+      "path": "output/cloud-dashboard-release-20261006/published-dashboard.png",
+      "sha256": "bcec9e6f2a515b977577764de99362b289714609035282cb64ce1640effe1eea",
+      "matches_recorded_capture": true
+    },
+    {
+      "path": "output/cloud-dashboard-release-20261006/published-treasury.png",
+      "sha256": "f9f960959630c1fce0a519d97e563a27014b863a182c24fd76b247e3bc4d6dc3",
+      "matches_recorded_capture": true
+    }
+  ],
+  "full_score_verification_sha256": "ab02b0488b1a3ae976d066bf57909bb692dd22da0e1d8fa0f056b49bfe635789",
+  "local_document_links_checked": 13,
+  "source_report_sha256": {
+    "full-cloud-scoring-result-20261006.json": "2122fc43bcf33f88aa0edb2076de83699302b318c8806e8c33ab2039ae5f072a",
+    "dashboard-publication-result-20261006.json": "a91d8045984d542b22ca03753d34ca04db49c4cedc4b3f54c0c77c5054398e7a",
+    "orchestration-result-20261006.json": "3aea93acb728e8f48ee8a0a22d86518574d5a59b014596b02c18e9bef40143c3",
+    "streaming-deployment-result-20261006.json": "0f60d35e8e35e6d6ab90ee7b3aa6d04a092b01f6b4b41b575a52700c3fdda3a0"
+  },
+  "pending_deliverables": [
+    "Final PPTX/PDF",
+    "Actual individual contributions and speaking assignments",
+    "Narrated/annotated setup video and YouTube link",
+    "Narrated/annotated run video and YouTube link",
+    "Audience-access check and final submission",
+    "Separately approved AWS cleanup after final presentation"
+  ],
+  "member_details_supplied": false,
+  "cloud_mutations_this_step": 0,
+  "paid_runs_this_step": 0,
+  "cleanup_this_step": false,
+  "architecture_update": {
+    "status": "passed",
+    "validation": "planning/architecture-validation-20261006.json",
+    "validation_sha256": "35e4f514fe4441347d65f3497b5b357a312196a891972bb7dd48fd5229df69bd",
+    "pages": 4,
+    "exports": 4,
+    "proposal_archived": true
+  },
+  "automated_pipeline_update": {
+    "status": "deployed-full-training-published-verified",
+    "source": "planning\\ingestion-deployment-result-20261006.json",
+    "source_sha256": "38bc368e2946f01aed1c0bb69ad378f3b179a9e09fc7fcbddcee149b1b530b3b",
+    "full_run_id": "full-20261006-aws1",
+    "rows": 5078345,
+    "positives": 5177,
+    "training_billable_seconds": 159,
+    "candidate_validation_gate_passed": true,
+    "model_promoted": false,
+    "public_release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/full-20261006-aws1/index.html",
+    "public_assets_verified": true,
+    "root_shell_and_pointer_verified": true,
+    "cache_check": "passed without writes or new jobs",
+    "terraform_post_run": "no changes in both new stacks",
+    "architecture": "planning/automated-ingestion.drawio",
+    "historical_records_note": "Original local_asset_checks and source_report_sha256 above describe the earlier release; this update records the new full ingestion release."
+  }
+}

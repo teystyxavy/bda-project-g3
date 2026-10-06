@@ -11,7 +11,9 @@ if __name__ == '__main__':
     parser.add_argument('--baseline', type=Path, required=True)
     parser.add_argument('--model-dir', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--cloud-verification', type=Path,
+                        help='Passed full-population report and sibling checked cloud score cache')
     args = parser.parse_args()
     export_model_dashboard(args.scored, args.baseline, args.model_dir, args.output,
-                           Path(__file__).resolve().parents[1] / 'dashboard')
+                           Path(__file__).resolve().parents[1] / 'dashboard', args.cloud_verification)
     print(f'Built {args.output}; no retraining or promotion')

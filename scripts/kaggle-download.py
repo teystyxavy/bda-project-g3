@@ -1,6 +1,7 @@
+import argparse
+import json
 from pathlib import Path
-
-import kagglehub
+from bda_pipeline.acquisition import acquire_dataset
 
 
 DATASET = "ealtman2019/ibm-transactions-for-anti-money-laundering-aml"
@@ -30,16 +31,20 @@ def selected_files() -> list[str]:
 
 
 def main() -> None:
-    """Download only the files for the selected dataset variant."""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    for filename in selected_files():
-        path = kagglehub.dataset_download(
-            DATASET,
-            path=filename,
-            output_dir=str(OUTPUT_DIR),
-        )
-        print(f"Downloaded {filename} to {path}")
+    parser = argparse.ArgumentParser(description='Versioned Kaggle acquisition with verified local reuse')
+    parser.add_argument('--subset', default='HI-Small')
+    parser.add_argument('--dataset-version', type=int)
+    parser.add_argument('--refresh', action='store_true')
+    parser.add_argument('--output', type=Path, default=OUTPUT_DIR)
+    parser.add_argument('--include-patterns', action='store_true')
+    args = parser.parse_args()
+    record = acquire_dataset(args.output, args.subset, args.dataset_version, args.refresh)
+    if args.include_patterns:
+        import kagglehub
+        version = record['dataset_version']
+        handle = DATASET if version is None else f'{DATASET}/versions/{version}'
+        kagglehub.dataset_download(handle, path=f'{args.subset}_Patterns.txt', output_dir=str(args.output), force_download=args.refresh)
+    print(json.dumps(record, indent=2))
 
 
 if __name__ == "__main__":

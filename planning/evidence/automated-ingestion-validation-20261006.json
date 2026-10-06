@@ -1,0 +1,23 @@
+{
+  "status": "passed",
+  "architecture": {
+    "editable_source": "planning/automated-ingestion.drawio",
+    "export": "planning/architecture-exports/automated-ingestion.drawio.png",
+    "render_method": "Trusted offline draw.io Desktop 31.7.0",
+    "visual_review": "Verified icons, readable labels, aligned vertical connectors; SageMaker icon verified in official offline library",
+    "xml_validation": "unique IDs; valid parent/source/target references"
+  },
+  "read_only_verification": {
+    "smoke": "AWS succeeded and immutable release hashes passed",
+    "full": "AWS training/publication succeeded; public/root asset hashes and pointer passed; lock absent; candidate metrics verified",
+    "cache": "Real successful manifest returned existing release with all writes/job starts disabled",
+    "terraform": "Both stacks: no changes, detailed exit code 0"
+  },
+  "files": {
+    "planning/automated-ingestion.drawio": "2d08e583e956f5ad77315a3fa4c07673962b4dbe378f1b5fd9a873c0e17ef652",
+    "planning/automated-ingestion.md": "c922ec95bc98208a975e32866716f93788491e5972a8619b7fe51c3e4c6fd4a2",
+    "planning/architecture-exports/automated-ingestion.drawio.png": "76da9c5c4426effa1cd0972b4320450d4f4507771257fb235cce2b4526eded6c",
+    "scripts/inspect-ingestion.py": "824bc6f686729b3376d25a2e9bbbd54fd330522216cfbf8c036bd3469cee732a",
+    "scripts/verify-ingestion-release.py": "0ddfb4558263ab630952d7352d19771d79c670cf3764ccdb23f89577af9088ef"
+  }
+}

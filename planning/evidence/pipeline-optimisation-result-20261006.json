@@ -1,0 +1,290 @@
+{
+  "recorded_at": "2026-10-06T10:43:12.384830+00:00",
+  "status": "implemented-deployed-and-verified",
+  "account": "588738581042",
+  "region": "ap-southeast-1",
+  "scope": "Full batch optimisation phases A/B; incremental ingestion and streaming alignment remain future work.",
+  "deployment": {
+    "schema_version": 1,
+    "artifact_prefix": "pipeline/deployments/aedde3c2f0e9da202fba451c4fd6b049f372213ee1122b7ae42e0c60d989f9bf",
+    "model_prefix": "pipeline/deployments/aedde3c2f0e9da202fba451c4fd6b049f372213ee1122b7ae42e0c60d989f9bf/model",
+    "model_manifest_sha256": "323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f",
+    "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:f12b457cd0083452b3063bf5301356e98abca7e453e2b0eca54e62ae5b16f652",
+    "processing_role_arn": "arn:aws:iam::588738581042:role/is459-g3-ingest-processing",
+    "distribution_id": "EU1WB6XM4GKHQ",
+    "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+    "stage_versions": {
+      "curated": "24d8d143cefc1831e3cc98cb4c3b97779883de42c331f0bf3a7016b377bf77c1",
+      "scored": "3a4fa60fa553303eec029376b728965a0bca01158bb59184c64a7d787b1d2650"
+    }
+  },
+  "resource_changes": {
+    "added": 14,
+    "updated": 6,
+    "destroyed": 0,
+    "historical_artifacts_retained": 11
+  },
+  "implementation": [
+    "Parallel baseline verification, frozen scoring and corridor analysis",
+    "Verified immutable curated/scored stage reuse with conditional copies and marker last",
+    "Smaller baseline/export transfers and projected/narrow materialisation",
+    "Bounded SageMaker status checks; paid creation submitted once",
+    "Run-owned failure cancellation and scoped terminal cleanup",
+    "Guarded deployment updater and benchmark evidence"
+  ],
+  "local_tests": {
+    "non_spark_passed": 136,
+    "skipped": 1,
+    "focused_passed": 39,
+    "terraform_mock_passed": 1,
+    "powershell_helpers_parsed": true,
+    "initial_helper_validation_only": "passed"
+  },
+  "full_rebuild": {
+    "run_id": "opt-full-20261006-aws1",
+    "rows": 5078345,
+    "cache_bypassed": true,
+    "elapsed_seconds": 1255.083,
+    "comparison": {
+      "reference": "output\\cloud-acquisition-full-20261006\\acquisition.json",
+      "reference_seconds": 1499.294,
+      "seconds_saved": 244.211,
+      "percent_faster": 16.28839974014436,
+      "scope": "One observed run per configuration; no percentile or SLA claim."
+    },
+    "business_output_parity": {
+      "status": "passed",
+      "reference_run": "cloud-full-20261006-aws1",
+      "run_id": "opt-full-20261006-aws1",
+      "rows": 5078345,
+      "positive_counts_and_ranking_metrics_unchanged": true,
+      "ordered_model_queue_ids_unchanged": true,
+      "treasury_totals_reconciled": true
+    },
+    "verification": {
+      "scores": {
+        "status": "passed",
+        "rows": 5078345,
+        "max_absolute_score_difference": 0.0,
+        "labels_excluded": true,
+        "model_sha256": "f0dc65ca43901f9f02c57c09605121d48570c64d49991eb952f2d2df6a7e4765"
+      },
+      "corridors": {
+        "status": "passed",
+        "reference_rows": 5078345,
+        "corridor_rows": 1082185,
+        "days": [
+          "2022-09-01",
+          "2022-09-02",
+          "2022-09-03",
+          "2022-09-04",
+          "2022-09-05",
+          "2022-09-06",
+          "2022-09-07",
+          "2022-09-08",
+          "2022-09-09",
+          "2022-09-10",
+          "2022-09-11",
+          "2022-09-12",
+          "2022-09-13",
+          "2022-09-14",
+          "2022-09-15",
+          "2022-09-16",
+          "2022-09-17",
+          "2022-09-18"
+        ],
+        "identifiers_preserved": true,
+        "max_absolute_differences": {
+          "transactions": 0.0,
+          "volume_usd": 0.001739501953125,
+          "volume_share": 2.1649348980190553e-15,
+          "daily_hhi": 3.0531133177191805e-15
+        },
+        "volume_rtol": 1e-10,
+        "volume_atol_usd": 0.01
+      }
+    },
+    "input_files": {
+      "accounts.csv": {
+        "bytes": 34053187,
+        "sha256": "786808526e33cfc441212dd6fccda7edfc24172149bed59c6ef59b186836b014"
+      },
+      "fx.csv": {
+        "bytes": 20167,
+        "sha256": "0b46d70f6ebd0f7f79fa626d7ba0882af76f3819e0b532bba316f6cf8de5a2f1"
+      },
+      "transactions.csv": {
+        "bytes": 475664283,
+        "sha256": "b19d39f515523373f991b689c07e11e7b0b95c17a2c27a87d91584ae16c5b040"
+      }
+    },
+    "dataset_version": 8
+  },
+  "cached_stage_training": {
+    "run_id": "opt-train-cache-20261006-aws1",
+    "elapsed_seconds": 1081.762,
+    "stage_cache": {
+      "curated": {
+        "bytes": 356618289,
+        "hit": true,
+        "key": "beb0833cf32c26d79b03df2c24856e439589ac9e22261d732d48251da4b44aed",
+        "objects": 132,
+        "source_run_id": "opt-full-20261006-aws1"
+      },
+      "scored": {
+        "bytes": 235123723,
+        "hit": true,
+        "key": "b32034550143ef2c4756d128d33b3a6b4bab9700ff48329612d7d7db60acd376",
+        "objects": 40,
+        "source_run_id": "opt-full-20261006-aws1"
+      }
+    },
+    "new_glue_jobs": 0,
+    "sagemaker_jobs": [
+      {
+        "ProcessingJobName": "is459-g3-baseline-opt-train-cache-20261006-aws1",
+        "ProcessingJobStatus": "Completed",
+        "ProcessingStartTime": "2026-10-06 18:15:27.132000+08:00",
+        "ProcessingEndTime": "2026-10-06 18:20:01.147000+08:00"
+      },
+      {
+        "ProcessingJobName": "is459-g3-export-opt-train-cache-20261006-aws1",
+        "ProcessingJobStatus": "Completed",
+        "ProcessingStartTime": "2026-10-06 18:27:13.188000+08:00",
+        "ProcessingEndTime": "2026-10-06 18:31:22.170000+08:00"
+      },
+      {
+        "TrainingJobName": "is459-g3-train-opt-train-cache-20261006-aws1",
+        "TrainingJobStatus": "Completed",
+        "TrainingStartTime": "2026-10-06 18:23:07.468000+08:00",
+        "TrainingEndTime": "2026-10-06 18:26:16.176000+08:00",
+        "TrainingTimeInSeconds": 189,
+        "BillableTimeInSeconds": 189,
+        "ModelArtifacts": {
+          "S3ModelArtifacts": "s3://is459-g3-588738581042-ap-southeast-1/sagemaker/outputs/is459-g3-train-opt-train-cache-20261006-aws1/output/model.tar.gz"
+        }
+      }
+    ],
+    "verification": {
+      "scores": {
+        "status": "passed",
+        "rows": 5078345,
+        "max_absolute_score_difference": 0.0,
+        "labels_excluded": true,
+        "model_sha256": "f0dc65ca43901f9f02c57c09605121d48570c64d49991eb952f2d2df6a7e4765"
+      },
+      "corridors": {
+        "status": "passed",
+        "reference_rows": 5078345,
+        "corridor_rows": 1082185,
+        "days": [
+          "2022-09-01",
+          "2022-09-02",
+          "2022-09-03",
+          "2022-09-04",
+          "2022-09-05",
+          "2022-09-06",
+          "2022-09-07",
+          "2022-09-08",
+          "2022-09-09",
+          "2022-09-10",
+          "2022-09-11",
+          "2022-09-12",
+          "2022-09-13",
+          "2022-09-14",
+          "2022-09-15",
+          "2022-09-16",
+          "2022-09-17",
+          "2022-09-18"
+        ],
+        "identifiers_preserved": true,
+        "max_absolute_differences": {
+          "transactions": 0.0,
+          "volume_usd": 0.001739501953125,
+          "volume_share": 2.3314683517128287e-15,
+          "daily_hhi": 4.454769886308441e-15
+        },
+        "volume_rtol": 1e-10,
+        "volume_atol_usd": 0.01
+      },
+      "training": {
+        "status": "passed",
+        "candidate_only": true,
+        "model_promoted": false,
+        "archive_sha256": "371887866fa4996799b2c74882b9151ca53ed5e2ae4a39c9891c953da0697617",
+        "validation_gate_passed": true
+      }
+    },
+    "model_promoted": false
+  },
+  "unchanged_release_cache": {
+    "run_id": "opt-release-cache-20261006-aws1",
+    "elapsed_seconds": 33.85,
+    "output": {
+      "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+      "model_promoted": false,
+      "processing_sha256": "fe87292aebf57656dd88e746b90113b6780a6b58928621c7c6973f77e3291c92",
+      "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/opt-full-20261006-aws1/index.html",
+      "run_id": "opt-full-20261006-aws1",
+      "status": "published",
+      "training_requested": false,
+      "cache_hit": true
+    },
+    "states": [
+      "Acquire",
+      "Cached"
+    ],
+    "batch_child_started": false,
+    "new_glue_or_sagemaker_jobs": 0
+  },
+  "selected_release": {
+    "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+    "model_promoted": false,
+    "processing_sha256": "edc17c19ff61fc3c8806a9eb599be7e8dd88290505cb4c5ef7ebb9fca4642736",
+    "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/opt-train-cache-20261006-aws1/index.html",
+    "run_id": "opt-train-cache-20261006-aws1",
+    "status": "published",
+    "training_requested": true
+  },
+  "post_run": {
+    "ingestion_plan": "no-changes",
+    "acquisition_plan": "no-changes",
+    "global_lock_exists": false
+  },
+  "timing_interpretation": "One observed run per configuration, not an SLA. Main saving is parallel overlap; compute-to-next-state includes output/service finalisation and is not a pure polling delay.",
+  "source_sha256": {
+    "src/bda_pipeline/ingest_contract.py": "5f8f09c6486f8135e8a2621060fcdfcb4240c85e211e981f067b7ad22a4783e3",
+    "src/bda_pipeline/ingest_control.py": "4bc1ee3e88455fb880ce05012a67559c4619eaedd607ae4b26ddb3d2ed58ac57",
+    "src/bda_pipeline/ingest_compute.py": "c991439207dccf8a6f467e5c723dec83949931a09c0cd8d8e6e10ac5a84e8c9b",
+    "src/bda_pipeline/stage_cache.py": "9b1b16926662137095f6f4822b5322ca7147147726e9be62821f0e0c97715487",
+    "src/bda_pipeline/model.py": "33b6e1a369a57ec2a7f6a6911d9ed248a01c197c81af905889e81857e7a9e87c",
+    "src/bda_pipeline/batch.py": "45cda233e80a0c329e10e27ba37a0f245fea1f7f85b3ca564c970fb312d81321",
+    "infra/ingestion/main.tf": "b180330321aa72ed2199e7c868ae54934f830536c3907345834d95afb0c98308",
+    "infra/ingestion/build-workflow.py": "35dcf411ed5ae2e9d6d7287ea5b4f00da5240c2f05c1c58dc8087379da4439dc",
+    "infra/ingestion/workflow.asl.json": "6101da5cb433b0729e2a5525ae0cde9c17fb6a31183c169b20397586209019ae",
+    "scripts/prepare-ingestion.py": "30e538ec1df5ecc9740d8d674fbd2ea261b04981833efea3ab20f6239d0a5e07",
+    "scripts/prepare-sagemaker-container.py": "249c08be110a03d5d24344a7c917a1e24ad80d32352612681132e85616297e06",
+    "scripts/update-ingestion.ps1": "a37f661b05395689685db9a2df136784b95f95c877f1309690955fd3d8b9de26",
+    "scripts/deploy-ingestion.ps1": "ea1ffa194b395af20702ac7519af416f1b081482c8269933035f254a8c8e5579",
+    "scripts/benchmark-ingestion.py": "a74a7254814cf7cc62eddf001ea88a88b718bda71c71b12d43436a97a0b366aa",
+    "tests/test_pipeline_optimisation.py": "92cb07884be6ee694307c57cf5ae082add67fc0e2e540d1b92223a5d599cff6e"
+  },
+  "evidence_sha256": {
+    "output/optimisation-full-aws-20261006/benchmark.json": "fabbf03b709e6cfe0a1fb263dfcfd019d2375b3727b2c995680eed2337399e97",
+    "output/optimisation-full-aws-20261006/progress.json": "a49ae9defe607bd8e49aa9275d68c88b2f15b70c1f90f82385b9efd0545dcdb2",
+    "output/optimisation-full-aws-20261006/baseline-proof.json": "eef1a5d7587666da157c4118ede7b882dd362be752c2e7d7c105130adb813238",
+    "output/optimisation-full-aws-20261006/export-evidence-scores.json": "3ccfe816143c08242c998d59cf8e24d0065ee2cdf858fae68fd2d1cdea76f917",
+    "output/optimisation-full-aws-20261006/export-evidence-corridors.json": "35931253ce6f87b0610399e25626e7c401b17952c416abce5be0c7df8f50887a",
+    "output/optimisation-full-aws-20261006/public-release-verification.json": "bd635f70138b2c267f03fbdb654c342706d0052f45149c038831e665b6c95b63",
+    "output/optimisation-cache-training-aws-20261006/benchmark.json": "7d91223585fd5fc69de846a5c6f0d144406ca55fd4a4c093954f47afb9d22396",
+    "output/optimisation-cache-training-aws-20261006/progress.json": "8ce3f1b04ff3deb9ac37003c99f5652cf971b8d010d88125c83a40df16a7f1cb",
+    "output/optimisation-cache-training-aws-20261006/baseline-proof.json": "eef1a5d7587666da157c4118ede7b882dd362be752c2e7d7c105130adb813238",
+    "output/optimisation-cache-training-aws-20261006/export-evidence-scores.json": "3ccfe816143c08242c998d59cf8e24d0065ee2cdf858fae68fd2d1cdea76f917",
+    "output/optimisation-cache-training-aws-20261006/export-evidence-corridors.json": "83418cd765f6ed9863abc70c3dae4b92cf39809b4742ebe5294366aa5a4f993e",
+    "output/optimisation-cache-training-aws-20261006/public-release-verification.json": "59b8086de4f79487a7d292c9b0fcb114c5319fea8952c99c6e59a994d946f410",
+    "output/optimisation-release-cache-execution.json": "a848298d1ccd9aeeddcfdfb10bd18177682a819cc5dca6c58b66944d19515c08",
+    "output/optimisation-release-cache-states.json": "c413f4ad4b2304be8c66a9d03a8bf9dba94857c52c4a221f2582496f30e46b5f",
+    "output/optimisation-postrun-plan.txt": "27a20ed4cebd5480b82bb67f4b0302feb4da89fecf59a7c29713b54118b5a55f",
+    "output/optimisation-cloud-postrun-plan.txt": "39387238004657800ab94006809a2bc611700b33768fc142d2f65cdf794d3ecb"
+  }
+}

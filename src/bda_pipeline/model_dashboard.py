@@ -12,7 +12,7 @@ from .dashboard import records
 from .model import SavedRanker, digest, rank, read_split
 
 
-def export_model_dashboard(scored, baseline_path, model_dir, output, assets):
+def export_model_dashboard(scored, baseline_path, model_dir, output, assets, cloud_verification=None):
     output = Path(output)
     if output.exists():
         raise ValueError('Use a fresh output directory')
@@ -26,10 +26,21 @@ def export_model_dashboard(scored, baseline_path, model_dir, output, assets):
     if snapshot['full_rows'] != ranker.report['total_rows']:
         raise ValueError('Model and snapshot population mismatch')
     dataset = ds.dataset(scored, format='parquet')
+    cloud_scores, cloud_report = None, None
+    if cloud_verification is not None:
+        from .cloud_scores import load_verified_scores
+        cloud_scores, cloud_report = load_verified_scores(cloud_verification, expected,
+                            ranker.selection['selected']['sha256'], snapshot['full_rows'])
     views, queues = {}, {}
     for period in ['validation', 'test', 'tail']:
         frame = read_split(dataset, period)
-        scores = ranker.predict(frame)
+        if cloud_scores is None:
+            scores = ranker.predict(frame)
+        else:
+            indices = frame.source_row_index.to_numpy(dtype='int64')
+            if ((indices < 0) | (indices >= len(cloud_scores))).any():
+                raise ValueError('Dashboard source index outside verified cloud population')
+            scores = cloud_scores[indices]
         model_metrics = ranking_metrics(rank(frame, scores))
         baseline_metrics = ranking_metrics(rank(frame, frame.risk_score.to_numpy()))
         for actual, expected_metrics in [(model_metrics, ranker.report['metrics'][period]['model']),
@@ -42,7 +53,7 @@ def export_model_dashboard(scored, baseline_path, model_dir, output, assets):
         queue = ranker.queue(frame, scores)
         queues[period] = queue
         views[period] = dict(metrics=model_metrics, queue=records(queue))
-        print(f'Reloaded frozen model: {period}, {len(frame):,} rows; metrics match', flush=True)
+        print(f'{"Verified cloud scores" if cloud_report else "Reloaded frozen model"}: {period}, {len(frame):,} rows; metrics match', flush=True)
     snapshot['model'] = dict(name=ranker.selection['selected']['name'], views=views,
                             selection_policy=ranker.selection['selection_policy'],
                             validation_gate_passed=ranker.selection['validation_gate_passed'],
@@ -55,6 +66,12 @@ def export_model_dashboard(scored, baseline_path, model_dir, output, assets):
                               feature_schema_sha256=ranker.report['feature_schema_sha256'],
                               source_sha256=expected, baseline_snapshot_sha256=digest(baseline_path)))
     snapshot['generated_at'] = datetime.now(timezone.utc).isoformat()
+    snapshot['model']['inference_source'] = 'aws-glue' if cloud_report else 'local-frozen-model'
+    if cloud_report:
+        snapshot['model']['provenance']['cloud_job_run_id'] = cloud_report['job_run_id']
+        snapshot['model']['provenance']['cloud_verification_sha256'] = digest(cloud_verification)
+        snapshot['model']['provenance']['cloud_score_cache_sha256'] = cloud_report['score_cache']['sha256']
+        snapshot['model']['explanation_definition'] = 'Reconstructed locally: top three signed TreeSHAP margin contributions, not causal evidence.'
     snapshot['buildStatus'] = 'complete'
     output.mkdir(parents=True)
     for period, queue in queues.items():

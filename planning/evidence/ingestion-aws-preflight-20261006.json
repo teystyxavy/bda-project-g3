@@ -1,0 +1,43 @@
+{
+  "account": "588738581042",
+  "region": "ap-southeast-1",
+  "read_only": true,
+  "athena": {
+    "state": "ENABLED",
+    "scan_limit_bytes": 1073741824
+  },
+  "quotas": [
+    {
+      "name": "ml.m5.xlarge for training job usage",
+      "code": "L-CCE2AFA6",
+      "value": 20.0
+    },
+    {
+      "name": "ml.m5.2xlarge for processing job usage",
+      "code": "L-1D84B9D2",
+      "value": 4.0
+    }
+  ],
+  "quota_ready": true,
+  "hourly_prices_usd": {
+    "APS1-Processing:ml.m5.2xlarge": 0.576,
+    "APS1-Train:ml.m5.xlarge": 0.288
+  },
+  "state_machine_validation": {
+    "result": "OK",
+    "diagnostics": [],
+    "truncated": false,
+    "ResponseMetadata": {
+      "RequestId": "cca83c6d-7b7b-4587-a239-9c2c21848a05",
+      "HTTPStatusCode": 200,
+      "HTTPHeaders": {
+        "x-amzn-requestid": "cca83c6d-7b7b-4587-a239-9c2c21848a05",
+        "date": "Tue, 06 Oct 2026 04:04:15 GMT",
+        "content-type": "application/x-amz-json-1.0",
+        "content-length": "50",
+        "connection": "keep-alive"
+      },
+      "RetryAttempts": 0
+    }
+  }
+}

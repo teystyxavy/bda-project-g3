@@ -107,6 +107,27 @@ def test_tiny_model_comparison_artifact_reload_and_explanations(tmp_path, monkey
         assert view['metrics'] == report['metrics'][period]['model']
         assert all('is_laundering' not in row for row in view['queue'])
         assert view['queue'][0]['from_bank'] == '001'
+    cloud = tmp_path / 'verified-cloud'
+    cloud.mkdir()
+    cache = cloud / 'scores-by-source-index.npy'
+    np.save(cache, reloaded.predict(frame).astype('float64'), allow_pickle=False)
+    cloud_report = cloud / 'verification.json'
+    cloud_report.write_text(json.dumps(dict(status='passed', scope='full-population-cloud-scoring',
+        job_state='SUCCEEDED', success_marker_verified=True, rows=len(frame), job_run_id='test-cloud-run',
+        source_sha256=digest(scored), model_sha256=selection['selected']['sha256'],
+        score_cache=dict(file=cache.name, sha256=digest(cache)))))
+    with monkeypatch.context() as guard:
+        def forbidden_predict(*args):
+            raise AssertionError('Dashboard must consume verified cloud scores without rescoring')
+        guard.setattr(SavedRanker, 'predict', forbidden_predict)
+        cloud_integrated = export_model_dashboard(scored, snapshot, output, tmp_path / 'cloud-dashboard',
+            Path(__file__).resolve().parents[1] / 'dashboard', cloud_report)
+    assert cloud_integrated['model']['inference_source'] == 'aws-glue'
+    assert cloud_integrated['model']['provenance']['cloud_job_run_id'] == 'test-cloud-run'
+    assert cloud_integrated['treasury'] == integrated['treasury']
+    assert cloud_integrated['treasury_daily'] == integrated['treasury_daily']
+    assert cloud_integrated['aml'] == integrated['aml']
+    assert cloud_integrated['model']['views'] == integrated['model']['views']
     with pytest.raises(ValueError, match='fresh'):
         export_model_dashboard(scored, snapshot, output, tmp_path / 'dashboard', tmp_path)
     with pytest.raises(ValueError, match='fresh'):

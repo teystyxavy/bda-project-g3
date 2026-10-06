@@ -1,0 +1,103 @@
+{
+  "status": "deployed-executed-reconciled",
+  "approval": "User proceeded after review of three additions, two updates and one full-data execution; no schedule/publication.",
+  "account": "588738581042",
+  "region": "ap-southeast-1",
+  "deployment": {
+    "new_resources": 3,
+    "updated_resources": 2,
+    "destroyed_resources": 0,
+    "artifact_uploads": 0,
+    "scheduled_resources": 0,
+    "post_apply_drift": false
+  },
+  "execution": {
+    "arn": "arn:aws:states:ap-southeast-1:588738581042:execution:is459-g3-reviewed-batch:full-orchestrated-20261006",
+    "name": "full-orchestrated-20261006",
+    "status": "SUCCEEDED",
+    "start": "2026-10-06T07:04:12.974000+08:00",
+    "stop": "2026-10-06T07:08:05.443000+08:00",
+    "elapsed_seconds": 232.469,
+    "state_entries": 18,
+    "execution_count": 1,
+    "task_retries": 0,
+    "catchable_failure_route_exercised": false
+  },
+  "scoring": {
+    "job_run_id": "jr_94598a100c6c9138ada22697eab145b64932aebc9132f6f9cd4227ebebe63211",
+    "execution_seconds": 180,
+    "dpu_seconds": 361.0,
+    "rows_verified": 5078345,
+    "parquet_objects": 39,
+    "parquet_bytes": 235123723,
+    "real_encrypted_marker": true,
+    "max_absolute_score_difference": 1.1920928955078125e-07,
+    "rtol": 1e-06,
+    "atol": 1e-07,
+    "score_cache_sha256": "644a7b68dc5d4aa23026578a06b5ecd1cc929cab1f8b547a6fa89e897c2884d1",
+    "matches_previous_successful_score_cache": true,
+    "verification_sha256": "5255d328118aeb8ce3ef98fe0cd841e753c91e6abeaa3961fc7c12a9e95ca391"
+  },
+  "treasury": {
+    "query_id": "dd22ffbb-3db0-43b5-87d3-115bbffdfd78",
+    "query_ms": 6312,
+    "bytes_scanned": 86039814,
+    "corridor_rows": 1082185,
+    "population_verified": 5078345,
+    "identifiers_preserved": true,
+    "maximum_differences": {
+      "transactions": 0.0,
+      "volume_usd": 0.001739501953125,
+      "volume_share": 2.345346139520643e-15,
+      "daily_hhi": 5.8494875609937935e-15
+    },
+    "verification_sha256": "34f6a21214d5b8a62de79163686d2c23216bffd505a472608c90c113cb74a9b7"
+  },
+  "cost_estimate": {
+    "glue_usd": 0.04412222222222222,
+    "athena_usd_rounded_decimal_MB_scenario": 0.000435,
+    "step_functions_usd": 0.00045000000000000004,
+    "subtotal_usd": 0.04500722222222222,
+    "is_invoice": false,
+    "excludes": [
+      "S3 storage and requests",
+      "Glue logs",
+      "downloads",
+      "tax",
+      "other resources"
+    ],
+    "allowances_deducted": false
+  },
+  "budget_snapshot": {
+    "Limit": {
+      "Amount": "10.0",
+      "Unit": "USD"
+    },
+    "Spend": {
+      "ActualSpend": {
+        "Amount": "0.936",
+        "Unit": "USD"
+      },
+      "ForecastedSpend": {
+        "Amount": "5.87",
+        "Unit": "USD"
+      }
+    },
+    "LastUpdated": "2026-10-06T00:26:52.704000+08:00",
+    "Period": {
+      "Start": "2026-10-01T08:00:00+08:00",
+      "End": "2087-06-15T08:00:00+08:00"
+    }
+  },
+  "tests": {
+    "targeted_python_passed": 39,
+    "mocked_terraform_passed": 5
+  },
+  "dashboard_republished": false,
+  "public_dashboard": "https://d1n61tlw9pcrog.cloudfront.net/",
+  "remaining": [
+    "Streaming layer",
+    "Setup/run video evidence and final presentation",
+    "Separate approved cleanup after presentation"
+  ]
+}

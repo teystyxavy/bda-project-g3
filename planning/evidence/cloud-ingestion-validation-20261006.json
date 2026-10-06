@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-06T16:06:57.3862455+08:00",
+  "status": "prepared-not-deployed",
+  "account": "588738581042",
+  "region": "ap-southeast-1",
+  "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-acquisition@sha256:62f7cdbfccc8b85a37ff6dab7427e13ab38f34e3c2c803cfda1439b961692374",
+  "base_image": "public.ecr.aws/lambda/python:3.12@sha256:6a347f1d5023ddb33291484cc5734b7198f9087846c30166909a9cae30155f09",
+  "source_sha256": {
+    "src/bda_pipeline/cloud_acquisition.py": "8d70f402be887d50e53cb4f245b068ff259d7fd5d876581ac18999cbc5f0cece",
+    "src/bda_pipeline/acquisition.py": "7a15f3e0f43041bea2e91d02feb80373b890c843e1bf2339e60a700ff59933e7",
+    "scripts/ingest.py": "2017aa225b33ee82f953c821517a54e42817aa456c4afc7c4b32dd30c203094f",
+    "scripts/ingest.ps1": "ee8ed0f54abb2d7eaee0b2cce7d5d1124c5a217605f688f803079b18018f5ec0",
+    "scripts/inspect-ingestion.py": "c908ff527a40ec9099eeb37689b36b0b20aee7cca3f83b4f16fc16e60c4bf88f",
+    "scripts/prepare-cloud-ingestion.py": "485a2506f0ef33a2bfa48d2a23cb07bb8f65b7e2c1ad1dac5d0a5efa9b536de7",
+    "scripts/deploy-cloud-ingestion.ps1": "4b6bacfaf8a31ec65145800309b21f55b6cf6c57f3e734ba9f0597bde58537d5",
+    "cloud-ingestion/Dockerfile": "9d53b9f7c2f76ca16893b6ddefc09aa239c5e5f81a2478bb62014be23bad1caa",
+    "cloud-ingestion/requirements.txt": "c54d9dd33c82f3361326a92dfa680b5ef82b02162de5e5bb185f2bba9847d11f",
+    "infra/cloud-ingestion/main.tf": "7e6a65961e80e2f170357df3f60279f45533ca1f812c0cb453d89abc90b1d033",
+    "infra/cloud-ingestion/versions.tf": "2214d2cb79cd4676c65953e076da9840b39d8154c171cb815ae8f8f3411e57df",
+    "infra/cloud-ingestion/workflow.asl.json": "3390cafc5c44ed7e2c60aa843fa9b06511d43961cdfb9e6bd19ef81cb03d8899",
+    "tests/test_cloud_acquisition.py": "2cfecbfa37a940f9fb689d6cd0b7939e5a30df1eb467c6ee71b8344820b9666e",
+    "infra/cloud-ingestion/tests/cloud-ingestion.tftest.hcl": "6f4db4ea1e7ff9101fbfa093cdc20b7a1cbe03a01e1eccadcd627bf6f67787d8"
+  },
+  "build_context": "output/cloud-acquisition-context-20261006",
+  "build_context_sha256": "b87fb42d4949cfe45219b395a5a78d2a11e09682432ec0e045912891710e77e6",
+  "plan": {
+    "create": 9,
+    "update": 0,
+    "destroy": 0,
+    "changes": [
+      {
+        "address": "aws_cloudwatch_log_group.acquisition",
+        "actions": [
+          "create"
+        ]
+      },
+      {
+        "address": "aws_ecr_repository.acquisition",
+        "actions": [
+          "create"
+        ]
+      },
+      {
+        "address": "aws_ecr_repository_policy.lambda",
+        "actions": [
+          "create"
+        ]
+      },
+      {
+        "address": "aws_iam_role.acquisition",
+        "actions": [
+          "create"
+        ]
+      },
+      {
+        "address": "aws_iam_role.workflow",
+        "actions": [
+          "create"
+        ]
+      },
+      {
+        "address": "aws_iam_role_policy.acquisition",
+        "actions": [
+          "create"
+        ]
+      },
+      {
+        "address": "aws_iam_role_policy.workflow",
+        "actions": [
+          "create"
+        ]
+      },
+      {
+        "address": "aws_lambda_function.acquisition",
+        "actions": [
+          "create"
+        ]
+      },
+      {
+        "address": "aws_sfn_state_machine.cloud_ingest",
+        "actions": [
+          "create"
+        ]
+      }
+    ],
+    "local_json": "output/cloud-acquisition-context-20261006/plan.json",
+    "local_json_sha256": "97f3f73b4b7c19b7d6dd446c5f6a60caebe373a2714aff68d6854b98d76c08a4",
+    "private_backend": "%LOCALAPPDATA%/IS459-G3/terraform-cloud-ingestion",
+    "saved_plan": "deployment.tfplan"
+  },
+  "checks": {
+    "focused_python_tests": {
+      "passed": 17,
+      "command": "python -m pytest tests/test_cloud_acquisition.py tests/test_ingestion.py -q"
+    },
+    "terraform_mock_tests_passed": 1,
+    "terraform_fmt": "passed",
+    "terraform_validate": "passed",
+    "aws_workflow_validation": {
+      "result": "OK",
+      "diagnostics": [],
+      "truncated": false,
+      "ResponseMetadata": {
+        "RequestId": "a1e1fe8b-62ca-408e-bb1b-13b83dc3fd93",
+        "HTTPStatusCode": 200,
+        "HTTPHeaders": {
+          "x-amzn-requestid": "a1e1fe8b-62ca-408e-bb1b-13b83dc3fd93",
+          "date": "Tue, 06 Oct 2026 07:57:44 GMT",
+          "content-type": "application/x-amz-json-1.0",
+          "content-length": "50",
+          "connection": "keep-alive"
+        },
+        "RetryAttempts": 0
+      }
+    },
+    "linux_container_fixture": {
+      "passed": true,
+      "rows": 10,
+      "network": "none",
+      "root_filesystem": "read-only",
+      "fixture": "output/cloud-acquisition-context-20261006/container-smoke.py",
+      "live_api_calls": false
+    },
+    "powershell_parse": "passed",
+    "deployment_helper_integrity": "passed, no cloud writes",
+    "python_compile": "passed",
+    "existing_full_run_read_only_collector": {
+      "status": "SUCCEEDED",
+      "proof": "output/cloud-acquisition-existing-batch-check-20261006/progress.json"
+    }
+  },
+  "live_cloud_acquisition_verified": false,
+  "cloud_resources_created": 0,
+  "paid_jobs_started": 0,
+  "pending_acceptance": [
+    "Explicit approval for nine additions/image push and smoke/full processing",
+    "Deploy acquisition module",
+    "Cloud 1000-row smoke with source provenance, reconciliation and public hashes",
+    "Full HI-Small only after smoke passes"
+  ],
+  "review": "planning/cloud-ingestion-review.md"
+}

@@ -88,9 +88,24 @@ function download(rows,name) {
 
 async function start() {
   try {
-    const response=await fetch('dashboard.json');
+    let source='dashboard.json', pointer=null;
+    if(!location.pathname.includes('/releases/')) {
+      const current=await fetch('current.json',{cache:'no-store'});
+      if(current.ok) {
+        pointer=await current.json();
+        if(pointer.schema_version!==1 || !/^releases\/[a-z0-9][a-z0-9-]{2,35}\/dashboard\.json$/.test(pointer.snapshot)
+          || !/^[0-9a-f]{64}$/.test(pointer.sha256)) throw new Error('Invalid release pointer');
+        source=pointer.snapshot;
+      } else if(![403,404].includes(current.status)) throw new Error(`Release request failed (${current.status})`);
+    }
+    const response=await fetch(source,{cache:'no-store'});
     if(!response.ok) throw new Error(`Data request failed (${response.status})`);
-    snapshot=await response.json();
+    const bytes=await response.arrayBuffer();
+    if(pointer) {
+      const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('');
+      if(hash!==pointer.sha256) throw new Error('Snapshot integrity check failed');
+    }
+    snapshot=JSON.parse(new TextDecoder().decode(bytes));
     if(snapshot.schema_version!==1) throw new Error('Unsupported snapshot version');
     const fullAml = snapshot.aml_scope === 'full';
     element('status').textContent=`Snapshot generated ${snapshot.generated_at.slice(0,10)} · AML ${fullAml ? 'full population' : 'cohort'} ${integer(snapshot.cohort_rows)} rows · Treasury ${integer(snapshot.full_rows)} rows`;
@@ -102,7 +117,22 @@ async function start() {
     if (snapshot.model) {
       element('scoring-control').hidden=false;element('model-comparison').hidden=false;element('model-methods').hidden=false;
       element('aml-scope').textContent='Retrospective full-population queues. Compare frozen-model ranking with the rule baseline; neither score is a probability.';
+      if(snapshot.model.inference_source==='aws-glue') {
+        element('method-scope').textContent='Features and model scores come from verified AWS Glue runs. Rule scoring, explanation reconstruction and dashboard export run locally. Treasury uses the full population.';
+      }
       element('scoring').onchange=renderAml;
+    }
+    if(snapshot.pipeline) {
+      const p=snapshot.pipeline;
+      element('status').textContent=`Run ${p.run_id} · ${integer(snapshot.full_rows)} transactions · ${p.start_date} to ${p.end_date} · Dataset version ${p.dataset_version??'unrecorded local copy'} · Refreshed ${p.refresh_time}`;
+      const scope=p.source_scope==='smoke-prefix' ? 'Demonstration sample' : 'Selected HI-Small population';
+      element('method-scope').textContent=`${scope}. Both views use the same verified transaction run. Optional training creates a candidate for separate review.`;
+      element('day').options[0].textContent='All transaction dates';
+      document.querySelector('#treasury .heading p').textContent=`${integer(snapshot.full_rows)} transactions in this run. High volume and concentration do not imply suspicious activity.`;
+      document.querySelectorAll('#treasury article p').forEach(node=>{
+        if(node.textContent.startsWith('Full 18-day context')) node.textContent='Full transaction-date context; summary selection is highlighted.';
+      });
+      document.querySelector('footer').textContent='Group 3 · Verified batch analysis';
     }
     snapshot.treasury_daily.forEach(row=>{const option=document.createElement('option');option.value=row.day;option.textContent=row.day;element('day').appendChild(option);});
     element('aml-tab').onclick=()=>{element('aml').hidden=false;element('treasury').hidden=true;element('aml-tab').setAttribute('aria-pressed','true');element('treasury-tab').setAttribute('aria-pressed','false');};
@@ -112,7 +142,7 @@ async function start() {
     element('export-corridors').onclick=()=>download(snapshot.treasury[element('day').value].banks,`corridors-${element('day').value}.csv`);
     table('variants',['Variant','Precision@100','Recall@100','Average precision'],snapshot.diagnostics.variants.map(row=>[row.variant,percent(row.precision_at_k),percent(row.recall_at_k),row.average_precision==null?'Unavailable':row.average_precision.toFixed(4)]));
     table('reasons',['Score','Reasons','Reviewed','Positives','False positives'],snapshot.diagnostics.top100_reasons.map(row=>[row.risk_score,row.risk_reasons,row.reviewed,row.positives,row.false_positives]));
-    element('provenance').textContent=JSON.stringify({generated_at:snapshot.generated_at,sources:snapshot.sources,provenance:snapshot.provenance,model:snapshot.model?{name:snapshot.model.name,provenance:snapshot.model.provenance}:undefined},null,2);
+    element('provenance').textContent=JSON.stringify({generated_at:snapshot.generated_at,pipeline:snapshot.pipeline,sources:snapshot.sources,provenance:snapshot.provenance,model:snapshot.model?{name:snapshot.model.name,provenance:snapshot.model.provenance}:undefined},null,2);
     element('aml').hidden=false;renderAml();
   } catch(error) {element('status').textContent=`Unable to load dashboard: ${error.message}. Serve this folder over HTTP and rebuild the snapshot if needed.`;}
 }

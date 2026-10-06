@@ -1,0 +1,120 @@
+{
+  "status": "verified-local-release-not-published",
+  "job_name": "is459-g3-score-frozen",
+  "job_run_id": "jr_45ea6604efb57fc630a1c76dc4897d5bf770790aaf3fe288ca1e2b52fa502cdc",
+  "job_state": "SUCCEEDED",
+  "started": "2026-10-06T05:45:11.889000+08:00",
+  "completed": "2026-10-06T05:48:46.115000+08:00",
+  "execution_seconds": 205,
+  "reported_dpu_seconds": 411.0,
+  "rows_verified": 5078345,
+  "date_partitions": [
+    "2022-09-01",
+    "2022-09-02",
+    "2022-09-03",
+    "2022-09-04",
+    "2022-09-05",
+    "2022-09-06",
+    "2022-09-07",
+    "2022-09-08",
+    "2022-09-09",
+    "2022-09-10",
+    "2022-09-11",
+    "2022-09-12",
+    "2022-09-13",
+    "2022-09-14",
+    "2022-09-15",
+    "2022-09-16",
+    "2022-09-17",
+    "2022-09-18"
+  ],
+  "output_uri": "s3://is459-g3-588738581042-ap-southeast-1/scored/full-frozen-20261006/transactions/",
+  "output_parquet_files": 39,
+  "output_parquet_bytes": 235123723,
+  "real_aes256_success_marker": true,
+  "max_absolute_score_difference": 1.1920928955078125e-07,
+  "score_rtol": 1e-06,
+  "score_atol": 1e-07,
+  "source_sha256": "04ef4a7564ab7635bba935f5ebf95566e3e6e922dc59f510763d88196b1e12f6",
+  "model_sha256": "f0dc65ca43901f9f02c57c09605121d48570c64d49991eb952f2d2df6a7e4765",
+  "verification_report": "output/scoring-full-verification-20261006/verification.json",
+  "verification_sha256": "ab02b0488b1a3ae976d066bf57909bb692dd22da0e1d8fa0f056b49bfe635789",
+  "score_cache_sha256": "644a7b68dc5d4aa23026578a06b5ecd1cc929cab1f8b547a6fa89e897c2884d1",
+  "dashboard_directory": "output/cloud-model-dashboard-20261006",
+  "dashboard_snapshot_sha256": "b54bf226d95217c82a1e5029258b6f2510cd509c3df355de290dfeb3a97069f1",
+  "release_directory": "output/cloud-dashboard-release-20261006/site",
+  "release_manifest_sha256": "46269d8823308d9482e440a906ceaaa5d951a1f3e9a9a9f0556c0af7ec25a723",
+  "release_bytes": 620811,
+  "unchanged_sections": [
+    "aml",
+    "treasury",
+    "treasury_daily"
+  ],
+  "period_checks": {
+    "validation": {
+      "metrics": {
+        "rows": 965524,
+        "positives": 1036,
+        "k": 100,
+        "precision_at_k": 0.46,
+        "recall_at_k": 0.0444015444015444,
+        "lift_at_k": 428.70756756756754,
+        "average_precision": 0.14957112852311877
+      },
+      "top_100_order_matches_native": true,
+      "explanation_text_matches_native": true
+    },
+    "test": {
+      "metrics": {
+        "rows": 862792,
+        "positives": 956,
+        "k": 100,
+        "precision_at_k": 0.44,
+        "recall_at_k": 0.04602510460251046,
+        "lift_at_k": 397.10092050209204,
+        "average_precision": 0.13554578803913261
+      },
+      "top_100_order_matches_native": true,
+      "explanation_text_matches_native": true
+    },
+    "tail": {
+      "metrics": {
+        "rows": 1108,
+        "positives": 655,
+        "k": 100,
+        "precision_at_k": 0.98,
+        "recall_at_k": 0.14961832061068703,
+        "lift_at_k": 1.6577709923664123,
+        "average_precision": 0.976613138437435
+      },
+      "top_100_order_matches_native": true,
+      "explanation_text_matches_native": true
+    }
+  },
+  "browser_checks": {
+    "rule_model_switch": true,
+    "validation_test_period_switch": true,
+    "transaction_explanation": true,
+    "treasury_all_and_daily": true,
+    "console_errors": 0,
+    "screenshot": "output/scoring-full-verification-20261006/dashboard-preview.png"
+  },
+  "targeted_local_tests_passed": 29,
+  "terraform": {
+    "additions": 0,
+    "updates": 2,
+    "deletions": 0,
+    "uploads": 0,
+    "post_apply_no_changes": true,
+    "strict_account_and_job_trust_verified": true,
+    "reviewed_plan_sha256": "e247d4a724513d19242ef690736b0de8fa50764e59fdbadb0e54d06f5074c0ba"
+  },
+  "cost": {
+    "usd_per_dpu_hour": 0.44,
+    "compute_estimate_usd": 0.05023333333333333,
+    "basis": "Reported DPU-seconds times reviewed Singapore Glue rate; excludes storage, requests, logs and other services; not a reconciled bill"
+  },
+  "explanation_scope": "Locally reconstructed TreeSHAP with the frozen model; scores consumed from verified cloud output",
+  "publication": false,
+  "limitations": "Exploratory synthetic-data evaluation; ranking scores are not calibrated probabilities; sparse tail is not representative; no retraining or additional paid runs"
+}

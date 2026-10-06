@@ -86,7 +86,7 @@ def fit_thresholds(dataset):
     return {name: float(np.quantile(np.concatenate(values), .99)) for name, values in amounts.items()}
 
 
-def export_verified_batch(curated, verification, output, assets):
+def export_verified_batch(curated, verification, output, assets, *, serving_only=False):
     output = Path(output)
     if output.exists():
         raise ValueError('Use a fresh output directory')
@@ -144,11 +144,13 @@ def export_verified_batch(curated, verification, output, assets):
     if int(daily.transaction_count.sum()) != rows or not np.isclose(daily.volume_usd.sum(), proof['amount_usd'], rtol=1e-10, atol=.01):
         raise ValueError('Treasury totals do not reconcile')
     daily.to_parquet(output / 'bq2_daily_corridors.parquet', index=False)
-    concentration(daily).to_csv(output / 'concentration_daily.csv', index=False)
-    daily.groupby(keys[1:])[['transaction_count', 'volume_usd']].sum().sort_values('volume_usd', ascending=False).to_csv(output / 'corridor_rankings.csv')
+    if not serving_only:
+        concentration(daily).to_csv(output / 'concentration_daily.csv', index=False)
+        daily.groupby(keys[1:])[['transaction_count', 'volume_usd']].sum().sort_values('volume_usd', ascending=False).to_csv(output / 'corridor_rankings.csv')
     aml = {name: summary.view() for name, summary in summaries.items()}
-    for name, view in aml.items():
-        pd.DataFrame(view['queue'], columns=QUEUE_COLUMNS).to_csv(output / f'review_queue_{name}.csv', index=False)
+    if not serving_only:
+        for name, view in aml.items():
+            pd.DataFrame(view['queue'], columns=QUEUE_COLUMNS).to_csv(output / f'review_queue_{name}.csv', index=False)
     queue = summaries['validation'].queue
     breakdown = queue.groupby(['risk_score', 'risk_reasons']).agg(reviewed=('is_laundering', 'size'), positives=('is_laundering', 'sum')).reset_index() if queue is not None else pd.DataFrame(columns=['risk_score','risk_reasons','reviewed','positives'])
     breakdown['false_positives'] = breakdown.reviewed - breakdown.positives
@@ -173,8 +175,9 @@ def export_verified_batch(curated, verification, output, assets):
     dashboard.mkdir()
     (dashboard / 'dashboard.json').write_text(json.dumps(snapshot, allow_nan=False), encoding='utf-8')
     (dashboard / 'validation-diagnostics.json').write_text(json.dumps(diagnostics, indent=2, allow_nan=False), encoding='utf-8')
-    for name in ['index.html', 'dashboard.css', 'dashboard.js']:
-        shutil.copyfile(Path(assets) / name, dashboard / name)
+    if not serving_only:
+        for name in ['index.html', 'dashboard.css', 'dashboard.js']:
+            shutil.copyfile(Path(assets) / name, dashboard / name)
     report = dict(rows=rows, positives=positives, training_p99=thresholds,
                   metrics={name: view['metrics'] for name, view in aml.items()},
                   flagged={name: view['flagged'] for name, view in aml.items()},

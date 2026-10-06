@@ -1,352 +1,123 @@
-# IBM AML Transactions — Big Data Architecture Project
+# IS459 Group 3 — IBM AML data pipeline
 
-Analysis and pipeline design for the
-[IBM Transactions for Anti-Money Laundering (AML)](https://www.kaggle.com/datasets/ealtman2019/ibm-transactions-for-anti-money-laundering-aml)
-dataset on Kaggle.
+An end-to-end AWS pipeline for the IBM Transactions for Anti-Money Laundering
+[dataset](https://www.kaggle.com/datasets/ealtman2019/ibm-transactions-for-anti-money-laundering-aml).
 
-## Project layout
+It answers two separate questions:
 
-```
-scripts/    kaggle-download.py, eda.ipynb
-planning/   business questions, pipeline plan, architecture diagrams
-dataset/    downloaded dataset files (gitignored, see below)
-```
+- **Compliance:** which transactions should investigators review first? A frozen
+  XGBoost model produces a ranked queue with explanations and a rule baseline.
+- **Treasury:** which bank and currency corridors dominate USD-equivalent volume,
+  and how does concentration change? High volume does not imply suspiciousness.
 
-## Downloading the dataset
+[Open dashboard](https://d1n61tlw9pcrog.cloudfront.net/) ·
+[Documentation index](planning/README.md) ·
+[Demonstration runbook](planning/delivery/final-demo-runbook.md)
 
-The complete dataset is about 39GB across all variants and is not committed to
-this repo. The download script fetches only the two `HI-Small` files used by the
-notebook (about 510MB total).
+## Run the deployed pipeline
 
-### 1. Get a Kaggle API token
-
-1. Log in to [kaggle.com](https://www.kaggle.com), go to **Settings → API**, and
-   click **Create New Token**. This downloads a `kaggle.json` file.
-2. Place it where the Kaggle API expects it:
-   - Windows: `C:\Users\<you>\.kaggle\kaggle.json`
-   - macOS/Linux: `~/.kaggle/kaggle.json`
-
-### 2. Set up the Python environment
-
-A venv (`kaggle_venv/`) is not committed to the repository. If you already
-created it, activate it:
+From this repository, use Python 3.11 or later and the project AWS profile:
 
 ```powershell
-.\kaggle_venv\Scripts\Activate.ps1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[cloud]"
+.\scripts\configure-aws.ps1
+.\scripts\ingest.ps1 -Python python
 ```
 
-If you're setting up fresh instead, create a venv and install the dependencies:
-
-```bash
-python -m venv kaggle_venv
-kaggle_venv\Scripts\activate      # Windows
-pip install kagglehub pandas numpy matplotlib jupyter nbconvert ipykernel
-```
-
-Install the local pipeline and test dependencies from the project root:
+The setup helper requires AWS CLI v2 and opens browser sign-in. The default launcher
+uses the deployed AWS acquisition workflow; no local dataset or Kaggle credential
+is needed. Kaggle and historical FX retrieval run in AWS, followed by Glue,
+SageMaker verification, Athena corridor analysis and dashboard publication.
 
 ```powershell
-python -m pip install -e ".[dev]"
+# Submit and let AWS continue after the terminal closes.
+.\scripts\ingest.ps1 -Python python -NoWait
+
+# Inspect the run ID returned by submission.
+.\scripts\ingest.ps1 -Python python -Status <run-id>
+
+# Also train a private SageMaker candidate; no automatic model promotion.
+.\scripts\ingest.ps1 -Python python -Train
+
+# Force a complete rebuild, bypassing release and stage caches.
+.\scripts\ingest.ps1 -Python python -Rerun
 ```
 
-### 3. Download the dataset
+Unchanged verified inputs return their existing release. Compatible new runs can
+reuse verified curated/scored stages. Every new publication retains complete
+score parity, source/FX checks and corridor reconciliation. An uncached run starts
+paid AWS jobs. See the [ingestion runbook](planning/runbooks/ingestion-runbook.md)
+for source controls, smoke runs, failure recovery and deployment prerequisites.
 
-```bash
-python scripts/kaggle-download.py
-```
+## Verified results
 
-This uses `kagglehub`'s per-file download option and writes the files directly to
-`dataset/` at the project root. Existing valid downloads are reused.
+The 6 October 2026 acceptance processed **5,078,345 transactions** from Kaggle
+version 8, with **285 historical FX records across 15 currencies**.
 
-### Resulting structure
+| Observed run | Source-to-result time |
+|---|---:|
+| Earlier full rebuild | 24m59s |
+| Optimised full rebuild | **20m55s — 16.3% faster** |
+| Verified stage reuse plus SageMaker candidate training | **18m02s**, no new Glue jobs |
+| Unchanged release reuse | **33.85s**, no batch processing |
 
-The complete Kaggle dataset contains 18 files: two illicit-ratio variants (`HI` =
-higher illicit ratio, `LI` = lower) × three sizes (`Small`, `Medium`, `Large`),
-each with three files:
+These are individual measured runs, not service-level guarantees. All native
+scores and treasury totals reconciled, and business rankings remained unchanged.
+See the [optimisation implementation](planning/runbooks/pipeline-optimisation-implementation.md)
+and [acceptance evidence](planning/evidence/pipeline-optimisation-result-20261006.json).
 
-| File | Contents |
+The optional Kinesis/Lambda/DynamoDB replay demonstration is separately verified;
+its consumer remains disabled. Incremental ingestion and further streaming
+optimisation are future work. Findings describe synthetic data, and model scores
+are rankings rather than calibrated laundering probabilities.
+
+## Repository map
+
+| Directory | Contents |
 |---|---|
-| `{PREFIX}-{SIZE}_Trans.csv` | Transaction log with the `Is Laundering` label |
-| `{PREFIX}-{SIZE}_accounts.csv` | Account → Bank / Entity mapping |
-| `{PREFIX}-{SIZE}_Patterns.txt` | Ground-truth laundering "attempts" (cycles, fan-out, etc.) |
+| `src/bda_pipeline/` | Acquisition, transformations, features, scoring, verification and publication |
+| `jobs/` | AWS Glue PySpark jobs and scoring dependencies |
+| `infra/` | Separate Terraform stacks and workflow definitions |
+| `cloud-ingestion/` | AWS acquisition container |
+| `sagemaker/` | Training and processing container entry points |
+| `streaming/` | Optional replay consumer container |
+| `dashboard/` | Static HTML, CSS and JavaScript assets |
+| `scripts/` | Stable run, prepare, deploy and verification commands |
+| `sql/` | Athena analysis and reconciliation queries |
+| `tests/` | Python unit/integration checks and separate Spark parity tests |
+| `planning/` | Current design, runbooks, diagrams, evidence and archived milestones |
+| `dataset/`, `output/` | Ignored local data, artifacts, tools and run outputs |
 
-The downloader selects `HI-Small_Trans.csv` (about 475MB, 5M rows) and
-`HI-Small_accounts.csv` (about 34MB). To analyze another variant, select one of
-the commented `PREFIX`/`SIZE` options in `scripts/kaggle-download.py` and use the
-same `PREFIX`/`SIZE` in the notebook config. Set `INCLUDE_PATTERNS = True` only if
-the optional laundering-pattern descriptions are needed.
+Use the [script guide](scripts/README.md) to find commands and the
+[infrastructure guide](infra/README.md) to find stacks. Script locations are stable.
 
-## Local pipeline smoke test
-
-The first implementation milestone processes 1,000 rows locally before any AWS
-resources are created. It validates the raw schema, joins account metadata on
-`(Bank ID, Account Number)`, creates the initial transaction features, converts
-amounts to USD, and writes Parquet partitioned by `txn_date`.
-
-Generate the daily FX CSV from the currencies and date range present in the
-transaction file:
+## Develop and validate locally
 
 ```powershell
-python scripts/fetch-fx-rates.py
+python -m pip install -e ".[dev,ml,ingest]"
+python -m pytest tests --ignore=tests/spark -q
 ```
 
-For a quicker first run, inspect only the same 1,000 rows used by the smoke test:
+The latest non-Spark suite passed **136 tests**, with one skipped. Spark parity
+runs separately in the Glue container through `scripts/test-glue-local.ps1` and
+`scripts/test-cloud-scoring-local.ps1`; see the
+[batch runbook](planning/runbooks/aws-batch-runbook.md) for fixtures and prerequisites.
+Terraform mock tests live under each stack's `tests/` directory. Historical local
+analysis commands are retained in the
+[development history](planning/archive/reviews/local-development-history.md).
 
-```powershell
-python scripts/fetch-fx-rates.py --rows 1000
-```
+## Data, credentials and cost
 
-The downloader uses Frankfurter's historical central-bank-backed rates for the
-covered fiat currencies. September 2022 rates for Bitcoin, Ruble, and Saudi
-Riyal are obtained from Yahoo Finance daily history because Frankfurter has no
-queryable records for those three pairs. The output records the source and
-actual observation date; weekends use the latest prior observation. Then run:
+The default subset is `HI-Small` (about 510 MB); the full dataset is about 39 GB.
+Datasets, generated model/dashboard artifacts, environment files, keys, credentials,
+Terraform variables and state stay outside Git. AWS settings/state are kept under
+`%LOCALAPPDATA%/IS459-G3`; Kaggle credentials belong in the user's Kaggle profile
+or the configured AWS secret. Provider lock files and sanitized evidence are committed.
 
-```powershell
-python scripts/run-local-pipeline.py --fx-rates dataset/fx_rates.csv --rows 1000
-```
-
-The partitioned result is written under `output/curated/transactions/`. Local
-outputs and downloaded data are gitignored.
-
-Run the transformation tests with:
-
-```powershell
-python -m pytest -q
-```
-
-## Local business-question analysis
-
-After installing the package with `python -m pip install -e ".[dev]"`, run:
-
-```powershell
-python scripts/fetch-fx-rates.py --lookback-days 1 --output dataset/fx_rates_with_history.csv
-python scripts/run-local-analysis.py --fx-rates dataset/fx_rates_with_history.csv --output output/analysis-run-1
-```
-
-Use a new output directory for each run. The runner scans the complete transaction
-file in 250,000-row chunks and checks row counts, FX coverage, and account join
-coverage. It preserves original identifiers and uses normalized bank keys for
-joins and behaviour calculations. No AWS resources are needed.
-
-- BQ2 covers every input transaction: daily directed bank/currency corridors,
-  volume rankings, daily bank-pair HHI (0–1), and top-five volume share. High
-  concentration is a treasury observation, not an AML risk signal.
-- BQ1 defaults to a deterministic approximately 5% sender cohort (hash modulo 20).
-  All outgoing rows for selected senders are retained, preserving their history.
-  Set `--sender-modulus 1` for full-data scoring, which requires more memory/time.
-  These sample metrics and the queue describe the cohort, not all HI-Small.
-- Windows exclude the current timestamp and simultaneous peers. P99 amount
-  thresholds are fitted only on September 1–6. Reports evaluate September 7–8
-  and September 9–10 separately, with precision/recall/lift@100 and average
-  precision (stepwise PR area). Labels never enter scoring; equal scores sort
-  by timestamp and source row index. No-positive recall is reported as null.
-- AML amount features use prior-day FX to avoid same-day closing-price leakage;
-  treasury totals use same-day historical valuation. Pre-dataset account history
-  is unavailable. Rule weights remain exploratory because the earlier EDA used
-  the full dataset. Pattern enrichment and new-counterparty flags are pending;
-  the local ML comparison below is now implemented separately.
-
-September 11–18 is reported separately as a sparse tail: the full dataset has
-only 1,108 transactions in that period, including 655 laundering labels.
-It is unsuitable as the primary holdout for normal-volume operations.
-
-To re-evaluate previously saved features with the current split policy:
-
-```powershell
-python scripts/evaluate-local-risk.py --input output/analysis-20261004/bq1_scored.parquet --output output/evaluation-new
-```
-
-The evaluation command produces a test-period review queue and `evaluation.json`.
-See `planning/local-validation-results.md` for the first full scan and cohort results.
-
-Outputs: `bq1_scored.parquet`, `review_queue.csv` (top 100, without labels),
-`bq2_daily_corridors.parquet`, `corridor_rankings.csv`,
-`concentration_daily.csv`, and `run_report.json`. The queue is a retrospective
-cohort demonstration, not an operational live queue. Raw FX inputs retain source
-and observation-date provenance; retain them alongside each run for reproducibility.
-
-## Local dashboards
-
-Build a static snapshot from the revised AML scores and full-population corridors:
-
-```powershell
-python scripts/build-dashboard.py --scored output/evaluation-20261004/bq1_scored.parquet --corridors output/analysis-20261004/bq2_daily_corridors.parquet --output output/dashboard
-python -m http.server 4173 --bind 127.0.0.1 --directory output/dashboard
-```
-
-Open http://127.0.0.1:4173/ (not the HTML directly). Use a fresh output directory
-for subsequent builds. Substitute your own evaluation and analysis paths as needed.
-Stop the local server with Ctrl+C when finished.
-
-The AML view provides chronological evaluation-period selection, alert counts,
-score distribution, a top-100 queue with evidence drilldown, CSV export, and
-validation-only rule comparisons. Queue rows omit the label. The treasury view
-provides all-period or daily bank/currency rankings, volume and concentration
-trends, and CSV export. Trends always retain full-period context; the selected
-date is highlighted. HHI and shares use all bank pairs, not just the top 15 shown.
-
-Checked-in assets live in `dashboard/`; the exporter writes `dashboard.json`
-with source hashes and `validation-diagnostics.json`. There are no external
-JavaScript dependencies. These are local static views, not deployed or live
-alerts. This earlier export represents a sender cohort for BQ1; BQ2 covers all
-5,078,345 transactions. The verified-cloud export below covers the full population
-for both questions.
-
-## Full-population insights from verified AWS data
-
-After downloading and verifying a successful full Glue run, score its curated
-Parquet and export both dashboard views locally:
-
-```powershell
-python scripts/export-verified-batch.py --curated output/full-cloud-optimized-20261005/curated --verification output/full-cloud-optimized-20261005/parity.json --output output/cloud-insights-new
-python -m http.server 4174 --bind 127.0.0.1 --directory output/cloud-insights-new/dashboard
-```
-
-Use a fresh output directory. The successful 2026-10-05 export is already saved
-under `output/cloud-insights-20261005/`. Open http://127.0.0.1:4174/ while its
-local server is running; stop the server with Ctrl+C when finished.
-
-The exporter requires a passed verification report, checks complete unique source
-IDs, positive-label counts and treasury count/USD reconciliation, then generates
-scores in batches. Training-only amount thresholds and globally ranked top-100
-queues preserve the existing chronological policy. The scored Parquet contains
-all rows but is not globally sorted; queue CSVs are ranked and omit labels.
-Artifacts include `bq1_scored.parquet`, `bq2_daily_corridors.parquet`, corridor
-rankings, concentration, period-specific review queues, `run_report.json`, and
-the static dashboard folder. Outputs remain gitignored.
-
-[Full-population validation](planning/cloud-insights-validation.md) records
-5,078,345 scored rows and browser checks. The exploratory baseline finds two
-labelled positives in the validation top 100 and zero in the test top 100;
-it is not a validated production AML model. No extra AWS jobs are needed for this
-export. The local ML comparison below is complete; successful cloud scoring and
-hosting remain separate milestones.
-
-## Local model comparison
-
-Create an isolated environment for the optional ML dependencies:
-
-```powershell
-python -m venv output/ml-venv
-output/ml-venv/Scripts/python.exe -m pip install -e ".[dev,ml]"
-output/ml-venv/Scripts/python.exe -m pytest -q
-output/ml-venv/Scripts/python.exe scripts/compare-local-model.py --scored output/cloud-insights-20261005/bq1_scored.parquet --snapshot output/cloud-insights-20261005/dashboard/dashboard.json --output output/model-comparison-new
-```
-
-Use a fresh output directory. The input must match the full-population export's
-SHA256 manifest. Two CPU histogram XGBoost candidates (depths 3 and 5) train only
-on September 1–6, with at most 120 rounds, four threads and validation-only early
-stopping. Exact validation average precision selects the candidate; precision@100
-breaks ties. `selection.json` is saved before test data is loaded. The selected
-model is evaluated against the same rule baseline on validation, test and sparse
-tail; no test-set tuning or automatic promotion occurs.
-
-Features use prior-day USD amounts, strictly trailing history, current-time hour,
-self-transfer/currency-mismatch flags and training-only categorical vocabularies.
-IDs, labels, absolute dates and same-day FX valuation are excluded from model
-inputs. Class weights come only from training labels. Weighted outputs are ranking
-scores, **not calibrated laundering probabilities**.
-
-Outputs include native `.ubj` model files, `features.json`, `selection.json`,
-`comparison.json`, and label-free top-100 model queues with signed TreeSHAP margin
-contributions. Load a model with XGBoost and apply its saved feature schema; do
-not unpickle arbitrary artifacts. The original dashboard build remains the rule
-baseline; the model-enabled build below preserves it as a comparison. Training and comparison run locally,
-without AWS charges.
-
-[Model comparison results](planning/local-model-validation.md): the selected
-depth-5 model finds 44 labelled positives in the main test top 100 versus zero
-for the rule baseline. This is an exploratory synthetic-data result, not a
-production AML validation. The saved 2026-10-05 run is under
-`output/model-comparison-20261005/`.
-
-## Dashboard with the frozen model
-
-Reuse the saved model without fitting or tuning again:
-
-```powershell
-output/ml-venv/Scripts/python.exe scripts/build-model-dashboard.py --scored output/cloud-insights-20261005/bq1_scored.parquet --baseline output/cloud-insights-20261005/dashboard/dashboard.json --model-dir output/model-comparison-20261005 --output output/model-dashboard-new
-python -m http.server 4175 --bind 127.0.0.1 --directory output/model-dashboard-new
-```
-
-Use a fresh output directory. The existing built preview is at
-`output/model-dashboard-20261005/`, served at http://127.0.0.1:4175/ while its
-local server is running. Stop the server with Ctrl+C when finished.
-
-The build verifies source, model, selection and feature-schema hashes; reloads
-the frozen model; and reproduces all three period metrics before exporting.
-`SavedRanker.predict()` also works on feature rows without evaluation labels.
-Both queues and a side-by-side comparison are available. Model scores use 0–1,
-rules use 0–100, and neither is a probability. Model evidence uses readable feature
-names with signed margin contributions; synthetic bank/account strings retain
-leading zeros. CSV queues omit labels. Rule alert charts remain explicitly
-rule-only; no model threshold or model-alert counts are invented. Treasury data
-and original rule results are preserved unchanged. See
-[dashboard integration checks](planning/model-dashboard-validation.md).
-
-## AWS batch foundation
-
-Dashboard hosting is now prepared locally in the separate, disabled-by-default
-`infra/hosting/` stack. An allowlisted four-file release can be built with:
-
-```powershell
-output/ml-venv/Scripts/python.exe scripts/prepare-dashboard-release.py --source output/model-dashboard-20261005 --output output/dashboard-release-new
-```
-
-Nothing has been published. See [hosting and cost review](planning/dashboard-hosting-review.md)
-for the private-origin/public-viewer distinction and approval gates. Cloud scoring
-now has a separate local inference entry point, frozen artifact packaging and
-Linux-container parity tooling; [cloud scoring status and commands](planning/cloud-scoring-preparation.md)
-describe the runtime compatibility checks. The scoring stack is now deployed.
-The approved fourth 1,024-row smoke **SUCCEEDED** on 2026-10-06 in 120 execution
-seconds after explicitly enabling Hadoop success markers. S3 `_SUCCESS` exists;
-all scores match the frozen native fixture exactly, with matching features,
-identities, partitions and cohort top-100 order. Strict Glue trust worked.
-See [verified smoke evidence](planning/scoring-success-marker-review.md).
-Earlier failed prefixes remain forensic evidence only. Full-data cloud scoring
-and dashboard publishing have not run and need separate approval.
-
-`infra/scoring/` now defines the separate, opt-in scoring job and run-scoped IAM
-permissions. It validates locally and passes seven mocked tests; see the
-[scoring infrastructure review](planning/scoring-infrastructure-review.md) for
-trust evidence, artifact staging and the historical failed smoke attempts.
-The user updated the live monthly budget alert to USD 10 on 2026-10-05; the local
-default and validation maximum are also 10. This is not a hard AWS spend cap.
-
-Start with [local AWS login](planning/aws-login.md). The
-`scripts/configure-aws.ps1` helper opens AWS browser authentication and saves
-project settings outside the repository; enter passwords only on the AWS page.
-
-`infra/terraform/` defines the private S3 bucket, Glue sample job, projected
-catalog table, Athena workgroup and saved queries, failure notifications and
-budget. `jobs/curate_transactions.py` implements PySpark curation with account
-and FX validation. `scripts/prepare-aws-smoke.py` creates 1,000 raw sample rows,
-the required account subset and a local reference result without AWS calls.
-
-Follow [the AWS batch runbook](planning/aws-batch-runbook.md) for local parity
-tests, configuration, approval-gated deployment, reconciliation and cleanup.
-Terraform validation and three mocked planning tests pass. All 30 Python tests
-pass in the official Glue 5 container, including Spark parity; run them with
-`.\scripts\test-glue-local.ps1` after preparing the sample. An authenticated
-[deployment plan](planning/aws-plan-review.md) was applied with user approval.
-[Deployment checks](planning/aws-deployment-status.md) confirm 25 resources and
-no drift. The approved 1,000-row cloud smoke run and both Athena queries succeeded;
-all 22 original curated fields match the local reference. The extended job now
-adds stable source-row IDs and opt-in exact rolling behaviour features; Spark
-parity tests pass. The user approved a bounded full-data run; see the deployment
-status document for its results: the first run timed out, but the optimized
-retry succeeded in 386 execution seconds and passed full reconciliation.
-The original partial output remains invalid. Full-data verification uses
-`scripts/verify-aws-full.py` and `sql/reconcile-full.sql` against the separate
-`full_transactions` catalog table. Full-population rule scoring and dashboard
-export from the verified cloud data now work locally; successful AWS scoring,
-cloud ML training and dashboard publishing remain pending.
-
-[Local performance validation](planning/glue-performance-validation.md) records
-the queue-based optimization: full history features took 38.6 seconds locally,
-with exact agreement across the saved sender cohort. The optimized version is
-now deployed. The complete optimized local job finished in 163
-seconds and passed full ID/corridor reconciliation plus cohort feature parity.
-The approved cloud retry also passed these checks, including Athena.
-Further paid runs still require approval and a fresh output prefix.
+The course budget is **USD 250**. The deployed monthly alert is **USD 10**; it is
+an alert rather than a spending cap. Jobs use bounded runtimes and no automatic
+paid-job resubmission. Hosting/storage and the provisioned streaming shard can
+continue to incur charges. See [deployment status](planning/aws-deployment-status.md)
+and the runbooks for resource cleanup after the final presentation.

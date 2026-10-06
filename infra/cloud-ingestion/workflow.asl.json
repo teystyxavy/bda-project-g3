@@ -1,0 +1,90 @@
+{
+  "Comment": "Cloud acquisition followed by the existing verified batch workflow; no compute retries.",
+  "StartAt": "Acquire",
+  "TimeoutSeconds": 8100,
+  "States": {
+    "Acquire": {
+      "Type": "Task",
+      "Resource": "${acquisition_arn}",
+      "ResultPath": "$.acquisition",
+      "Next": "Cached",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "NotifyFailure"
+        }
+      ]
+    },
+    "Cached": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.acquisition.cache_hit",
+          "BooleanEquals": true,
+          "Next": "ExistingRelease"
+        }
+      ],
+      "Default": "Batch"
+    },
+    "ExistingRelease": {
+      "Type": "Pass",
+      "OutputPath": "$.acquisition.result",
+      "End": true
+    },
+    "Batch": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::states:startExecution.sync:2",
+      "Parameters": {
+        "StateMachineArn": "${batch_arn}",
+        "Name.$": "$.run_id",
+        "Input": {
+          "run_id.$": "$.run_id",
+          "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+        }
+      },
+      "ResultPath": "$.batch",
+      "Next": "Published",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "Failed"
+        }
+      ]
+    },
+    "Published": {
+      "Type": "Pass",
+      "OutputPath": "$.batch.Output",
+      "End": true
+    },
+    "NotifyFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${failure_topic}",
+        "Message.$": "States.JsonToString($.failure)"
+      },
+      "ResultPath": null,
+      "Next": "Failed",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": null,
+          "Next": "Failed"
+        }
+      ]
+    },
+    "Failed": {
+      "Type": "Fail",
+      "Error": "CloudIngestFailed",
+      "Cause": "Inspect acquisition or batch evidence; no automatic rerun."
+    }
+  }
+}

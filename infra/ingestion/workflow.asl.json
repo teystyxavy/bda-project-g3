@@ -1,0 +1,657 @@
+{
+  "Comment": "Parallel verified full batch; 15-second bounded processing checks; no paid-job retries.",
+  "StartAt": "Begin",
+  "TimeoutSeconds": 7200,
+  "States": {
+    "Begin": {
+      "Type": "Task",
+      "Resource": "${control_arn}",
+      "Parameters": {
+        "op": "begin",
+        "run_id.$": "$.run_id"
+      },
+      "ResultPath": "$.work",
+      "Next": "ReuseCurated",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "RecordFailure"
+        }
+      ]
+    },
+    "ReuseCurated": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.work.curated_cache_hit",
+          "BooleanEquals": true,
+          "Next": "PrepareBaseline"
+        }
+      ],
+      "Default": "Curate"
+    },
+    "Curate": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "is459-g3-ingest-curate",
+        "Arguments.$": "$.work.curate_arguments"
+      },
+      "ResultPath": null,
+      "Next": "PrepareBaseline",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "RecordFailure"
+        }
+      ]
+    },
+    "PrepareBaseline": {
+      "Type": "Task",
+      "Resource": "${control_arn}",
+      "Parameters": {
+        "op": "curated",
+        "run_id.$": "$.run_id"
+      },
+      "ResultPath": "$.baseline_request",
+      "Next": "ScoreAndAnalyze",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "RecordFailure"
+        }
+      ]
+    },
+    "ScoreAndAnalyze": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Baseline",
+          "States": {
+            "Baseline": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:sagemaker:createProcessingJob",
+              "Parameters": {
+                "ProcessingJobName.$": "$.baseline_request.ProcessingJobName",
+                "RoleArn.$": "$.baseline_request.RoleArn",
+                "AppSpecification.$": "$.baseline_request.AppSpecification",
+                "ProcessingInputs.$": "$.baseline_request.ProcessingInputs",
+                "ProcessingOutputConfig.$": "$.baseline_request.ProcessingOutputConfig",
+                "ProcessingResources.$": "$.baseline_request.ProcessingResources",
+                "StoppingCondition.$": "$.baseline_request.StoppingCondition",
+                "NetworkConfig.$": "$.baseline_request.NetworkConfig",
+                "Tags.$": "$.baseline_request.Tags"
+              },
+              "ResultPath": null,
+              "Next": "BaselinePollInit"
+            },
+            "BaselinePollInit": {
+              "Type": "Pass",
+              "Result": {
+                "attempt": 0
+              },
+              "ResultPath": "$.poll",
+              "Next": "BaselineWait"
+            },
+            "BaselineWait": {
+              "Type": "Wait",
+              "Seconds": 15,
+              "Next": "BaselineStatus"
+            },
+            "BaselineStatus": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:sagemaker:describeProcessingJob",
+              "Parameters": {
+                "ProcessingJobName.$": "$.baseline_request.ProcessingJobName"
+              },
+              "ResultSelector": {
+                "status.$": "$.ProcessingJobStatus"
+              },
+              "ResultPath": "$.job_status",
+              "Next": "BaselineComplete",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.TaskFailed"
+                  ],
+                  "IntervalSeconds": 3,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2
+                }
+              ]
+            },
+            "BaselineComplete": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.job_status.status",
+                  "StringEquals": "Completed",
+                  "Next": "PrepareBranches"
+                },
+                {
+                  "Or": [
+                    {
+                      "Variable": "$.job_status.status",
+                      "StringEquals": "Failed"
+                    },
+                    {
+                      "Variable": "$.job_status.status",
+                      "StringEquals": "Stopped"
+                    }
+                  ],
+                  "Next": "BaselineFailed"
+                },
+                {
+                  "Variable": "$.poll.attempt",
+                  "NumericGreaterThanEquals": 179,
+                  "Next": "BaselineFailed"
+                }
+              ],
+              "Default": "BaselinePollIncrement"
+            },
+            "BaselinePollIncrement": {
+              "Type": "Pass",
+              "Parameters": {
+                "attempt.$": "States.MathAdd($.poll.attempt, 1)"
+              },
+              "ResultPath": "$.poll",
+              "Next": "BaselineWait"
+            },
+            "BaselineFailed": {
+              "Type": "Fail",
+              "Error": "ProcessingFailedOrDeadline",
+              "Cause": "Processing did not succeed within 180 checks; preserve outputs and stop owned workers."
+            },
+            "PrepareBranches": {
+              "Type": "Task",
+              "Resource": "${control_arn}",
+              "Parameters": {
+                "op": "baseline",
+                "run_id.$": "$.run_id"
+              },
+              "ResultPath": "$.training",
+              "Next": "TrainRequested",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 3,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2
+                }
+              ]
+            },
+            "TrainRequested": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.work.train",
+                  "BooleanEquals": true,
+                  "Next": "Train"
+                }
+              ],
+              "Default": "ReuseFrozen"
+            },
+            "TrainDone": {
+              "Type": "Pass",
+              "End": true
+            },
+            "ReuseFrozen": {
+              "Type": "Pass",
+              "End": true
+            },
+            "Train": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:sagemaker:createTrainingJob",
+              "Parameters": {
+                "TrainingJobName.$": "$.training.training_request.TrainingJobName",
+                "RoleArn.$": "$.training.training_request.RoleArn",
+                "AlgorithmSpecification.$": "$.training.training_request.AlgorithmSpecification",
+                "InputDataConfig.$": "$.training.training_request.InputDataConfig",
+                "OutputDataConfig.$": "$.training.training_request.OutputDataConfig",
+                "ResourceConfig.$": "$.training.training_request.ResourceConfig",
+                "StoppingCondition.$": "$.training.training_request.StoppingCondition",
+                "HyperParameters.$": "$.training.training_request.HyperParameters",
+                "EnableNetworkIsolation.$": "$.training.training_request.EnableNetworkIsolation",
+                "EnableManagedSpotTraining.$": "$.training.training_request.EnableManagedSpotTraining",
+                "EnableInterContainerTrafficEncryption.$": "$.training.training_request.EnableInterContainerTrafficEncryption",
+                "ProfilerConfig.$": "$.training.training_request.ProfilerConfig",
+                "Tags.$": "$.training.training_request.Tags"
+              },
+              "ResultPath": null,
+              "Next": "TrainPollInit"
+            },
+            "TrainPollInit": {
+              "Type": "Pass",
+              "Result": {
+                "attempt": 0
+              },
+              "ResultPath": "$.poll",
+              "Next": "TrainWait"
+            },
+            "TrainWait": {
+              "Type": "Wait",
+              "Seconds": 15,
+              "Next": "TrainStatus"
+            },
+            "TrainStatus": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:sagemaker:describeTrainingJob",
+              "Parameters": {
+                "TrainingJobName.$": "$.training.training_request.TrainingJobName"
+              },
+              "ResultSelector": {
+                "status.$": "$.TrainingJobStatus"
+              },
+              "ResultPath": "$.job_status",
+              "Next": "TrainComplete",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.TaskFailed"
+                  ],
+                  "IntervalSeconds": 3,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2
+                }
+              ]
+            },
+            "TrainComplete": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.job_status.status",
+                  "StringEquals": "Completed",
+                  "Next": "TrainDone"
+                },
+                {
+                  "Or": [
+                    {
+                      "Variable": "$.job_status.status",
+                      "StringEquals": "Failed"
+                    },
+                    {
+                      "Variable": "$.job_status.status",
+                      "StringEquals": "Stopped"
+                    }
+                  ],
+                  "Next": "TrainFailed"
+                },
+                {
+                  "Variable": "$.poll.attempt",
+                  "NumericGreaterThanEquals": 179,
+                  "Next": "TrainFailed"
+                }
+              ],
+              "Default": "TrainPollIncrement"
+            },
+            "TrainPollIncrement": {
+              "Type": "Pass",
+              "Parameters": {
+                "attempt.$": "States.MathAdd($.poll.attempt, 1)"
+              },
+              "ResultPath": "$.poll",
+              "Next": "TrainWait"
+            },
+            "TrainFailed": {
+              "Type": "Fail",
+              "Error": "ProcessingFailedOrDeadline",
+              "Cause": "Processing did not succeed within 180 checks; preserve outputs and stop owned workers."
+            }
+          }
+        },
+        {
+          "StartAt": "ReuseScores",
+          "States": {
+            "ReuseScores": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.work.scored_cache_hit",
+                  "BooleanEquals": true,
+                  "Next": "ScoresReused"
+                }
+              ],
+              "Default": "Score"
+            },
+            "Score": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::glue:startJobRun.sync",
+              "Parameters": {
+                "JobName": "is459-g3-ingest-score",
+                "Arguments.$": "$.work.score_arguments"
+              },
+              "ResultPath": null,
+              "End": true
+            },
+            "ScoresReused": {
+              "Type": "Pass",
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "Corridors",
+          "States": {
+            "Corridors": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+              "Parameters": {
+                "QueryString.$": "$.work.query",
+                "ClientRequestToken.$": "$.work.query_token",
+                "WorkGroup": "is459-g3-analysis",
+                "QueryExecutionContext": {
+                  "Database": "is459_g3_ingest"
+                }
+              },
+              "ResultPath": null,
+              "End": true
+            }
+          }
+        }
+      ],
+      "ResultPath": null,
+      "Next": "PrepareExport",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "RecordFailure"
+        }
+      ]
+    },
+    "PrepareExport": {
+      "Type": "Task",
+      "Resource": "${control_arn}",
+      "Parameters": {
+        "op": "export",
+        "run_id.$": "$.run_id",
+        "work.$": "$.work"
+      },
+      "ResultPath": "$.export_request",
+      "Next": "Export",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "RecordFailure"
+        }
+      ]
+    },
+    "Export": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:sagemaker:createProcessingJob",
+      "Parameters": {
+        "ProcessingJobName.$": "$.export_request.ProcessingJobName",
+        "RoleArn.$": "$.export_request.RoleArn",
+        "AppSpecification.$": "$.export_request.AppSpecification",
+        "ProcessingInputs.$": "$.export_request.ProcessingInputs",
+        "ProcessingOutputConfig.$": "$.export_request.ProcessingOutputConfig",
+        "ProcessingResources.$": "$.export_request.ProcessingResources",
+        "StoppingCondition.$": "$.export_request.StoppingCondition",
+        "NetworkConfig.$": "$.export_request.NetworkConfig",
+        "Tags.$": "$.export_request.Tags"
+      },
+      "ResultPath": null,
+      "Next": "ExportPollInit",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "RecordFailure"
+        }
+      ]
+    },
+    "ExportPollInit": {
+      "Type": "Pass",
+      "Result": {
+        "attempt": 0
+      },
+      "ResultPath": "$.poll",
+      "Next": "ExportWait"
+    },
+    "ExportWait": {
+      "Type": "Wait",
+      "Seconds": 15,
+      "Next": "ExportStatus"
+    },
+    "ExportStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:sagemaker:describeProcessingJob",
+      "Parameters": {
+        "ProcessingJobName.$": "$.export_request.ProcessingJobName"
+      },
+      "ResultSelector": {
+        "status.$": "$.ProcessingJobStatus"
+      },
+      "ResultPath": "$.job_status",
+      "Next": "ExportComplete",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "RecordFailure"
+        }
+      ]
+    },
+    "ExportComplete": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.job_status.status",
+          "StringEquals": "Completed",
+          "Next": "Publish"
+        },
+        {
+          "Or": [
+            {
+              "Variable": "$.job_status.status",
+              "StringEquals": "Failed"
+            },
+            {
+              "Variable": "$.job_status.status",
+              "StringEquals": "Stopped"
+            }
+          ],
+          "Next": "ExportFailed"
+        },
+        {
+          "Variable": "$.poll.attempt",
+          "NumericGreaterThanEquals": 179,
+          "Next": "ExportFailed"
+        }
+      ],
+      "Default": "ExportPollIncrement"
+    },
+    "ExportPollIncrement": {
+      "Type": "Pass",
+      "Parameters": {
+        "attempt.$": "States.MathAdd($.poll.attempt, 1)"
+      },
+      "ResultPath": "$.poll",
+      "Next": "ExportWait"
+    },
+    "ExportFailed": {
+      "Type": "Task",
+      "Resource": "${control_arn}",
+      "Parameters": {
+        "op": "processing_failed",
+        "run_id.$": "$.run_id",
+        "stage": "export"
+      },
+      "ResultPath": null,
+      "Next": "RecordFailure",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "RecordFailure"
+        }
+      ]
+    },
+    "Publish": {
+      "Type": "Task",
+      "Resource": "${control_arn}",
+      "Parameters": {
+        "op": "publish",
+        "run_id.$": "$.run_id"
+      },
+      "ResultPath": "$",
+      "Next": "Complete",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "RecordFailure"
+        }
+      ]
+    },
+    "Complete": {
+      "Type": "Succeed"
+    },
+    "RecordFailure": {
+      "Type": "Task",
+      "Resource": "${control_arn}",
+      "Parameters": {
+        "op": "failed",
+        "run_id.$": "$.run_id",
+        "failure.$": "$.failure"
+      },
+      "ResultPath": null,
+      "Next": "NotifyFailure",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": null,
+          "Next": "NotifyFailure"
+        }
+      ]
+    },
+    "NotifyFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${failure_topic}",
+        "Message.$": "States.JsonToString($.failure)"
+      },
+      "ResultPath": null,
+      "Next": "Failed",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": null,
+          "Next": "Failed"
+        }
+      ]
+    },
+    "Failed": {
+      "Type": "Fail",
+      "Error": "IngestFailed",
+      "Cause": "Run outputs preserved; inspect evidence and recover only after all workers stop."
+    }
+  }
+}

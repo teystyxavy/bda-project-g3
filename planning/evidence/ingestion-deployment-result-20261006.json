@@ -1,0 +1,658 @@
+{
+  "date": "2026-10-06",
+  "status": "deployed-full-training-published-verified",
+  "authorization": "User approved deployment, one 1000-row smoke/publication, then full HI-Small ingestion with SageMaker training if smoke passes.",
+  "stacks": {
+    "sagemaker": {
+      "resources": 3,
+      "addresses": [
+        "aws_ecr_repository.training",
+        "aws_iam_role.training",
+        "aws_iam_role_policy.training"
+      ],
+      "state_location": "%LOCALAPPDATA%/IS459-G3/terraform-sagemaker/state/terraform.tfstate",
+      "runtime_location": "%LOCALAPPDATA%/IS459-G3/terraform-sagemaker/runtime/"
+    },
+    "ingestion": {
+      "resources": 30,
+      "addresses": [
+        "aws_cloudwatch_log_group.control",
+        "aws_cloudwatch_log_group.glue[\"curate/error\"]",
+        "aws_cloudwatch_log_group.glue[\"curate/output\"]",
+        "aws_cloudwatch_log_group.glue[\"score/error\"]",
+        "aws_cloudwatch_log_group.glue[\"score/output\"]",
+        "aws_glue_catalog_database.runs",
+        "aws_glue_job.job[\"curate\"]",
+        "aws_glue_job.job[\"score\"]",
+        "aws_iam_role.control",
+        "aws_iam_role.glue",
+        "aws_iam_role.processing",
+        "aws_iam_role.workflow",
+        "aws_iam_role_policy.control",
+        "aws_iam_role_policy.glue",
+        "aws_iam_role_policy.processing",
+        "aws_iam_role_policy.workflow",
+        "aws_lambda_function.control",
+        "aws_s3_object.artifact[\"bda_pipeline.zip\"]",
+        "aws_s3_object.artifact[\"control.zip\"]",
+        "aws_s3_object.artifact[\"curate_transactions.py\"]",
+        "aws_s3_object.artifact[\"model/comparison.json\"]",
+        "aws_s3_object.artifact[\"model/deployment.json\"]",
+        "aws_s3_object.artifact[\"model/features.json\"]",
+        "aws_s3_object.artifact[\"model/hist-depth5.ubj\"]",
+        "aws_s3_object.artifact[\"model/model-manifest.json\"]",
+        "aws_s3_object.artifact[\"model/selection.json\"]",
+        "aws_s3_object.artifact[\"runtime.gluewheels.zip\"]",
+        "aws_s3_object.artifact[\"score_transactions.py\"]",
+        "aws_s3_object.configuration",
+        "aws_sfn_state_machine.ingest"
+      ],
+      "state_location": "%LOCALAPPDATA%/IS459-G3/terraform-ingestion/state/terraform.tfstate",
+      "runtime_location": "%LOCALAPPDATA%/IS459-G3/terraform-ingestion/runtime/"
+    }
+  },
+  "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:1005fb9fe3495126b635adad35aa6c59c0c36149fb059b9677fceefc21218c83",
+  "smoke_run_id": "smoke-20261006-aws1",
+  "changes": {
+    "added": 33,
+    "updated": 0,
+    "deleted": 0
+  },
+  "backend_correction": "Initial deployment stopped before mutation. Helper now keeps backend metadata/runtime separate from actual state; state was replanned before creating the approved resources.",
+  "deployment_helper_sha256": "6fbcf291abd682d06827f7caabe97039b2558d00ee0c983d86a025a6597c257c",
+  "smoke_status": "RUNNING",
+  "smoke": {
+    "status": "SUCCEEDED",
+    "startDate": "2026-10-06 12:24:18.753000+08:00",
+    "stopDate": "2026-10-06 12:35:31.466000+08:00",
+    "run_id": "smoke-20261006-aws1",
+    "execution_arn": "arn:aws:states:ap-southeast-1:588738581042:execution:is459-g3-ingest:smoke-20261006-aws1",
+    "states_entered": [
+      {
+        "name": "Begin",
+        "time": "2026-10-06 12:24:18.771000+08:00"
+      },
+      {
+        "name": "Curate",
+        "time": "2026-10-06 12:24:23.601000+08:00"
+      },
+      {
+        "name": "PrepareBaseline",
+        "time": "2026-10-06 12:27:19.083000+08:00"
+      },
+      {
+        "name": "Baseline",
+        "time": "2026-10-06 12:27:20.320000+08:00"
+      },
+      {
+        "name": "PrepareBranches",
+        "time": "2026-10-06 12:29:54.673000+08:00"
+      },
+      {
+        "name": "ScoreAndAnalyze",
+        "time": "2026-10-06 12:29:55.501000+08:00"
+      },
+      {
+        "name": "Score",
+        "time": "2026-10-06 12:29:55.501000+08:00"
+      },
+      {
+        "name": "Corridors",
+        "time": "2026-10-06 12:29:55.501000+08:00"
+      },
+      {
+        "name": "TrainRequested",
+        "time": "2026-10-06 12:29:55.501000+08:00"
+      },
+      {
+        "name": "ReuseFrozen",
+        "time": "2026-10-06 12:29:55.501000+08:00"
+      },
+      {
+        "name": "PrepareExport",
+        "time": "2026-10-06 12:32:55.021000+08:00"
+      },
+      {
+        "name": "Export",
+        "time": "2026-10-06 12:32:55.782000+08:00"
+      },
+      {
+        "name": "Publish",
+        "time": "2026-10-06 12:35:28.893000+08:00"
+      },
+      {
+        "name": "Complete",
+        "time": "2026-10-06 12:35:31.440000+08:00"
+      }
+    ],
+    "athena": [
+      {
+        "QueryExecutionId": "08d8447f-a1bf-4ca6-9270-6471a1ce2dee",
+        "Status": {
+          "State": "SUCCEEDED",
+          "SubmissionDateTime": "2026-10-06 12:29:55.726000+08:00",
+          "CompletionDateTime": "2026-10-06 12:29:56.341000+08:00"
+        },
+        "Statistics": {
+          "EngineExecutionTimeInMillis": 489,
+          "DataScannedInBytes": 13881,
+          "TotalExecutionTimeInMillis": 615,
+          "QueryQueueTimeInMillis": 55,
+          "ServicePreProcessingTimeInMillis": 48,
+          "QueryPlanningTimeInMillis": 99,
+          "ServiceProcessingTimeInMillis": 23,
+          "ResultReuseInformation": {
+            "ReusedPreviousResult": false
+          }
+        },
+        "ResultConfiguration": {
+          "OutputLocation": "s3://is459-g3-588738581042-ap-southeast-1/athena-results/08d8447f-a1bf-4ca6-9270-6471a1ce2dee.csv",
+          "EncryptionConfiguration": {
+            "EncryptionOption": "SSE_S3"
+          }
+        },
+        "WorkGroup": "is459-g3-analysis"
+      }
+    ],
+    "glue": [
+      {
+        "JobName": "is459-g3-ingest-curate",
+        "Id": "jr_7107f3a59a5fa67bcfacb96ecd07286c97b36693487a14a2d14cb8d7aaa90e2c",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 114,
+        "StartedOn": "2026-10-06 12:24:23.769000+08:00",
+        "CompletedOn": "2026-10-06 12:26:25.270000+08:00"
+      },
+      {
+        "JobName": "is459-g3-ingest-score",
+        "Id": "jr_a7385a581c5771cff203dc4ce2bffbf1ab1aa2de12728e9a9b94119758b65c5e",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 146,
+        "StartedOn": "2026-10-06 12:29:55.697000+08:00",
+        "CompletedOn": "2026-10-06 12:32:32.212000+08:00"
+      }
+    ],
+    "sagemaker": [
+      {
+        "ProcessingJobName": "is459-g3-baseline-smoke-20261006-aws1",
+        "ProcessingJobStatus": "Completed",
+        "ProcessingStartTime": "2026-10-06 12:27:58.427000+08:00",
+        "ProcessingEndTime": "2026-10-06 12:28:31.687000+08:00"
+      },
+      {
+        "ProcessingJobName": "is459-g3-export-smoke-20261006-aws1",
+        "ProcessingJobStatus": "Completed",
+        "ProcessingStartTime": "2026-10-06 12:33:33.445000+08:00",
+        "ProcessingEndTime": "2026-10-06 12:34:06.815000+08:00"
+      }
+    ],
+    "result": {
+      "status": "published",
+      "run_id": "smoke-20261006-aws1",
+      "processing_sha256": "80ce54302fe427663773f95a4299d605bdc5c2cd1ab48cfe1a5adfb4ffcf4305",
+      "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+      "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/smoke-20261006-aws1/index.html",
+      "training_requested": false,
+      "model_promoted": false
+    }
+  },
+  "full_run_id": "full-20261006-aws1",
+  "full": {
+    "status": "SUCCEEDED",
+    "startDate": "2026-10-06 12:39:25.236000+08:00",
+    "stopDate": "2026-10-06 13:07:59.137000+08:00",
+    "run_id": "full-20261006-aws1",
+    "execution_arn": "arn:aws:states:ap-southeast-1:588738581042:execution:is459-g3-ingest:full-20261006-aws1",
+    "states_entered": [
+      {
+        "name": "Begin",
+        "time": "2026-10-06 12:39:25.254000+08:00"
+      },
+      {
+        "name": "Curate",
+        "time": "2026-10-06 12:39:26.007000+08:00"
+      },
+      {
+        "name": "PrepareBaseline",
+        "time": "2026-10-06 12:47:13.946000+08:00"
+      },
+      {
+        "name": "Baseline",
+        "time": "2026-10-06 12:47:18.734000+08:00"
+      },
+      {
+        "name": "PrepareBranches",
+        "time": "2026-10-06 12:54:52.987000+08:00"
+      },
+      {
+        "name": "ScoreAndAnalyze",
+        "time": "2026-10-06 12:55:03.749000+08:00"
+      },
+      {
+        "name": "Score",
+        "time": "2026-10-06 12:55:03.749000+08:00"
+      },
+      {
+        "name": "Corridors",
+        "time": "2026-10-06 12:55:03.749000+08:00"
+      },
+      {
+        "name": "TrainRequested",
+        "time": "2026-10-06 12:55:03.749000+08:00"
+      },
+      {
+        "name": "Train",
+        "time": "2026-10-06 12:55:03.749000+08:00"
+      },
+      {
+        "name": "PrepareExport",
+        "time": "2026-10-06 13:00:09.377000+08:00"
+      },
+      {
+        "name": "Export",
+        "time": "2026-10-06 13:00:14.591000+08:00"
+      },
+      {
+        "name": "Publish",
+        "time": "2026-10-06 13:07:51.870000+08:00"
+      },
+      {
+        "name": "Complete",
+        "time": "2026-10-06 13:07:59.112000+08:00"
+      }
+    ],
+    "athena": [
+      {
+        "QueryExecutionId": "e4c5741b-3239-4d48-b0c8-2116554573d8",
+        "Status": {
+          "State": "SUCCEEDED",
+          "SubmissionDateTime": "2026-10-06 12:55:03.943000+08:00",
+          "CompletionDateTime": "2026-10-06 12:55:10.191000+08:00"
+        },
+        "Statistics": {
+          "EngineExecutionTimeInMillis": 6128,
+          "DataScannedInBytes": 86054062,
+          "TotalExecutionTimeInMillis": 6248,
+          "QueryQueueTimeInMillis": 53,
+          "ServicePreProcessingTimeInMillis": 46,
+          "QueryPlanningTimeInMillis": 188,
+          "ServiceProcessingTimeInMillis": 21,
+          "ResultReuseInformation": {
+            "ReusedPreviousResult": false
+          }
+        },
+        "ResultConfiguration": {
+          "OutputLocation": "s3://is459-g3-588738581042-ap-southeast-1/athena-results/e4c5741b-3239-4d48-b0c8-2116554573d8.csv",
+          "EncryptionConfiguration": {
+            "EncryptionOption": "SSE_S3"
+          }
+        },
+        "WorkGroup": "is459-g3-analysis"
+      }
+    ],
+    "glue": [
+      {
+        "JobName": "is459-g3-ingest-curate",
+        "Id": "jr_a51e3c4164652f5fd097539b1c2510759675df3fe87e904a9efebbfefc81a5d7",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 451,
+        "StartedOn": "2026-10-06 12:39:26.160000+08:00",
+        "CompletedOn": "2026-10-06 12:47:08.041000+08:00"
+      },
+      {
+        "JobName": "is459-g3-ingest-score",
+        "Id": "jr_4e8213e9bdfdca34209165323a5ecca9ccb14a891a5143730e84740ce2615850",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 241,
+        "StartedOn": "2026-10-06 12:55:03.919000+08:00",
+        "CompletedOn": "2026-10-06 12:59:14.085000+08:00"
+      }
+    ],
+    "sagemaker": [
+      {
+        "ProcessingJobName": "is459-g3-baseline-full-20261006-aws1",
+        "ProcessingJobStatus": "Completed",
+        "ProcessingStartTime": "2026-10-06 12:47:56.547000+08:00",
+        "ProcessingEndTime": "2026-10-06 12:52:25.395000+08:00"
+      },
+      {
+        "ProcessingJobName": "is459-g3-export-full-20261006-aws1",
+        "ProcessingJobStatus": "Completed",
+        "ProcessingStartTime": "2026-10-06 13:03:09.281000+08:00",
+        "ProcessingEndTime": "2026-10-06 13:07:43.363000+08:00"
+      },
+      {
+        "TrainingJobName": "is459-g3-train-full-20261006-aws1",
+        "TrainingJobStatus": "Completed",
+        "TrainingStartTime": "2026-10-06 12:55:42.443000+08:00",
+        "TrainingEndTime": "2026-10-06 12:58:21.184000+08:00",
+        "TrainingTimeInSeconds": 159,
+        "BillableTimeInSeconds": 159,
+        "ModelArtifacts": {
+          "S3ModelArtifacts": "s3://is459-g3-588738581042-ap-southeast-1/sagemaker/outputs/is459-g3-train-full-20261006-aws1/output/model.tar.gz"
+        }
+      }
+    ],
+    "result": {
+      "status": "published",
+      "run_id": "full-20261006-aws1",
+      "processing_sha256": "c190c2e89af9dd12766a651d69fee918a4e2d5973f6a0ac3e524e51ce30419aa",
+      "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+      "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/full-20261006-aws1/index.html",
+      "training_requested": true,
+      "model_promoted": false
+    }
+  },
+  "baseline_verification": {
+    "status": "passed",
+    "rows": 5078345,
+    "positives": 5177,
+    "amount_usd": 1747869572934.3906,
+    "raw_identity_comparison": "Every source row: ordered SHA256 fingerprint",
+    "fx_comparison": "All same-day and prior-day valuations",
+    "behaviour_reference_rows": 48701,
+    "behaviour_scope": "Complete histories for deterministic label-independent approximately 1% sender cohort"
+  },
+  "public_release": {
+    "status": "passed",
+    "run_id": "full-20261006-aws1",
+    "selected_release": true,
+    "root_shell_verified": true,
+    "public_files": [
+      {
+        "file": "index.html",
+        "bytes": 5856,
+        "sha256": "65a08b3d7c4d472e4cd25adbce3aaacd918271462d1370c0ca936ee673118139"
+      },
+      {
+        "file": "dashboard.css",
+        "bytes": 3191,
+        "sha256": "56e03035c0e726c961cf6a3b86d208d07aa7e9f63b62136a0d5ad68df41c3bd5"
+      },
+      {
+        "file": "dashboard.js",
+        "bytes": 15383,
+        "sha256": "6ef7c86e238f7c91c535fedfcc40f0960f3fcdc4f244d1231e2cdcc8dfb435cc"
+      },
+      {
+        "file": "dashboard.json",
+        "bytes": 598583,
+        "sha256": "d20fa2146697456faf7debbd44f4e7349f96acb9565c02e1b327777e26dedd3a"
+      }
+    ],
+    "successful_manifest_cached": true,
+    "global_lock_exists": false,
+    "global_lock_owner": null,
+    "pipeline": {
+      "run_id": "full-20261006-aws1",
+      "dataset_version": null,
+      "subset": "HI-Small",
+      "source_scope": "selected-subset",
+      "start_date": "2022-09-01",
+      "end_date": "2022-09-18",
+      "processing_sha256": "c190c2e89af9dd12766a651d69fee918a4e2d5973f6a0ac3e524e51ce30419aa",
+      "deployment_sha256": "2e4b7b2d5578948595be0a7c20616b2bb8efdb9a24aa41fb6daedbd02e86bcaf",
+      "train": true,
+      "fx_sha256": "3c2005dfd0ef6c0530accb8ef3fce02b07a810819080dbda761d26f5d363c1c9",
+      "refresh_time": "2026-10-06T05:07:16.566255+00:00",
+      "training": {
+        "status": "passed",
+        "candidate_only": true,
+        "model_promoted": false,
+        "archive_sha256": "21ba36caee6a52eef4dfbb6ca7c34bb697d1be1226400150277629588f6ab849",
+        "validation_gate_passed": true
+      }
+    },
+    "verification": {
+      "scores": {
+        "status": "passed",
+        "rows": 5078345,
+        "max_absolute_score_difference": 0.0,
+        "labels_excluded": true,
+        "model_sha256": "f0dc65ca43901f9f02c57c09605121d48570c64d49991eb952f2d2df6a7e4765"
+      },
+      "corridors": {
+        "status": "passed",
+        "reference_rows": 5078345,
+        "corridor_rows": 1082185,
+        "days": [
+          "2022-09-01",
+          "2022-09-02",
+          "2022-09-03",
+          "2022-09-04",
+          "2022-09-05",
+          "2022-09-06",
+          "2022-09-07",
+          "2022-09-08",
+          "2022-09-09",
+          "2022-09-10",
+          "2022-09-11",
+          "2022-09-12",
+          "2022-09-13",
+          "2022-09-14",
+          "2022-09-15",
+          "2022-09-16",
+          "2022-09-17",
+          "2022-09-18"
+        ],
+        "identifiers_preserved": true,
+        "max_absolute_differences": {
+          "transactions": 0.0,
+          "volume_usd": 0.001739501953125,
+          "volume_share": 2.4841240175987878e-15,
+          "daily_hhi": 5.571931804837504e-15
+        },
+        "volume_rtol": 1e-10,
+        "volume_atol_usd": 0.01
+      },
+      "training": {
+        "status": "passed",
+        "candidate_only": true,
+        "model_promoted": false,
+        "archive_sha256": "21ba36caee6a52eef4dfbb6ca7c34bb697d1be1226400150277629588f6ab849",
+        "validation_gate_passed": true
+      }
+    },
+    "result": {
+      "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+      "model_promoted": false,
+      "processing_sha256": "c190c2e89af9dd12766a651d69fee918a4e2d5973f6a0ac3e524e51ce30419aa",
+      "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/full-20261006-aws1/index.html",
+      "run_id": "full-20261006-aws1",
+      "status": "published",
+      "training_requested": true
+    }
+  },
+  "candidate": {
+    "selected": {
+      "name": "hist-depth5",
+      "max_depth": 5,
+      "trees": 120,
+      "metrics": {
+        "rows": 965524,
+        "positives": 1036,
+        "k": 100,
+        "precision_at_k": 0.46,
+        "recall_at_k": 0.0444015444015444,
+        "lift_at_k": 428.70756756756754,
+        "average_precision": 0.14957112852311877
+      },
+      "model_file": "hist-depth5.ubj",
+      "sha256": "1ec191ca746d463a369cd1e19ef091ec57b98a44f864023e239493fcd62fd4e9"
+    },
+    "validation_gate_passed": true,
+    "frozen_before_test": true,
+    "metrics": {
+      "validation": {
+        "model": {
+          "rows": 965524,
+          "positives": 1036,
+          "k": 100,
+          "precision_at_k": 0.46,
+          "recall_at_k": 0.0444015444015444,
+          "lift_at_k": 428.70756756756754,
+          "average_precision": 0.14957112852311877
+        },
+        "baseline": {
+          "rows": 965524,
+          "positives": 1036,
+          "k": 100,
+          "precision_at_k": 0.02,
+          "recall_at_k": 0.0019305019305019305,
+          "lift_at_k": 18.63945945945946,
+          "average_precision": 0.007240078367384712
+        }
+      },
+      "test": {
+        "model": {
+          "rows": 862792,
+          "positives": 956,
+          "k": 100,
+          "precision_at_k": 0.44,
+          "recall_at_k": 0.04602510460251046,
+          "lift_at_k": 397.10092050209204,
+          "average_precision": 0.13554578803913261
+        },
+        "baseline": {
+          "rows": 862792,
+          "positives": 956,
+          "k": 100,
+          "precision_at_k": 0.0,
+          "recall_at_k": 0.0,
+          "lift_at_k": 0.0,
+          "average_precision": 0.006758066623548483
+        }
+      },
+      "tail": {
+        "model": {
+          "rows": 1108,
+          "positives": 655,
+          "k": 100,
+          "precision_at_k": 0.98,
+          "recall_at_k": 0.14961832061068703,
+          "lift_at_k": 1.6577709923664123,
+          "average_precision": 0.976613138437435
+        },
+        "baseline": {
+          "rows": 1108,
+          "positives": 655,
+          "k": 100,
+          "precision_at_k": 0.6,
+          "recall_at_k": 0.0916030534351145,
+          "lift_at_k": 1.0149618320610687,
+          "average_precision": 0.5919303056190922
+        }
+      }
+    },
+    "execution": {
+      "service": "sagemaker-training-container",
+      "job_name": "is459-g3-train-full-20261006-aws1",
+      "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:1005fb9fe3495126b635adad35aa6c59c0c36149fb059b9677fceefc21218c83",
+      "rows": 5078345,
+      "scored_sha256": "9be773c27bffbd598d1c3b179c9f03bf447febed0a728193cc5fd5091795994c",
+      "snapshot_sha256": "8f82d5d5e505f686f023800f1ac83a2a00a636b48f3e37a265ade6f6c4c5820a",
+      "promotion": "candidate-only"
+    },
+    "model_promoted": false
+  },
+  "post_run_terraform_plans": {
+    "sagemaker": "no changes; detailed exit code 0",
+    "ingestion": "no changes; detailed exit code 0"
+  },
+  "cache_check": {
+    "status": "passed",
+    "method": "Actual CLI start() with deployed successful cache, writes and workflow starts disabled"
+  },
+  "browser_verification": {
+    "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/full-20261006-aws1/index.html",
+    "aml_test_precision_at_100": 0.44,
+    "treasury_transactions": 5078345,
+    "treasury_volume_display": "$1.75T",
+    "console_errors": []
+  },
+  "evidence_files": {
+    "output\\ingestion-full-aws-20261006\\baseline-proof.json": "c4d2cc2f590fde4e69e6c4bd8c5ee5675b54693634ab8b4781263524c6451fcd",
+    "output\\ingestion-full-aws-20261006\\cache-check.json": "4ed3e45fe1afdf6e6e724b2bf8d9c043e8f89ad529ce3c7a08dfca5ea6a75906",
+    "output\\ingestion-full-aws-20261006\\candidate-comparison.json": "dcf7fb96063b3dae9725c5218a809d76314fa56bc1f432c52903162baa5655e9",
+    "output\\ingestion-full-aws-20261006\\candidate-selection.json": "35807860914b42df9d37364a14c1f5cb3a4fb0cb376bb51d2003bbc842c9577a",
+    "output\\ingestion-full-aws-20261006\\evidence-result.json": "d3cfb06e9890d19f8465d8904a0faa0a3d592c91e5c6adca3fa23a4bc6308f7e",
+    "output\\ingestion-full-aws-20261006\\export-evidence-corridors.json": "fd524eba1d4b940922f61f5316ac5ffa2b4ec6c35ad71204b52e5f35eabc6ff7",
+    "output\\ingestion-full-aws-20261006\\export-evidence-scores.json": "3ccfe816143c08242c998d59cf8e24d0065ee2cdf858fae68fd2d1cdea76f917",
+    "output\\ingestion-full-aws-20261006\\export-release-manifest.json": "5c18129ccffcf00d5d9bffd209f0dd345e917747cbebf8b34ea235b8922c6ed2",
+    "output\\ingestion-full-aws-20261006\\operations.json": "0e0438a2985610bb869b3e81cd4592720a270860026dafad55f151ac8b8f073d",
+    "output\\ingestion-full-aws-20261006\\progress.json": "ec4ed95d0bc11366904b33371b5cf24f8105df74126ed7b029fed5f9a2f7f147",
+    "output\\ingestion-full-aws-20261006\\public-release-verification.json": "9cd2b04e2840dc43407ec18cc91ef3565c1df889b226585db0662b94ba1cedb0"
+  },
+  "compute_estimates_usd": {
+    "scope": "Authorized smoke and full run combined; observed duration estimate, not invoice or total spend cap",
+    "glue_2_dpu_seconds": 1904,
+    "glue_at_0_44_per_dpu_hour": 0.23271111111111112,
+    "processing_execution_seconds": 609.56,
+    "processing_execution_only_at_0_576_per_hour": 0.09752959999999998,
+    "processing_creation_to_last_modified_seconds": 1208.673,
+    "processing_creation_to_last_modified_estimate": 0.19338767999999998,
+    "training_billable_seconds": 159,
+    "training_at_0_288_per_hour": 0.012719999999999999,
+    "excluded": "Athena, storage/requests, ECR, logs, orchestration, CDN, taxes and existing resources"
+  },
+  "budget_snapshot": {
+    "BudgetName": "is459-g3-account-monthly",
+    "BudgetLimit": {
+      "Amount": "10.0",
+      "Unit": "USD"
+    },
+    "CostTypes": {
+      "IncludeTax": true,
+      "IncludeSubscription": true,
+      "UseBlended": false,
+      "IncludeRefund": true,
+      "IncludeCredit": true,
+      "IncludeUpfront": true,
+      "IncludeRecurring": true,
+      "IncludeOtherSubscription": true,
+      "IncludeSupport": true,
+      "IncludeDiscount": true,
+      "UseAmortized": false
+    },
+    "TimeUnit": "MONTHLY",
+    "TimePeriod": {
+      "Start": "2026-10-01 08:00:00+08:00",
+      "End": "2087-06-15 08:00:00+08:00"
+    },
+    "CalculatedSpend": {
+      "ActualSpend": {
+        "Amount": "1.252",
+        "Unit": "USD"
+      },
+      "ForecastedSpend": {
+        "Amount": "16.191",
+        "Unit": "USD"
+      }
+    },
+    "BudgetType": "COST",
+    "LastUpdatedTime": "2026-10-06 09:28:38.644000+08:00",
+    "HealthStatus": {
+      "Status": "HEALTHY",
+      "LastUpdatedTime": "2026-10-06 09:28:38.305000+08:00"
+    }
+  },
+  "budget_snapshot_note": "Billing update 09:28 Singapore predates these runs; USD1.252 is not their final account cost.",
+  "cloudfront_invalidations": {
+    "Marker": "",
+    "MaxItems": 100,
+    "IsTruncated": false,
+    "Quantity": 2,
+    "Items": [
+      {
+        "Id": "I4D4GQ1W522HXCG40X7APSXBBC",
+        "CreateTime": "2026-10-06 05:07:58.765000+00:00",
+        "Status": "Completed"
+      },
+      {
+        "Id": "I2PJRGCMLWT2N55RIHF3IO0NS1",
+        "CreateTime": "2026-10-06 04:35:31.074000+00:00",
+        "Status": "Completed"
+      }
+    ]
+  }
+}

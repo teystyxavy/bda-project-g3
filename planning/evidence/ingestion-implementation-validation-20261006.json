@@ -1,0 +1,144 @@
+{
+  "date": "2026-10-06",
+  "status": "implemented-locally-verified-not-deployed",
+  "aws_mutations": false,
+  "paid_cloud_jobs_started": false,
+  "dashboard_published": false,
+  "tests": {
+    "full_local_suite": {
+      "passed": 120,
+      "skipped": 3
+    },
+    "latest_ingestion_regression": {
+      "passed": 9,
+      "failed": 0
+    },
+    "terraform_mock_tests": {
+      "ingestion": "passed",
+      "sagemaker": "passed"
+    },
+    "terraform_validate": "passed",
+    "powershell_syntax": "passed",
+    "javascript_syntax": "passed",
+    "lambda_standard_library_import": "passed",
+    "deployment_default_integrity_mode": "passed"
+  },
+  "image": {
+    "local_tag": "is459-g3-ingestion:local-20261006-v5",
+    "uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:1005fb9fe3495126b635adad35aa6c59c0c36149fb059b9677fceefc21218c83",
+    "network_isolated_container_smoke": "passed"
+  },
+  "real_data_container_smoke": {
+    "raw_and_fx": {
+      "status": "passed",
+      "rows": 1000,
+      "positives": 0,
+      "amount_usd": 1644403430.3400002,
+      "raw_identity_comparison": "Every source row: ordered SHA256 fingerprint",
+      "fx_comparison": "All same-day and prior-day valuations",
+      "behaviour_reference_rows": 4,
+      "behaviour_scope": "Complete histories for deterministic label-independent approximately 1% sender cohort"
+    },
+    "verification": {
+      "scores": {
+        "status": "passed",
+        "rows": 1000,
+        "max_absolute_score_difference": 0.0,
+        "labels_excluded": true,
+        "model_sha256": "f0dc65ca43901f9f02c57c09605121d48570c64d49991eb952f2d2df6a7e4765"
+      },
+      "corridors": {
+        "status": "passed",
+        "reference_rows": 1000,
+        "corridor_rows": 177,
+        "days": [
+          "2022-09-01"
+        ],
+        "identifiers_preserved": true,
+        "max_absolute_differences": {
+          "transactions": 0.0,
+          "volume_usd": 2.9802322387695312e-08,
+          "volume_share": 9.8879238130678e-17,
+          "daily_hhi": 2.7755575615628914e-17
+        },
+        "volume_rtol": 1e-10,
+        "volume_atol_usd": 0.01
+      }
+    },
+    "release_files": [
+      "index.html",
+      "dashboard.css",
+      "dashboard.js",
+      "dashboard.json"
+    ],
+    "limitations": "Glue scores and Athena query results were staged native/reference files for this local test; no cloud execution."
+  },
+  "real_api_prepare_only": {
+    "passed": true,
+    "run_id": "api-smoke-20261006",
+    "manifest_sha256": "334d87f19b6795e53cab5820886c7d31c6a82950d17f577afe692e5826d996c6",
+    "rows": 1000
+  },
+  "aws_preflight": {
+    "quota_ready": true,
+    "workflow_definition": "OK",
+    "hourly_prices_usd": {
+      "APS1-Processing:ml.m5.2xlarge": 0.576,
+      "APS1-Train:ml.m5.xlarge": 0.288
+    }
+  },
+  "terraform_plans": {
+    "sagemaker": {
+      "additions": 3,
+      "updates": 0,
+      "deletions": 0,
+      "types": {
+        "aws_ecr_repository": 1,
+        "aws_iam_role": 1,
+        "aws_iam_role_policy": 1
+      },
+      "saved_plan_sha256": "df2dc8b4735ed9ac37cacd459a42d43f06b5aa2057c09d0463dfeeb1ffe320cd"
+    },
+    "ingestion": {
+      "additions": 30,
+      "updates": 0,
+      "deletions": 0,
+      "types": {
+        "aws_cloudwatch_log_group": 5,
+        "aws_glue_catalog_database": 1,
+        "aws_glue_job": 2,
+        "aws_iam_role": 4,
+        "aws_iam_role_policy": 4,
+        "aws_lambda_function": 1,
+        "aws_s3_object": 12,
+        "aws_sfn_state_machine": 1
+      },
+      "saved_plan_sha256": "60371f2a9f2b4a84c30a29d5b3ad80facc8f7ac1c44ccee00bff057a84c2d9e1"
+    }
+  },
+  "combined_additions": 33,
+  "source_sha256": {
+    "scripts/ingest.py": "a293480b98e6ccde7ed9f27bca0a425d113ec53cc6e2b792bbe46ab2a6c4f7fa",
+    "scripts/ingest.ps1": "6fdc78f88688c9b7c59f9e634c711b60b32d01cdfacdecde0b9f420b14321dd3",
+    "scripts/deploy-ingestion.ps1": "9c6dffe052bbf52b99ddde7e1b69f68611c20a01fbe76878c7e2efbc564e5c90",
+    "scripts/prepare-ingestion.py": "46dd27b9f091c6ee73504a23273d2e5b4c1b1b34f6410661b6ed9987624aa677",
+    "scripts/prepare-ingestion-smoke.py": "c72640bba0ebdca4d351e01a4a80fef3f0ebc1d19286c7fbeb4c1385b285b7f4",
+    "scripts/check-ingestion.py": "5c274f3f333494f6b56a8218017937b6f0f23a463756e4aaf45d75ec414e66b4",
+    "scripts/kaggle-download.py": "1339486f8d85aeca7d38f45e0f0e8317010eddadf9c5bec6abaa3bc03364c125",
+    "src/bda_pipeline/acquisition.py": "a6aa68deb1f8dbebdb81984f2aca984a8baebee8c5230e73f949cd43b047df15",
+    "src/bda_pipeline/ingest_contract.py": "b22e3c25096000b03374ea745364bba33428fe660f9d16fffa5864a366dfbe22",
+    "src/bda_pipeline/ingest_control.py": "dd174b6ecba3a9db31f1b6e550530684fe2db319113f75d030bec5a3f38b7c94",
+    "src/bda_pipeline/ingest_compute.py": "856eb9794f23fe35e12f33863e6433af3a43b821a3bd0069aab6af420f1bf185",
+    "sagemaker/pipeline_worker.py": "0e0ddb9071d562aba6c2399c2eef71e5b96efd15bf08e17490cd7dc39c0b43c8",
+    "sagemaker/Dockerfile": "0d336e9499c2a0bca36e4dc3e406c662dddecaed58549fe8a54a55e88d0706aa",
+    "scripts/prepare-sagemaker-container.py": "249c08be110a03d5d24344a7c917a1e24ad80d32352612681132e85616297e06",
+    "dashboard/dashboard.js": "6ef7c86e238f7c91c535fedfcc40f0960f3fcdc4f244d1231e2cdcc8dfb435cc",
+    "infra/ingestion/main.tf": "1501771fa635fd2a89bf332ed19e128c30cc49486fd5c545007c542d1ba806a8",
+    "infra/ingestion/workflow.asl.json": "4860f35a9fd9bcb1db4e52a2510f6bdb658032afaf7345d6ec935c329fd04827",
+    "infra/ingestion/versions.tf": "e24b9cab0df3fd37f27ea687155323f41e1ac9ea32d9bb7ad3c6c6c7cbbe3cad",
+    "infra/ingestion/build-workflow.py": "7092eec8a5bea7c0704f2845f8c44fab63c46dea2ad2288cf04d0e89d4a34c09",
+    "infra/ingestion/tests/ingestion.tftest.hcl": "243f86a56dd25e7359622b6fd9969627d7a87de0c1580be193ee587d1c0fbaf7",
+    "tests/test_ingestion.py": "cb4db4907dbe9e7aff1819cbabe5d8b66c5bf49f2409463d39773a33eed17823"
+  },
+  "approval_pending": "Deploy 33 additions, push the immutable CPU image, then explicitly approved AWS smoke/publication and full ingestion/training."
+}

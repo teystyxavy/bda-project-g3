@@ -1,0 +1,54 @@
+{
+  "status": "prepared-not-deployed",
+  "run_id": "stream-smoke-20261006",
+  "image_manifest_sha256": "7430b609e68fc7c3c44c3ebf158909e79ba223d6f9aaac5eaf0f57ff99697130",
+  "plans": {
+    "staging": {
+      "creates": 9,
+      "updates": 0,
+      "deletes": 0,
+      "addresses": [
+        "aws_cloudwatch_log_group.consumer[0]",
+        "aws_cloudwatch_log_metric_filter.record_failures[0]",
+        "aws_cloudwatch_metric_alarm.record_failures[0]",
+        "aws_dynamodb_table.state[0]",
+        "aws_ecr_repository.runtime[0]",
+        "aws_ecr_repository_policy.lambda_retrieval[0]",
+        "aws_iam_role.consumer[0]",
+        "aws_iam_role_policy.consumer[0]",
+        "aws_kinesis_stream.replay[0]"
+      ],
+      "plan_sha256": "af441d64d25f1fc02d4295b829c7c18eea033b86d443900ea3afc9394806f37b",
+      "json_sha256": "a7c1620cfcc62cd1350a615235c5173d67e78cf88573ab02ca042d2b31087900"
+    },
+    "disabled": {
+      "creates": 11,
+      "updates": 0,
+      "deletes": 0,
+      "addresses": [
+        "aws_cloudwatch_log_group.consumer[0]",
+        "aws_cloudwatch_log_metric_filter.record_failures[0]",
+        "aws_cloudwatch_metric_alarm.record_failures[0]",
+        "aws_dynamodb_table.state[0]",
+        "aws_ecr_repository.runtime[0]",
+        "aws_ecr_repository_policy.lambda_retrieval[0]",
+        "aws_iam_role.consumer[0]",
+        "aws_iam_role_policy.consumer[0]",
+        "aws_kinesis_stream.replay[0]",
+        "aws_lambda_event_source_mapping.replay[0]",
+        "aws_lambda_function.consumer[0]"
+      ],
+      "plan_sha256": "5d2c094f64a9aa608316a6a9eb5e5fdede92c5dc34fccb9acc593917434b7776",
+      "json_sha256": "07fbb2525c60d34e519584837995a2b10bfb16544d93d2cea2c8422f156aa22a"
+    }
+  },
+  "validation": {
+    "native_targeted_tests_passed": 64,
+    "native_skipped": 1,
+    "linux_core_sdk_tests_passed": 11,
+    "terraform_mock_tests_passed": 5,
+    "final_linux_parity_rows": 884,
+    "ecr_policy_findings": 0,
+    "runtime_policy_findings": 0
+  }
+}

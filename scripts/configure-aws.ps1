@@ -42,7 +42,7 @@ if ($LoginMethod -eq 'Browser') {
 
 $toolsProfile = "$ProfileName-tools"
 $env:PATH = "$(Split-Path -Parent $awsExecutable);$env:PATH"
-$credentialProcess = 'aws.exe configure export-credentials --profile {0} --format process' -f $ProfileName
+$credentialProcess = 'aws.exe configure export-credentials --profile {0} --format process --region {1}' -f $ProfileName, $Region
 Invoke-AwsSetup -Arguments @('configure', 'set', 'credential_process', $credentialProcess, '--profile', $toolsProfile)
 Invoke-AwsSetup -Arguments @('configure', 'set', 'region', $Region, '--profile', $toolsProfile)
 $accountId = (Invoke-AwsSetup -Arguments @('sts', 'get-caller-identity', '--profile', $toolsProfile, '--query', 'Account', '--output', 'text', '--no-cli-pager')).Trim()

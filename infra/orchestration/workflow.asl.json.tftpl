@@ -1,0 +1,150 @@
+{
+  "Comment": "Frozen BQ1 scoring and BQ2 corridor query. Completion requires local reconciliation before any publication.",
+  "StartAt": "ValidateRequest",
+  "TimeoutSeconds": 1800,
+  "States": {
+    "ValidateRequest": {
+      "Type": "Choice",
+      "Choices": [{"And": [
+        {"Variable": "$.execution_approved", "IsPresent": true},
+        {"Variable": "$.execution_approved", "BooleanEquals": true},
+        {"Variable": "$.run_id", "IsPresent": true},
+        {"Variable": "$.run_id", "StringEquals": ${run_id_json}},
+        {"Variable": "$$.Execution.Name", "StringEquals": ${run_id_json}},
+        {"Variable": "$.expected_rows", "IsPresent": true},
+        {"Variable": "$.expected_rows", "NumericEquals": ${rows_json}}
+      ], "Next": "GetFrozenJob"}],
+      "Default": "RequestRejected"
+    },
+    "RequestRejected": {"Type": "Fail", "Error": "UnapprovedOrMismatchedRequest", "Cause": "No paid task started; execution approval must follow the reviewed scope."},
+    "GetFrozenJob": {
+      "Type": "Task", "Resource": "arn:aws:states:::aws-sdk:glue:getJob",
+      "Parameters": {"JobName": "is459-g3-score-frozen"}, "ResultPath": "$.job", "TimeoutSeconds": 30,
+      "Retry": [{"ErrorEquals": ["Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2, "JitterStrategy": "FULL"}],
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.failure", "Next": "NotifyFailure"}],
+      "Next": "ValidateFrozenJob"
+    },
+    "ValidateFrozenJob": {
+      "Type": "Choice", "Choices": [{"And": [
+        {"Variable": "$.job.Job.GlueVersion", "IsPresent": true},
+        {"Variable": "$.job.Job.GlueVersion", "StringEquals": "5.0"},
+        {"Variable": "$.job.Job.Role", "IsPresent": true},
+        {"Variable": "$.job.Job.Role", "StringEquals": ${job_role_json}},
+        {"Variable": "$.job.Job.WorkerType", "IsPresent": true},
+        {"Variable": "$.job.Job.WorkerType", "StringEquals": "G.1X"},
+        {"Variable": "$.job.Job.NumberOfWorkers", "IsPresent": true},
+        {"Variable": "$.job.Job.NumberOfWorkers", "NumericEquals": 2},
+        {"Variable": "$.job.Job.Timeout", "IsPresent": true},
+        {"Variable": "$.job.Job.Timeout", "NumericEquals": 10},
+        {"Variable": "$.job.Job.MaxRetries", "IsPresent": true},
+        {"Variable": "$.job.Job.MaxRetries", "NumericEquals": 0},
+        {"Variable": "$.job.Job.ExecutionProperty.MaxConcurrentRuns", "IsPresent": true},
+        {"Variable": "$.job.Job.ExecutionProperty.MaxConcurrentRuns", "NumericEquals": 1},
+        {"Variable": "$.job.Job.Command.ScriptLocation", "IsPresent": true},
+        {"Variable": "$.job.Job.Command.ScriptLocation", "StringEquals": ${script_uri_json}},
+        {"Variable": "$.job.Job.NonOverridableArguments['--INPUT']", "IsPresent": true},
+        {"Variable": "$.job.Job.NonOverridableArguments['--INPUT']", "StringEquals": ${input_uri_json}},
+        {"Variable": "$.job.Job.NonOverridableArguments['--OUTPUT']", "IsPresent": true},
+        {"Variable": "$.job.Job.NonOverridableArguments['--OUTPUT']", "StringEquals": ${output_uri_json}},
+        {"Variable": "$.job.Job.NonOverridableArguments['--EXPECTED_ROWS']", "IsPresent": true},
+        {"Variable": "$.job.Job.NonOverridableArguments['--EXPECTED_ROWS']", "StringEquals": "5078345"},
+        {"Variable": "$.job.Job.NonOverridableArguments['--MANIFEST_SHA256']", "IsPresent": true},
+        {"Variable": "$.job.Job.NonOverridableArguments['--MANIFEST_SHA256']", "StringEquals": ${manifest_sha256_json}},
+        {"Variable": "$.job.Job.NonOverridableArguments['--TempDir']", "IsPresent": true},
+        {"Variable": "$.job.Job.NonOverridableArguments['--TempDir']", "StringEquals": ${temp_uri_json}},
+        {"Variable": "$.job.Job.NonOverridableArguments['--conf']", "IsPresent": true},
+        {"Variable": "$.job.Job.NonOverridableArguments['--conf']", "StringEquals": "spark.hadoop.mapreduce.fileoutputcommitter.marksuccessfuljobs=true"}
+      ], "Next": "GetCuratedTable"}], "Default": "ContractRejected"
+    },
+    "ContractRejected": {"Type": "Pass", "Result": {"Error": "FrozenJobOrSourceContractMismatch", "Cause": "No paid task started; re-review exact job/source settings."}, "ResultPath": "$.failure", "Next": "NotifyFailure"},
+    "GetCuratedTable": {
+      "Type": "Task", "Resource": "arn:aws:states:::aws-sdk:glue:getTable",
+      "Parameters": {"DatabaseName": "is459_g3_curated", "Name": "full_transactions"}, "ResultPath": "$.table", "TimeoutSeconds": 30,
+      "Retry": [{"ErrorEquals": ["Glue.InternalServiceException", "Glue.OperationTimeoutException"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2, "JitterStrategy": "FULL"}],
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.failure", "Next": "NotifyFailure"}], "Next": "ValidateCuratedTable"
+    },
+    "ValidateCuratedTable": {"Type": "Choice", "Choices": [{"And": [
+      {"Variable": "$.table.Table.StorageDescriptor.Location", "IsPresent": true},
+      {"Variable": "$.table.Table.StorageDescriptor.Location", "StringEquals": ${input_uri_json}},
+      {"Variable": "$.table.Table.Parameters['projection.enabled']", "IsPresent": true},
+      {"Variable": "$.table.Table.Parameters['projection.enabled']", "StringEquals": "true"},
+      {"Variable": "$.table.Table.Parameters['storage.location.template']", "IsPresent": true},
+      {"Variable": "$.table.Table.Parameters['storage.location.template']", "StringEquals": ${projection_template_json}}
+    ], "Next": "GetWorkgroup"}], "Default": "ContractRejected"},
+    "GetWorkgroup": {
+      "Type": "Task", "Resource": "arn:aws:states:::aws-sdk:athena:getWorkGroup",
+      "Parameters": {"WorkGroup": "is459-g3-analysis"}, "ResultPath": "$.workgroup", "TimeoutSeconds": 30,
+      "Retry": [{"ErrorEquals": ["Athena.InternalServerException", "Athena.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2, "JitterStrategy": "FULL"}],
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.failure", "Next": "NotifyFailure"}], "Next": "ValidateWorkgroup"
+    },
+    "ValidateWorkgroup": {"Type": "Choice", "Choices": [{"And": [
+      {"Variable": "$.workgroup.WorkGroup.State", "IsPresent": true},
+      {"Variable": "$.workgroup.WorkGroup.State", "StringEquals": "ENABLED"},
+      {"Variable": "$.workgroup.WorkGroup.Configuration.EnforceWorkGroupConfiguration", "IsPresent": true},
+      {"Variable": "$.workgroup.WorkGroup.Configuration.EnforceWorkGroupConfiguration", "BooleanEquals": true},
+      {"Variable": "$.workgroup.WorkGroup.Configuration.BytesScannedCutoffPerQuery", "IsPresent": true},
+      {"Variable": "$.workgroup.WorkGroup.Configuration.BytesScannedCutoffPerQuery", "NumericEquals": 1073741824},
+      {"Variable": "$.workgroup.WorkGroup.Configuration.ResultConfiguration.OutputLocation", "IsPresent": true},
+      {"Variable": "$.workgroup.WorkGroup.Configuration.ResultConfiguration.OutputLocation", "StringEquals": ${athena_results_json}},
+      {"Variable": "$.workgroup.WorkGroup.Configuration.ResultConfiguration.EncryptionConfiguration.EncryptionOption", "IsPresent": true},
+      {"Variable": "$.workgroup.WorkGroup.Configuration.ResultConfiguration.EncryptionConfiguration.EncryptionOption", "StringEquals": "SSE_S3"}
+    ], "Next": "CheckFreshOutput"}], "Default": "ContractRejected"},
+    "CheckFreshOutput": {
+      "Type": "Task", "Resource": "arn:aws:states:::aws-sdk:s3:listObjectsV2",
+      "Parameters": {"Bucket": ${bucket_json}, "Prefix": ${output_prefix_json}, "MaxKeys": 1}, "ResultPath": "$.inventory", "TimeoutSeconds": 30,
+      "Retry": [{"ErrorEquals": ["S3.SlowDownException", "S3.InternalErrorException"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2, "JitterStrategy": "FULL"}],
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.failure", "Next": "NotifyFailure"}], "Next": "OutputEmpty"
+    },
+    "OutputEmpty": {"Type": "Choice", "Choices": [{"And": [{"Variable": "$.inventory.KeyCount", "IsPresent": true}, {"Variable": "$.inventory.KeyCount", "NumericEquals": 0}], "Next": "CheckFreshTemp"}], "Default": "ExistingOutputRejected"},
+    "CheckFreshTemp": {
+      "Type": "Task", "Resource": "arn:aws:states:::aws-sdk:s3:listObjectsV2",
+      "Parameters": {"Bucket": ${bucket_json}, "Prefix": ${temp_prefix_json}, "MaxKeys": 1}, "ResultPath": "$.temp_inventory", "TimeoutSeconds": 30,
+      "Retry": [{"ErrorEquals": ["S3.SlowDownException", "S3.InternalErrorException"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2, "JitterStrategy": "FULL"}],
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.failure", "Next": "NotifyFailure"}], "Next": "TempEmpty"
+    },
+    "TempEmpty": {"Type": "Choice", "Choices": [{"And": [{"Variable": "$.temp_inventory.KeyCount", "IsPresent": true}, {"Variable": "$.temp_inventory.KeyCount", "NumericEquals": 0}], "Next": "ComputeBusinessOutputs"}], "Default": "ExistingOutputRejected"},
+    "ExistingOutputRejected": {"Type": "Pass", "Result": {"Error": "OutputAlreadyExists", "Cause": "No paid task started; preserve completed or partial output and use a newly reviewed run."}, "ResultPath": "$.failure", "Next": "NotifyFailure"},
+    "ComputeBusinessOutputs": {
+      "Type": "Parallel", "InputPath": "$", "ResultPath": "$.business_outputs",
+      "Branches": [
+        {"StartAt": "RunFrozenScoring", "States": {
+          "RunFrozenScoring": {"Type": "Task", "Resource": "arn:aws:states:::glue:startJobRun.sync",
+            "Parameters": {"JobName": "is459-g3-score-frozen"}, "ResultPath": "$.score_run", "TimeoutSeconds": 900, "Next": "CheckRealSuccessMarker"},
+          "CheckRealSuccessMarker": {"Type": "Task", "Resource": "arn:aws:states:::aws-sdk:s3:headObject",
+            "Parameters": {"Bucket": ${bucket_json}, "Key": ${marker_key_json}}, "ResultPath": "$.marker", "TimeoutSeconds": 30,
+            "Retry": [{"ErrorEquals": ["S3.SlowDownException", "S3.InternalErrorException"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2, "JitterStrategy": "FULL"}], "Next": "ValidateSuccessMarker"},
+          "ValidateSuccessMarker": {"Type": "Choice", "Choices": [{"And": [
+            {"Variable": "$.marker.ContentLength", "IsPresent": true},
+            {"Variable": "$.marker.ContentLength", "NumericEquals": 0},
+            {"Variable": "$.marker.ServerSideEncryption", "IsPresent": true},
+            {"Variable": "$.marker.ServerSideEncryption", "StringEquals": "AES256"}
+          ], "Next": "ScoringComplete"}], "Default": "InvalidMarker"},
+          "InvalidMarker": {"Type": "Fail", "Error": "InvalidScoringSuccessMarker"},
+          "ScoringComplete": {"Type": "Pass", "Parameters": {"job_run.$": "$.score_run", "success_marker_verified": true}, "End": true}
+        }},
+        {"StartAt": "RunTreasuryCorridors", "States": {
+          "RunTreasuryCorridors": {"Type": "Task", "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+            "Parameters": {"QueryString": ${query_sql_json}, "WorkGroup": "is459-g3-analysis", "QueryExecutionContext": {"Database": "is459_g3_curated"},
+              "ClientRequestToken.$": "States.Hash(States.Format('{}:treasury-corridors', $$.Execution.Id), 'SHA-256')"},
+            "TimeoutSeconds": 300, "End": true}
+        }}
+      ],
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.failure", "Next": "NotifyFailure"}],
+      "Next": "BusinessOutputsReady"
+    },
+    "BusinessOutputsReady": {"Type": "Pass", "Parameters": {
+      "status": "business-outputs-ready-reconciliation-required", "run_id": ${run_id_json}, "expected_rows": ${rows_json},
+      "execution_arn.$": "$$.Execution.Id", "scored_uri": ${output_uri_json},
+      "business_outputs.$": "$.business_outputs", "dashboard_published": false,
+      "next_step": "Verify every score/feature and treasury result locally; prepare a new release before separately approved publication."
+    }, "End": true},
+    "NotifyFailure": {
+      "Type": "Task", "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {"TopicArn": ${notification_topic_json}, "Subject": "IS459 reviewed batch failed",
+        "Message.$": "States.JsonToString($.failure)"}, "ResultPath": null, "TimeoutSeconds": 30,
+      "Retry": [{"ErrorEquals": ["SNS.InternalError", "SNS.Throttled"], "IntervalSeconds": 2, "MaxAttempts": 2, "BackoffRate": 2, "JitterStrategy": "FULL"}],
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.notification_failure", "Next": "WorkflowFailed"}], "Next": "WorkflowFailed"
+    },
+    "WorkflowFailed": {"Type": "Fail", "Error": "ReviewedBatchFailed", "Cause": "Inspect execution history and preserved output; no automatic compute rerun or publication."}
+  }
+}

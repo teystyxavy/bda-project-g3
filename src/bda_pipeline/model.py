@@ -87,7 +87,11 @@ def read_split(dataset, name):
 def explain_queue(model, frame, scores, vocabulary):
     """Exact TreeSHAP contributions to the model margin, not causal claims."""
     import xgboost as xgb
-    queue = rank(frame, scores).head(100).copy()
+    # Sort only keys and scores; copy feature/string columns for displayed rows.
+    ordering = frame[['timestamp', 'source_row_index']].reset_index(drop=True)
+    selected = rank(ordering, scores).head(100)
+    queue = frame.iloc[selected.index].copy()
+    queue['risk_score'] = selected.risk_score.to_numpy()
     matrix = encode(queue, vocabulary)
     contributions = model.predict(xgb.DMatrix(matrix), pred_contribs=True)
     margin = contributions.sum(axis=1)

@@ -1,0 +1,207 @@
+{
+  "status": "published-and-verified",
+  "verified_at_utc": "2026-10-05T22:19:03.055215+00:00",
+  "public_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+  "distribution_id": "EU1WB6XM4GKHQ",
+  "distribution_arn": "arn:aws:cloudfront::588738581042:distribution/EU1WB6XM4GKHQ",
+  "distribution_state": "Deployed",
+  "distribution_enabled": true,
+  "distribution_last_modified": "2026-10-05T22:13:54.338000+00:00",
+  "account_id": "588738581042",
+  "region": "ap-southeast-1",
+  "bucket": "is459-g3-dashboard-588738581042-ap-southeast-1",
+  "staging_apply": {
+    "additions": 9,
+    "updates": 0,
+    "deletions": 0,
+    "plan_sha256": "b7b22689ccc1f8e4aa8314f5132a27bcc4a8ef4f4ec6e5d9dfd5614faabcc6d4"
+  },
+  "enable_apply": {
+    "additions": 0,
+    "updates": 1,
+    "deletions": 0,
+    "only_change": "Distribution enabled false to true",
+    "plan_sha256": "357bd2c0c30efb17707e80b2ee3fca7f5a80dd39973844d5e30a565694e6dce2"
+  },
+  "post_apply_no_changes": true,
+  "release_bytes": 620811,
+  "release_manifest_sha256": "46269d8823308d9482e440a906ceaaa5d951a1f3e9a9a9f0556c0af7ec25a723",
+  "manifest_scope": "Immutable historical packaging snapshot; this result supersedes its prepared-not-published status",
+  "uploaded_files": [
+    {
+      "sha256": "65a08b3d7c4d472e4cd25adbce3aaacd918271462d1370c0ca936ee673118139",
+      "bytes": 5856,
+      "key": "dashboard/index.html",
+      "content_type": "text/html; charset=utf-8",
+      "cache_control": "no-cache",
+      "version_id": "p_QqYOQg_IGt4FPi7JOCfs277hCrA52m",
+      "sse": "AES256"
+    },
+    {
+      "sha256": "56e03035c0e726c961cf6a3b86d208d07aa7e9f63b62136a0d5ad68df41c3bd5",
+      "bytes": 3191,
+      "key": "dashboard/dashboard.css",
+      "content_type": "text/css; charset=utf-8",
+      "cache_control": "public,max-age=300",
+      "version_id": "llHKx2gIQeK_rt5rlcXQ0VkVmdKQEMmu",
+      "sse": "AES256"
+    },
+    {
+      "sha256": "495bdd32c3d1cc2fc3edbd0cfd17c317cf60a465109388ebcdfb2ac4eddba098",
+      "bytes": 13283,
+      "key": "dashboard/dashboard.js",
+      "content_type": "application/javascript; charset=utf-8",
+      "cache_control": "public,max-age=300",
+      "version_id": "3TPb3WmefEoI3ENvpT6oPKqj8AFbA4rO",
+      "sse": "AES256"
+    },
+    {
+      "sha256": "02c034a4ee1e705bd8fa43d424495d40d44ed089e36d2003e8f6718131dc78de",
+      "bytes": 598481,
+      "key": "dashboard/dashboard.json",
+      "content_type": "application/json; charset=utf-8",
+      "cache_control": "public,max-age=300",
+      "version_id": "OaWrwk0uKxOuhEiVU8NBk_qc8H5rqWRu",
+      "sse": "AES256"
+    }
+  ],
+  "http_verification": {
+    "status": "passed",
+    "url": "https://d1n61tlw9pcrog.cloudfront.net/",
+    "checks": [
+      {
+        "path": "index.html",
+        "status": 200,
+        "sha256": "65a08b3d7c4d472e4cd25adbce3aaacd918271462d1370c0ca936ee673118139",
+        "bytes": 5856,
+        "content_type": "text/html; charset=utf-8",
+        "security_headers_verified": true
+      },
+      {
+        "path": "dashboard.css",
+        "status": 200,
+        "sha256": "56e03035c0e726c961cf6a3b86d208d07aa7e9f63b62136a0d5ad68df41c3bd5",
+        "bytes": 3191,
+        "content_type": "text/css; charset=utf-8",
+        "security_headers_verified": true
+      },
+      {
+        "path": "dashboard.js",
+        "status": 200,
+        "sha256": "495bdd32c3d1cc2fc3edbd0cfd17c317cf60a465109388ebcdfb2ac4eddba098",
+        "bytes": 13283,
+        "content_type": "application/javascript; charset=utf-8",
+        "security_headers_verified": true
+      },
+      {
+        "path": "dashboard.json",
+        "status": 200,
+        "sha256": "02c034a4ee1e705bd8fa43d424495d40d44ed089e36d2003e8f6718131dc78de",
+        "bytes": 598481,
+        "content_type": "application/json; charset=utf-8",
+        "security_headers_verified": true
+      },
+      {
+        "path": "/",
+        "status": 200,
+        "default_root_verified": true
+      },
+      {
+        "path": "anonymous-s3-existing-index",
+        "status": 403,
+        "access_denied": true
+      },
+      {
+        "path": "cloudfront-unpublished-manifest",
+        "status": 403,
+        "access_denied": true
+      },
+      {
+        "path": "cloudfront-unpublished-path",
+        "status": 403,
+        "access_denied": true
+      },
+      {
+        "path": "http-root",
+        "status": 301,
+        "https_redirect": "https://d1n61tlw9pcrog.cloudfront.net/"
+      }
+    ],
+    "scope": "Read-only public asset, HTTPS/security-header and origin-denial acceptance"
+  },
+  "http_verification_sha256": "2d6a14695583343021ab28a6ea3b480028d5a0884576dc9256b3216009d48206",
+  "bucket_controls": {
+    "all_public_blocks": true,
+    "sse": "AES256",
+    "versioning": "Enabled",
+    "ownership": "BucketOwnerEnforced",
+    "oac_specific_distribution_and_dashboard_prefix": true,
+    "insecure_transport_denied": true
+  },
+  "browser_checks": {
+    "model_and_rule_switch": true,
+    "validation_test_tail_switch": true,
+    "transaction_explanation_and_leading_zero_identifiers": true,
+    "treasury_full_population_and_daily": true,
+    "cloud_scoring_provenance": true,
+    "console_errors": 0
+  },
+  "screenshots": {
+    "aml": "output/cloud-dashboard-release-20261006/published-dashboard.png",
+    "treasury": "output/cloud-dashboard-release-20261006/published-treasury.png"
+  },
+  "frozen_cloud_result_sha256": "2122fc43bcf33f88aa0edb2076de83699302b318c8806e8c33ab2039ae5f072a",
+  "cloud_rows_verified": 5078345,
+  "scope": "Static synthetic-data dashboard, public viewer access, private S3 origin; scores computed in AWS, model training/explanations/export local",
+  "private_evidence_directory": "C:/Users/lowth/AppData/Local/IS459-G3",
+  "paid_batch_runs_this_step": 0,
+  "identity_permission_changes": 0,
+  "cleanup_performed": false,
+  "incremental_cost_scenarios": [
+    {
+      "full_loads": 100,
+      "viewer_https_requests": 400,
+      "transfer_gib": 0.05781752988696098,
+      "components_usd": {
+        "one_month_single_release_storage": 1.4454382471740245e-05,
+        "four_upload_puts": 2e-05,
+        "s3_origin_gets_all_miss": 0.00016,
+        "cloudfront_transfer_no_allowance": 0.004914490040391684,
+        "cloudfront_https_no_allowance": 0.00048
+      },
+      "total_usd": 0.005588944422863424
+    },
+    {
+      "full_loads": 1000,
+      "viewer_https_requests": 4000,
+      "transfer_gib": 0.5781752988696098,
+      "components_usd": {
+        "one_month_single_release_storage": 1.4454382471740245e-05,
+        "four_upload_puts": 2e-05,
+        "s3_origin_gets_all_miss": 0.0016,
+        "cloudfront_transfer_no_allowance": 0.049144900403916836,
+        "cloudfront_https_no_allowance": 0.0048
+      },
+      "total_usd": 0.05557935478638858
+    },
+    {
+      "full_loads": 10000,
+      "viewer_https_requests": 40000,
+      "transfer_gib": 5.781752988696098,
+      "components_usd": {
+        "one_month_single_release_storage": 1.4454382471740245e-05,
+        "four_upload_puts": 2e-05,
+        "s3_origin_gets_all_miss": 0.016,
+        "cloudfront_transfer_no_allowance": 0.49144900403916836,
+        "cloudfront_https_no_allowance": 0.048
+      },
+      "total_usd": 0.5554834584216402
+    }
+  ],
+  "cost_scope": "Pre-deployment scenarios without allowances; no reconciled post-deployment bill; unbounded public traffic",
+  "limitations": "Static snapshot, not a live alerting system. Scores are uncalibrated; model results exploratory; optional orchestration and streaming not implemented.",
+  "screenshot_sha256": {
+    "aml": "bcec9e6f2a515b977577764de99362b289714609035282cb64ce1640effe1eea",
+    "treasury": "f9f960959630c1fce0a519d97e563a27014b863a182c24fd76b247e3bc4d6dc3"
+  }
+}

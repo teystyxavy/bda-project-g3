@@ -1,0 +1,12 @@
+# Frozen Linux runtime tested in the pinned Glue 5 container; never install a Windows venv.
+# Training used 3.4.1 (Python >=3.12); Glue 5 uses 3.11. Saved-UBJ parity is mandatory.
+xgboost-cpu==3.2.0
+numpy==2.2.6
+scipy==1.15.3
+pandas==2.2.2
+pyarrow==17.0.0
+python-dateutil==2.9.0.post0
+pytz==2025.2
+tzdata==2025.2
+six==1.17.0
+boto3==1.43.108

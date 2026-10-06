@@ -1,0 +1,132 @@
+{
+  "status": "local-implementation-verified-awaiting-cloud-deployment",
+  "checked_at": "2026-10-06T03:26:01.286642+00:00",
+  "aws_mutations": false,
+  "paid_training_started": false,
+  "model_promoted": false,
+  "checks": {
+    "pytest_passed": 14,
+    "terraform_validate": "passed",
+    "terraform_mock_tests_passed": 1,
+    "container_build": "passed",
+    "container_smoke_network": "none",
+    "container_smoke_rows": 320,
+    "container_smoke_artifacts_reload": "passed",
+    "container_smoke_validation_gate_passed": false,
+    "full_input_contract": "passed"
+  },
+  "deployment_plan": {
+    "add": 3,
+    "change": 0,
+    "destroy": 0,
+    "sha256": "94abe358fa62eed018873b7b8c08f358888cbbc90646bbc44917ae96e1e89cc7",
+    "private_location": "%LOCALAPPDATA%/IS459-G3/terraform-sagemaker/deployment.tfplan"
+  },
+  "training_request": {
+    "TrainingJobName": "is459-g3-train-full-20261006",
+    "RoleArn": "arn:aws:iam::588738581042:role/is459-g3-sagemaker-training",
+    "AlgorithmSpecification": {
+      "TrainingImage": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:f34f334d006b934f0af853fab3f7acf0c188373944a6db7ef48972188d55f513",
+      "TrainingInputMode": "File"
+    },
+    "InputDataConfig": [
+      {
+        "ChannelName": "baseline",
+        "DataSource": {
+          "S3DataSource": {
+            "S3DataType": "S3Prefix",
+            "S3Uri": "s3://is459-g3-588738581042-ap-southeast-1/sagemaker/inputs/is459-g3-train-full-20261006/baseline/",
+            "S3DataDistributionType": "FullyReplicated"
+          }
+        },
+        "InputMode": "File"
+      },
+      {
+        "ChannelName": "manifest",
+        "DataSource": {
+          "S3DataSource": {
+            "S3DataType": "S3Prefix",
+            "S3Uri": "s3://is459-g3-588738581042-ap-southeast-1/sagemaker/inputs/is459-g3-train-full-20261006/manifest/",
+            "S3DataDistributionType": "FullyReplicated"
+          }
+        },
+        "InputMode": "File"
+      }
+    ],
+    "OutputDataConfig": {
+      "S3OutputPath": "s3://is459-g3-588738581042-ap-southeast-1/sagemaker/outputs"
+    },
+    "ResourceConfig": {
+      "InstanceType": "ml.m5.xlarge",
+      "InstanceCount": 1,
+      "VolumeSizeInGB": 20
+    },
+    "StoppingCondition": {
+      "MaxRuntimeInSeconds": 1200
+    },
+    "HyperParameters": {
+      "rounds": "120",
+      "threads": "4",
+      "expected_rows": "5078345"
+    },
+    "EnableNetworkIsolation": true,
+    "EnableInterContainerTrafficEncryption": true,
+    "EnableManagedSpotTraining": false,
+    "ProfilerConfig": {
+      "DisableProfiler": true
+    },
+    "Tags": [
+      {
+        "Key": "Project",
+        "Value": "is459-g3"
+      },
+      {
+        "Key": "Component",
+        "Value": "SageMakerTraining"
+      }
+    ]
+  },
+  "prepared_input": {
+    "rows": 5078345,
+    "scored_sha256": "04ef4a7564ab7635bba935f5ebf95566e3e6e922dc59f510763d88196b1e12f6",
+    "snapshot_sha256": "23439e216fb5d33545cad00b73ed924973f1ffd25af5e09b49236ba4f3b009b1",
+    "job_name": "is459-g3-train-full-20261006",
+    "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:f34f334d006b934f0af853fab3f7acf0c188373944a6db7ef48972188d55f513",
+    "status": "prepared-not-submitted",
+    "model_promotion": false
+  },
+  "price_lookup": {
+    "service_code": "AmazonSageMaker",
+    "usage_type": "APS1-Train:ml.m5.xlarge",
+    "usd_per_instance_hour": 0.288,
+    "twenty_billable_minutes_instance_only_usd": 0.096,
+    "not_total_cost_cap": true
+  },
+  "quota": {
+    "code": "L-CCE2AFA6",
+    "name": "ml.m5.xlarge for training job usage",
+    "value": 20,
+    "not_capacity_reservation": true
+  },
+  "files": {
+    "src/bda_pipeline/sagemaker_training.py": "942f22b8a232baf96593b82ae6fbc580db7c6123518cd5a058af1829cccba442",
+    "scripts/sagemaker-training.py": "a8852fb3f8b474d735603175c66e98bd8ca0225407535cdad2c765f4f6feb2c1",
+    "scripts/prepare-sagemaker-container.py": "4813c3316b32cddfb5868cfe70046d2642ff9f2df4415eb60dc93be7412b0e65",
+    "sagemaker/train.py": "dc88012f776d057f0660ddb97fcdb0738a6173182fd4abb7554541e744a03d7e",
+    "sagemaker/Dockerfile": "4efc45bc2c97260d820cea86bd243bb041055bbee046c08570649e846508eee8",
+    "sagemaker/requirements.txt": "9352ed4fa7f5930305bbf015208653693ad8c3809663da5d9461567c70bc691a",
+    "sagemaker/README.md": "66333eb47f349163b937760a7763f9e32d2ed5c76a16ac179d049bc3c720e709",
+    "infra/sagemaker/main.tf": "500dcd643cbfd157ac4a694f94b96b114317a3b8670c1de4c44f2ff8d9e63b4d",
+    "infra/sagemaker/versions.tf": "62e8380c5efa7d227d4b9d54abbdfc2fce6a76fa0f3f8a2daf58e3c9253fccf0",
+    "infra/sagemaker/tests/training.tftest.hcl": "23da75550a33142bace1fff9733eb9f6f7b1fd86bbfe4bf62760d21b53f535e1",
+    "tests/test_sagemaker_training.py": "b807c5b91d480a56327cc83bce304fee1810d0cc8ca12d52a29c010d6abc5f21",
+    "planning/sagemaker-implementation-review-20261006.md": "c0b66e5e1dd05c414c65c13f518855f775e5b3143b3db723ec9b6da683bc0b1b"
+  },
+  "source_review": "4779df0b2254f60a9638913d8d1c68990e36799a268f40c526ea34065d36c214",
+  "scope_limitations": [
+    "No AWS training success yet.",
+    "No current production model, streaming or dashboard change.",
+    "End-to-end ingestion automation and a Step Functions training branch remain unimplemented.",
+    "ECR upload/digest/scan and cloud runtime parity require verification before use."
+  ]
+}

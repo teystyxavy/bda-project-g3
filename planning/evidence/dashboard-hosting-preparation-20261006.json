@@ -1,0 +1,192 @@
+{
+  "status": "prepared-not-applied-not-published",
+  "review_date": "2026-10-06",
+  "account_id": "588738581042",
+  "region": "ap-southeast-1",
+  "bucket": "is459-g3-dashboard-588738581042-ap-southeast-1",
+  "private_state": "C:/Users/lowth/AppData/Local/IS459-G3/hosting.tfstate",
+  "reviewed_staging_plan": "C:/Users/lowth/AppData/Local/IS459-G3/hosting-staging-reviewed-20261006.tfplan",
+  "staging_plan_sha256": "b7b22689ccc1f8e4aa8314f5132a27bcc4a8ef4f4ec6e5d9dfd5614faabcc6d4",
+  "additions": 9,
+  "updates": 0,
+  "deletions": 0,
+  "uploads_in_terraform_plan": 0,
+  "planned_release_uploads": 4,
+  "publish_dashboard": false,
+  "public_demo_approved": false,
+  "resource_addresses": [
+    "aws_cloudfront_distribution.dashboard[0]",
+    "aws_cloudfront_origin_access_control.dashboard[0]",
+    "aws_cloudfront_response_headers_policy.dashboard[0]",
+    "aws_s3_bucket.dashboard[0]",
+    "aws_s3_bucket_ownership_controls.dashboard[0]",
+    "aws_s3_bucket_policy.dashboard[0]",
+    "aws_s3_bucket_public_access_block.dashboard[0]",
+    "aws_s3_bucket_server_side_encryption_configuration.dashboard[0]",
+    "aws_s3_bucket_versioning.dashboard[0]"
+  ],
+  "release_manifest_sha256": "46269d8823308d9482e440a906ceaaa5d951a1f3e9a9a9f0556c0af7ec25a723",
+  "release_bytes": 620811,
+  "upload_plan": [
+    {
+      "file": "index.html",
+      "key": "dashboard/index.html",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 5856,
+      "sha256": "65a08b3d7c4d472e4cd25adbce3aaacd918271462d1370c0ca936ee673118139",
+      "destination": "s3://is459-g3-dashboard-588738581042-ap-southeast-1/dashboard/index.html",
+      "sse": "AES256",
+      "cache_control": "no-cache"
+    },
+    {
+      "file": "dashboard.css",
+      "key": "dashboard/dashboard.css",
+      "content_type": "text/css; charset=utf-8",
+      "bytes": 3191,
+      "sha256": "56e03035c0e726c961cf6a3b86d208d07aa7e9f63b62136a0d5ad68df41c3bd5",
+      "destination": "s3://is459-g3-dashboard-588738581042-ap-southeast-1/dashboard/dashboard.css",
+      "sse": "AES256",
+      "cache_control": "public,max-age=300"
+    },
+    {
+      "file": "dashboard.js",
+      "key": "dashboard/dashboard.js",
+      "content_type": "application/javascript; charset=utf-8",
+      "bytes": 13283,
+      "sha256": "495bdd32c3d1cc2fc3edbd0cfd17c317cf60a465109388ebcdfb2ac4eddba098",
+      "destination": "s3://is459-g3-dashboard-588738581042-ap-southeast-1/dashboard/dashboard.js",
+      "sse": "AES256",
+      "cache_control": "public,max-age=300"
+    },
+    {
+      "file": "dashboard.json",
+      "key": "dashboard/dashboard.json",
+      "content_type": "application/json; charset=utf-8",
+      "bytes": 598481,
+      "sha256": "02c034a4ee1e705bd8fa43d424495d40d44ed089e36d2003e8f6718131dc78de",
+      "destination": "s3://is459-g3-dashboard-588738581042-ap-southeast-1/dashboard/dashboard.json",
+      "sse": "AES256",
+      "cache_control": "public,max-age=300"
+    }
+  ],
+  "frozen_cloud_result_sha256": "2122fc43bcf33f88aa0edb2076de83699302b318c8806e8c33ab2039ae5f072a",
+  "hosting_tests_passed": 4,
+  "terraform_validation": "passed",
+  "permission_simulation_actions_allowed": 15,
+  "bucket_preflight": "HeadBucket returned 404 for exact bucket name",
+  "cloudfront_inventory_preflight": "CLI returned empty output; no existing distribution count inferred",
+  "account_allowance_check": "GetAccountPlanState returned ResourceNotFoundException; GetFreeTierUsage returned no entries; availability unknown; none subtracted",
+  "budget_snapshot": {
+    "limit": {
+      "Amount": "10.0",
+      "Unit": "USD"
+    },
+    "calculated_spend": {
+      "ActualSpend": {
+        "Amount": "0.936",
+        "Unit": "USD"
+      },
+      "ForecastedSpend": {
+        "Amount": "5.87",
+        "Unit": "USD"
+      }
+    },
+    "last_updated": "2026-10-06T00:25:29.981000+08:00",
+    "scope": "Delayed account-wide snapshot; not current project invoice or cap"
+  },
+  "s3_rates": {
+    "storage": {
+      "usd_per_unit": "0.0250000000",
+      "unit": "GB-Mo",
+      "sku": "M6MTARCQFUQBQ2V3",
+      "description": "$0.025 per GB - first 50 TB / month of storage used"
+    },
+    "put": {
+      "usd_per_unit": "0.0000050000",
+      "unit": "Requests",
+      "sku": "VHRJWKRHEA6VHEFY",
+      "description": "$0.005 per 1,000 PUT, COPY, POST, or LIST requests"
+    },
+    "get": {
+      "usd_per_unit": "0.0000004000",
+      "unit": "Requests",
+      "sku": "T469UNPYX78434EG",
+      "description": "$0.004 per 10,000 GET and all other requests"
+    }
+  },
+  "cloudfront_rates": {
+    "usd_per_gib": "0.085",
+    "usd_per_10000_https": "0.012",
+    "basis": "Conservative PriceClass_100 Europe HTTPS rate and first paid transfer tier; zero allowance assumption"
+  },
+  "cost_scenarios": [
+    {
+      "full_loads": 100,
+      "viewer_https_requests": 400,
+      "transfer_gib": 0.05781752988696098,
+      "components_usd": {
+        "one_month_single_release_storage": 1.4454382471740245e-05,
+        "four_upload_puts": 2e-05,
+        "s3_origin_gets_all_miss": 0.00016,
+        "cloudfront_transfer_no_allowance": 0.004914490040391684,
+        "cloudfront_https_no_allowance": 0.00048
+      },
+      "total_usd": 0.005588944422863424
+    },
+    {
+      "full_loads": 1000,
+      "viewer_https_requests": 4000,
+      "transfer_gib": 0.5781752988696098,
+      "components_usd": {
+        "one_month_single_release_storage": 1.4454382471740245e-05,
+        "four_upload_puts": 2e-05,
+        "s3_origin_gets_all_miss": 0.0016,
+        "cloudfront_transfer_no_allowance": 0.049144900403916836,
+        "cloudfront_https_no_allowance": 0.0048
+      },
+      "total_usd": 0.05557935478638858
+    },
+    {
+      "full_loads": 10000,
+      "viewer_https_requests": 40000,
+      "transfer_gib": 5.781752988696098,
+      "components_usd": {
+        "one_month_single_release_storage": 1.4454382471740245e-05,
+        "four_upload_puts": 2e-05,
+        "s3_origin_gets_all_miss": 0.016,
+        "cloudfront_transfer_no_allowance": 0.49144900403916836,
+        "cloudfront_https_no_allowance": 0.048
+      },
+      "total_usd": 0.5554834584216402
+    }
+  ],
+  "cost_assumptions": [
+    "One release version stored for one month",
+    "Every full load requests four assets; no compression/browser caching",
+    "All origin requests miss the cache",
+    "No free allowances or credits applied",
+    "Excludes control-plane verification, retained future versions, extra/malicious traffic, logging, taxes and existing pipeline services",
+    "Public traffic is unbounded; scenarios are not a cap"
+  ],
+  "pricing_sources": [
+    "https://aws.amazon.com/s3/pricing/",
+    "https://aws.amazon.com/cloudfront/pricing/pay-as-you-go/"
+  ],
+  "next_enable_change": "After approved staging and four uploads, require live-state enable plan to change only distribution enabled false to true, with zero additions/deletions; apply only within explicit publication approval",
+  "public_exposure": "Synthetic transaction and bank/account identifiers, scores/explanations, aggregate model metrics and treasury views; no row labels, Parquet, model artifacts, credentials or private state",
+  "scope_exclusions": [
+    "paid batch runs",
+    "retraining",
+    "batch stack changes",
+    "IAM identity permission changes",
+    "cleanup"
+  ],
+  "release_preview": {
+    "url": "http://127.0.0.1:4177/",
+    "aml_metrics_verified": true,
+    "treasury_full_population_verified": true,
+    "console_errors": 0,
+    "screenshot": "output/cloud-dashboard-release-20261006/publication-preview.png",
+    "screenshot_in_upload_plan": false
+  }
+}

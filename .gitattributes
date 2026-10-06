@@ -1,0 +1,11 @@
+# Keep source and documentation portable across Windows and Linux containers.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.parquet binary
+*.ubj binary

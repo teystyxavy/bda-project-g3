@@ -52,7 +52,7 @@ run "explicit_success_marker" {
   command = plan
   variables { provision_scoring = true }
   assert {
-    condition = aws_glue_job.scoring[0].non_overridable_arguments["--conf"] == "spark.hadoop.mapreduce.fileoutputcommitter.marksuccessfuljobs=true"
+    condition     = aws_glue_job.scoring[0].non_overridable_arguments["--conf"] == "spark.hadoop.mapreduce.fileoutputcommitter.marksuccessfuljobs=true"
     error_message = "Select direct _SUCCESS creation rather than EMRFS ancestor mkdirs at final commit."
   }
 }

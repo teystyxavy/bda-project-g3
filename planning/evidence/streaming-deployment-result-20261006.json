@@ -1,0 +1,118 @@
+{
+  "status": "verified-consumer-disabled",
+  "run_id": "stream-smoke-20261006",
+  "deployed_terraform_resources": 14,
+  "mapping_created": true,
+  "transaction_events_sent": 884,
+  "image_digest": "sha256:7430b609e68fc7c3c44c3ebf158909e79ba223d6f9aaac5eaf0f57ff99697130",
+  "frozen_model_initialization": {
+    "status_code": 200,
+    "response": {
+      "batchItemFailures": []
+    }
+  },
+  "image_scan": {
+    "status": "COMPLETE",
+    "severity_counts": {
+      "HIGH": 8,
+      "MEDIUM": 6,
+      "LOW": 1
+    },
+    "scope": "OS packages; not a complete Python dependency security audit"
+  },
+  "review_plan": {
+    "creates": [
+      "aws_lambda_event_source_mapping.replay[0]",
+      "aws_s3_bucket.failures[0]",
+      "aws_s3_bucket_public_access_block.failures[0]",
+      "aws_s3_bucket_server_side_encryption_configuration.failures[0]"
+    ],
+    "updates": [
+      "aws_iam_role_policy.consumer[0]"
+    ],
+    "deletes": [],
+    "plan_sha256": "5cc1a29eedd957dd2c2617b3c93bb3e1f4884717d035d933fe584ea14a868aab",
+    "json_sha256": "0758edf8959392947ce03dd23b635aba50e5e9e0370af1287221011dd966563b"
+  },
+  "local_infrastructure_mock_tests": 6,
+  "replay_authorization": "Approved isolated failure bucket and single 884-event replay completed; no additional replay authorized",
+  "mapping_uuid": "7f935d6a-04f2-4fd4-9310-261f2eea68dc",
+  "planned_replay_events": 884,
+  "failure_bucket_security": {
+    "public_access_block_all_four": true,
+    "encryption": "AES256"
+  },
+  "replay_window": {
+    "finished_at": "2026-10-06T00:28:19.5983852Z",
+    "planned_events": 884,
+    "exit_code": 0,
+    "started_at": "2026-10-06T00:10:50.0536452Z"
+  },
+  "producer_elapsed_seconds": 1049.54474,
+  "producer_receipt_sha256": "280cd6fbc77d446b779dbe8bd71150775d6c4ae98474cfaf148c66b04f4b1e1a",
+  "receipt_unique_transactions": 884,
+  "receipt_sequence_monotonic": true,
+  "consumer_disabled": true,
+  "preflight_freshness_verified": {
+    "dynamodb_items": 0,
+    "s3_audit_objects": 0,
+    "event_source_mappings": 0,
+    "lambda_state": "Active"
+  },
+  "reconciliation": {
+    "transactions": 884,
+    "sender_histories": 32,
+    "dynamodb_items": 916,
+    "audit_objects": 884,
+    "failure_archive_objects": 0,
+    "features_exact": true,
+    "sender_versions_exact": true,
+    "dynamodb_s3_results_exact": true,
+    "max_absolute_score_difference": 2.9103830456733704e-11
+  },
+  "operations": {
+    "invocation_reports": 715,
+    "billed_milliseconds": 86085.0,
+    "lambda_compute_usd_estimate": 0.002869505739,
+    "estimate_excludes_other_services_and_taxes": true,
+    "runtime_error_logs": 0,
+    "record_failure_logs": 0,
+    "lambda_errors": 0,
+    "lambda_throttles": 0,
+    "record_failure_metric": 0,
+    "audit_encryption_samples": [
+      {
+        "key": "streaming/stream-smoke-20261006/audit/002ce10b609760cf5cf2c67bdc76ff2cd4d3a80b45f31928c49a5d0ccf51d9ca.json",
+        "server_side_encryption": "AES256",
+        "version_id": "GhB8oLT1Pn4y2nbdI1uRh313A.1gPPBI",
+        "bytes": 436
+      },
+      {
+        "key": "streaming/stream-smoke-20261006/audit/fff93433963c06034583e698a0000d497543e7991117a9b981f89ffe25f96f43.json",
+        "server_side_encryption": "AES256",
+        "version_id": "lkSug.NSTdDTM.tFS7VDRh11I8bdZdBw",
+        "bytes": 435
+      }
+    ]
+  },
+  "shutdown": {
+    "mapping_state": "Disabled",
+    "mapping_last_modified": "2026-10-06T10:44:00+08:00",
+    "terraform_changes": {
+      "add": 0,
+      "update": 1,
+      "delete": 0
+    },
+    "post_shutdown_drift_exit_code": 0,
+    "retained_resources": 14,
+    "kinesis_shard_usd_per_hour": 0.0184,
+    "cleanup_performed": false
+  },
+  "evidence_sha256": {
+    "streaming-reconciliation-20261006/evidence.json": "cbcf37bfde5e91e70529f22dd140162efc68df3b207559fa05419c294f4cff1e",
+    "streaming-operations-final-20261006.json": "82e01d928911fb786b7c0f62a081c6de5a2c4db10e246ef5e83bd64d86220181",
+    "streaming-disabled-mapping-20261006.json": "7eba90a3d53d5373a5c35b4a3a0f633229c85cb0a93928abf021dafd546d569c",
+    "streaming-disable-20261006.tfplan": "57648d54682c15105cd73c53892ddc8220f2620b605cd8e7c72b2f82e54dd7d6",
+    "streaming-final-drift-20261006.tfplan": "c4895064ea19179e691214678aec3b148c1850c0cc124a69fac559238f6d41c5"
+  }
+}

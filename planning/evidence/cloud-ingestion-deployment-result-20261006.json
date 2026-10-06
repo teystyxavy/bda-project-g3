@@ -1,0 +1,485 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-06T16:55:26.3995601+08:00",
+  "status": "deployed-smoke-and-full-passed",
+  "account": "588738581042",
+  "region": "ap-southeast-1",
+  "resources_added": 9,
+  "resources_updated": 0,
+  "resources_destroyed": 0,
+  "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-acquisition@sha256:62f7cdbfccc8b85a37ff6dab7427e13ab38f34e3c2c803cfda1439b961692374",
+  "post_deployment_plan": "no changes",
+  "smoke": {
+    "run_id": "cloud-smoke-20261006-aws1",
+    "status": "SUCCEEDED",
+    "acquisition": "passed",
+    "rows": 1000,
+    "dataset_version": 8,
+    "origin": "kaggle-api",
+    "duration_ms": 52531.38,
+    "billed_duration_ms": 58746,
+    "maximum_memory_mb": 1243,
+    "proof": "output/cloud-acquisition-smoke-20261006/acquisition.json",
+    "fx_scope": "USD identity valuation; external FX providers require full-run verification",
+    "publication": {
+      "status": "passed",
+      "run_id": "cloud-smoke-20261006-aws1",
+      "selected_release": true,
+      "root_shell_verified": true,
+      "public_files": [
+        {
+          "file": "index.html",
+          "bytes": 5856,
+          "sha256": "65a08b3d7c4d472e4cd25adbce3aaacd918271462d1370c0ca936ee673118139"
+        },
+        {
+          "file": "dashboard.css",
+          "bytes": 3191,
+          "sha256": "56e03035c0e726c961cf6a3b86d208d07aa7e9f63b62136a0d5ad68df41c3bd5"
+        },
+        {
+          "file": "dashboard.js",
+          "bytes": 15383,
+          "sha256": "6ef7c86e238f7c91c535fedfcc40f0960f3fcdc4f244d1231e2cdcc8dfb435cc"
+        },
+        {
+          "file": "dashboard.json",
+          "bytes": 8062,
+          "sha256": "ddb68699fbcc8430563ce782c000473cfdaadab9133c29bfca64e81a9e5f49d6"
+        }
+      ],
+      "successful_manifest_cached": true,
+      "global_lock_exists": false,
+      "global_lock_owner": null,
+      "pipeline": {
+        "run_id": "cloud-smoke-20261006-aws1",
+        "dataset_version": 8,
+        "subset": "HI-Small",
+        "source_scope": "smoke-prefix",
+        "start_date": "2022-09-01",
+        "end_date": "2022-09-01",
+        "processing_sha256": "2ecbc4415d39e59a4e5f1de512bd04bdf3ded71f68cc87116bd1c2afb7b09c86",
+        "deployment_sha256": "2e4b7b2d5578948595be0a7c20616b2bb8efdb9a24aa41fb6daedbd02e86bcaf",
+        "train": false,
+        "fx_sha256": "fe39dfc4f56d69538be3087a65c5ec50b9f0c895336ba908878deceee4e42658",
+        "refresh_time": "2026-10-06T16:24:35.015805+08:00"
+      },
+      "verification": {
+        "scores": {
+          "status": "passed",
+          "rows": 1000,
+          "max_absolute_score_difference": 0.0,
+          "labels_excluded": true,
+          "model_sha256": "f0dc65ca43901f9f02c57c09605121d48570c64d49991eb952f2d2df6a7e4765"
+        },
+        "corridors": {
+          "status": "passed",
+          "reference_rows": 1000,
+          "corridor_rows": 177,
+          "days": [
+            "2022-09-01"
+          ],
+          "identifiers_preserved": true,
+          "max_absolute_differences": {
+            "transactions": 0.0,
+            "volume_usd": 3.5762786865234375E-06,
+            "volume_share": 1.6653345369377348E-16,
+            "daily_hhi": 2.7755575615628914E-17
+          },
+          "volume_rtol": 1E-10,
+          "volume_atol_usd": 0.01
+        }
+      },
+      "result": {
+        "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+        "model_promoted": false,
+        "processing_sha256": "2ecbc4415d39e59a4e5f1de512bd04bdf3ded71f68cc87116bd1c2afb7b09c86",
+        "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/cloud-smoke-20261006-aws1/index.html",
+        "run_id": "cloud-smoke-20261006-aws1",
+        "status": "published",
+        "training_requested": false
+      }
+    },
+    "wrapper_times": {
+      "start": "2026-10-06 16:14:55.032000+08:00",
+      "stop": "2026-10-06 16:26:11.209000+08:00"
+    }
+  },
+  "full": {
+    "status": "SUCCEEDED",
+    "run_id": "cloud-full-20261006-aws1",
+    "acquisition": "passed",
+    "rows": 5078345,
+    "dataset_version": 8,
+    "origin": "verified-s3-kaggle-reuse",
+    "duration_ms": 53149.23,
+    "billed_duration_ms": 55022,
+    "maximum_memory_mb": 1215,
+    "fx_verification": {
+      "status": "passed",
+      "rows": 285,
+      "sources": {
+        "Frankfurter v2": [
+          "Australian Dollar",
+          "Brazil Real",
+          "Canadian Dollar",
+          "Euro",
+          "Mexican Peso",
+          "Rupee",
+          "Shekel",
+          "Swiss Franc",
+          "UK Pound",
+          "Yen",
+          "Yuan"
+        ],
+        "Yahoo Finance daily close": [
+          "Bitcoin",
+          "Ruble",
+          "Saudi Riyal"
+        ],
+        "identity": [
+          "US Dollar"
+        ]
+      },
+      "sha256": "0b46d70f6ebd0f7f79fa626d7ba0882af76f3819e0b532bba316f6cf8de5a2f1",
+      "start": "2022-08-31",
+      "end": "2022-09-18"
+    },
+    "input_manifest": {
+      "acquisition_location": "aws-lambda",
+      "created_at": "2026-10-06T16:29:20.840292+08:00",
+      "currencies": [
+        "Australian Dollar",
+        "Bitcoin",
+        "Brazil Real",
+        "Canadian Dollar",
+        "Euro",
+        "Mexican Peso",
+        "Ruble",
+        "Rupee",
+        "Saudi Riyal",
+        "Shekel",
+        "Swiss Franc",
+        "UK Pound",
+        "US Dollar",
+        "Yen",
+        "Yuan"
+      ],
+      "dataset_origin": "verified-s3-kaggle-reuse",
+      "dataset_version": 8,
+      "deployment_sha256": "2e4b7b2d5578948595be0a7c20616b2bb8efdb9a24aa41fb6daedbd02e86bcaf",
+      "end_date": "2022-09-18",
+      "files": {
+        "accounts.csv": {
+          "bytes": 34053187,
+          "sha256": "786808526e33cfc441212dd6fccda7edfc24172149bed59c6ef59b186836b014"
+        },
+        "fx.csv": {
+          "bytes": 20167,
+          "sha256": "0b46d70f6ebd0f7f79fa626d7ba0882af76f3819e0b532bba316f6cf8de5a2f1"
+        },
+        "transactions.csv": {
+          "bytes": 475664283,
+          "sha256": "b19d39f515523373f991b689c07e11e7b0b95c17a2c27a87d91584ae16c5b040"
+        }
+      },
+      "model_manifest_sha256": "323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f",
+      "processing_sha256": "844faec068cfb9a4fa981e553a106c16871daa696411c8cdbba1cd6395d107c1",
+      "rerun": false,
+      "rows": 5078345,
+      "run_id": "cloud-full-20261006-aws1",
+      "schema_version": 1,
+      "source_scope": "selected-subset",
+      "start_date": "2022-09-01",
+      "subset": "HI-Small",
+      "train": false
+    },
+    "source_objects": {
+      "HI-Small_Trans.csv": {
+        "bytes": 475664283,
+        "sha256": "b19d39f515523373f991b689c07e11e7b0b95c17a2c27a87d91584ae16c5b040",
+        "encrypted": true,
+        "matches_retained_local_source": true
+      },
+      "HI-Small_accounts.csv": {
+        "bytes": 34053187,
+        "sha256": "786808526e33cfc441212dd6fccda7edfc24172149bed59c6ef59b186836b014",
+        "encrypted": true,
+        "matches_retained_local_source": true
+      }
+    },
+    "proof": "output/cloud-acquisition-full-20261006/acquisition.json",
+    "training_requested": false,
+    "baseline_verification": {
+      "status": "passed",
+      "rows": 5078345,
+      "positives": 5177,
+      "amount_usd": 1747869572934.3916,
+      "raw_identity_comparison": "Every source row: ordered SHA256 fingerprint",
+      "fx_comparison": "All same-day and prior-day valuations",
+      "behaviour_reference_rows": 48701,
+      "behaviour_scope": "Complete histories for deterministic label-independent approximately 1% sender cohort"
+    },
+    "publication": {
+      "status": "passed",
+      "run_id": "cloud-full-20261006-aws1",
+      "selected_release": true,
+      "root_shell_verified": true,
+      "public_files": [
+        {
+          "file": "index.html",
+          "bytes": 5856,
+          "sha256": "65a08b3d7c4d472e4cd25adbce3aaacd918271462d1370c0ca936ee673118139"
+        },
+        {
+          "file": "dashboard.css",
+          "bytes": 3191,
+          "sha256": "56e03035c0e726c961cf6a3b86d208d07aa7e9f63b62136a0d5ad68df41c3bd5"
+        },
+        {
+          "file": "dashboard.js",
+          "bytes": 15383,
+          "sha256": "6ef7c86e238f7c91c535fedfcc40f0960f3fcdc4f244d1231e2cdcc8dfb435cc"
+        },
+        {
+          "file": "dashboard.json",
+          "bytes": 598393,
+          "sha256": "80a869ca0bbecba9e42597da988eacf5f3a8ee16531f2ee1e72a7ab07c3f5584"
+        }
+      ],
+      "successful_manifest_cached": true,
+      "global_lock_exists": false,
+      "global_lock_owner": null,
+      "pipeline": {
+        "run_id": "cloud-full-20261006-aws1",
+        "dataset_version": 8,
+        "subset": "HI-Small",
+        "source_scope": "selected-subset",
+        "start_date": "2022-09-01",
+        "end_date": "2022-09-18",
+        "processing_sha256": "844faec068cfb9a4fa981e553a106c16871daa696411c8cdbba1cd6395d107c1",
+        "deployment_sha256": "2e4b7b2d5578948595be0a7c20616b2bb8efdb9a24aa41fb6daedbd02e86bcaf",
+        "train": false,
+        "fx_sha256": "0b46d70f6ebd0f7f79fa626d7ba0882af76f3819e0b532bba316f6cf8de5a2f1",
+        "refresh_time": "2026-10-06T16:52:57.22184+08:00"
+      },
+      "verification": {
+        "scores": {
+          "status": "passed",
+          "rows": 5078345,
+          "max_absolute_score_difference": 0.0,
+          "labels_excluded": true,
+          "model_sha256": "f0dc65ca43901f9f02c57c09605121d48570c64d49991eb952f2d2df6a7e4765"
+        },
+        "corridors": {
+          "status": "passed",
+          "reference_rows": 5078345,
+          "corridor_rows": 1082185,
+          "days": [
+            "2022-09-01",
+            "2022-09-02",
+            "2022-09-03",
+            "2022-09-04",
+            "2022-09-05",
+            "2022-09-06",
+            "2022-09-07",
+            "2022-09-08",
+            "2022-09-09",
+            "2022-09-10",
+            "2022-09-11",
+            "2022-09-12",
+            "2022-09-13",
+            "2022-09-14",
+            "2022-09-15",
+            "2022-09-16",
+            "2022-09-17",
+            "2022-09-18"
+          ],
+          "identifiers_preserved": true,
+          "max_absolute_differences": {
+            "transactions": 0.0,
+            "volume_usd": 0.001739501953125,
+            "volume_share": 3.0253577421035516E-15,
+            "daily_hhi": 1.7321213907628419E-15
+          },
+          "volume_rtol": 1E-10,
+          "volume_atol_usd": 0.01
+        }
+      },
+      "result": {
+        "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+        "model_promoted": false,
+        "processing_sha256": "844faec068cfb9a4fa981e553a106c16871daa696411c8cdbba1cd6395d107c1",
+        "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/cloud-full-20261006-aws1/index.html",
+        "run_id": "cloud-full-20261006-aws1",
+        "status": "published",
+        "training_requested": false
+      }
+    },
+    "wrapper_times": {
+      "start": "2026-10-06 16:28:30.120000+08:00",
+      "stop": "2026-10-06 16:53:29.414000+08:00",
+      "elapsed_seconds": 1499.294
+    },
+    "operations": {
+      "status": "SUCCEEDED",
+      "startDate": "2026-10-06 16:29:25.759000+08:00",
+      "stopDate": "2026-10-06 16:53:27.886000+08:00",
+      "run_id": "cloud-full-20261006-aws1",
+      "execution_arn": "arn:aws:states:ap-southeast-1:588738581042:execution:is459-g3-ingest:cloud-full-20261006-aws1",
+      "cloud_execution_arn": "arn:aws:states:ap-southeast-1:588738581042:execution:is459-g3-cloud-ingest:cloud-full-20261006-aws1",
+      "cloud_status": "SUCCEEDED",
+      "states_entered": [
+        {
+          "name": "Begin",
+          "time": "2026-10-06 16:29:25.784000+08:00"
+        },
+        {
+          "name": "Curate",
+          "time": "2026-10-06 16:29:26.550000+08:00"
+        },
+        {
+          "name": "PrepareBaseline",
+          "time": "2026-10-06 16:36:37.460000+08:00"
+        },
+        {
+          "name": "Baseline",
+          "time": "2026-10-06 16:36:42.423000+08:00"
+        },
+        {
+          "name": "PrepareBranches",
+          "time": "2026-10-06 16:44:15.894000+08:00"
+        },
+        {
+          "name": "ScoreAndAnalyze",
+          "time": "2026-10-06 16:44:20.758000+08:00"
+        },
+        {
+          "name": "Score",
+          "time": "2026-10-06 16:44:20.758000+08:00"
+        },
+        {
+          "name": "Corridors",
+          "time": "2026-10-06 16:44:20.758000+08:00"
+        },
+        {
+          "name": "TrainRequested",
+          "time": "2026-10-06 16:44:20.758000+08:00"
+        },
+        {
+          "name": "ReuseFrozen",
+          "time": "2026-10-06 16:44:20.758000+08:00"
+        },
+        {
+          "name": "PrepareExport",
+          "time": "2026-10-06 16:48:20.326000+08:00"
+        },
+        {
+          "name": "Export",
+          "time": "2026-10-06 16:48:21.503000+08:00"
+        },
+        {
+          "name": "Publish",
+          "time": "2026-10-06 16:53:24.762000+08:00"
+        },
+        {
+          "name": "Complete",
+          "time": "2026-10-06 16:53:27.859000+08:00"
+        }
+      ],
+      "athena": [
+        {
+          "QueryExecutionId": "2e03bc3d-0024-402f-a416-b25bdc899885",
+          "Status": {
+            "State": "SUCCEEDED",
+            "SubmissionDateTime": "2026-10-06 16:44:20.994000+08:00",
+            "CompletionDateTime": "2026-10-06 16:44:28.582000+08:00"
+          },
+          "Statistics": {
+            "EngineExecutionTimeInMillis": 7255,
+            "DataScannedInBytes": 86039814,
+            "TotalExecutionTimeInMillis": 7588,
+            "QueryQueueTimeInMillis": 91,
+            "ServicePreProcessingTimeInMillis": 191,
+            "QueryPlanningTimeInMillis": 346,
+            "ServiceProcessingTimeInMillis": 51,
+            "ResultReuseInformation": {
+              "ReusedPreviousResult": false
+            }
+          },
+          "ResultConfiguration": {
+            "OutputLocation": "s3://is459-g3-588738581042-ap-southeast-1/athena-results/2e03bc3d-0024-402f-a416-b25bdc899885.csv",
+            "EncryptionConfiguration": {
+              "EncryptionOption": "SSE_S3"
+            }
+          },
+          "WorkGroup": "is459-g3-analysis"
+        }
+      ],
+      "glue": [
+        {
+          "JobName": "is459-g3-ingest-curate",
+          "Id": "jr_c21ee0a982dec6a66f3c2054c7c9815dd0740610ea00aaa313b5167bcf3b9919",
+          "JobRunState": "SUCCEEDED",
+          "ExecutionTime": 410,
+          "StartedOn": "2026-10-06 16:29:26.702000+08:00",
+          "CompletedOn": "2026-10-06 16:36:28.470000+08:00"
+        },
+        {
+          "JobName": "is459-g3-ingest-score",
+          "Id": "jr_42a59341e59ab700a8d795f533d313da486a4b8ead39fe4dabed11cf6eb4da24",
+          "JobRunState": "SUCCEEDED",
+          "ExecutionTime": 190,
+          "StartedOn": "2026-10-06 16:44:20.959000+08:00",
+          "CompletedOn": "2026-10-06 16:47:37.931000+08:00"
+        }
+      ],
+      "sagemaker": [
+        {
+          "ProcessingJobName": "is459-g3-baseline-cloud-full-20261006-aws1",
+          "ProcessingJobStatus": "Completed",
+          "ProcessingStartTime": "2026-10-06 16:37:20.566000+08:00",
+          "ProcessingEndTime": "2026-10-06 16:41:49.516000+08:00"
+        },
+        {
+          "ProcessingJobName": "is459-g3-export-cloud-full-20261006-aws1",
+          "ProcessingJobStatus": "Completed",
+          "ProcessingStartTime": "2026-10-06 16:48:58.559000+08:00",
+          "ProcessingEndTime": "2026-10-06 16:53:12.450000+08:00"
+        }
+      ],
+      "result": {
+        "status": "published",
+        "run_id": "cloud-full-20261006-aws1",
+        "processing_sha256": "844faec068cfb9a4fa981e553a106c16871daa696411c8cdbba1cd6395d107c1",
+        "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+        "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/cloud-full-20261006-aws1/index.html",
+        "training_requested": false,
+        "model_promoted": false
+      }
+    }
+  },
+  "prior_verified_batch": "planning/ingestion-deployment-result-20261006.json",
+  "evidence_sha256": {
+    "output/cloud-acquisition-smoke-20261006/acquisition.json": "fcf8c28e50537c0a55da07f84c121d67b28f67e3f8e804b205be0e4e4035f71d",
+    "output/cloud-acquisition-smoke-20261006/baseline-proof.json": "2b0b0af4137b61e29654db7a376802b1d7c11d055e910ea42f33f5f3d0fe390b",
+    "output/cloud-acquisition-smoke-20261006/evidence-result.json": "d385fd900943c9d44c9b9e86108bff2516b08e6563d51689c3462367e12e2b0d",
+    "output/cloud-acquisition-smoke-20261006/export-evidence-corridors.json": "9d57383266a30c84dd1f53f5db573a7fa12ea3db340332d92602198dedb7c9a3",
+    "output/cloud-acquisition-smoke-20261006/export-evidence-scores.json": "174e7578fff84d74d906f492358b601f5e619044df1811658f7e901d157c17f7",
+    "output/cloud-acquisition-smoke-20261006/export-release-manifest.json": "ddf2a56203abaa85e199b296e51ceb767a27feb731597e35696931feb786f48e",
+    "output/cloud-acquisition-smoke-20261006/lambda-reports.json": "5e8bdb6ec0b1543855b76993eeb2416e6a8faa8ca5c591f6a178bfc1e6055cba",
+    "output/cloud-acquisition-smoke-20261006/progress.json": "6e087444f07442d6adeecbf0e6677ec76f959c8f17976d6acab7bac1b6f7f2b9",
+    "output/cloud-acquisition-smoke-20261006/public-release-verification.json": "c945b1f3bf9878d6047b97dae09475cfa08ccfc954eec842f7e4b8709f5d2bee",
+    "output/cloud-acquisition-full-20261006/acquisition.json": "cc2a86a27b7390a5bfc81bd05ba793dc8ec5af126d91820c17ce4e3f2e8e5444",
+    "output/cloud-acquisition-full-20261006/baseline-proof.json": "eef1a5d7587666da157c4118ede7b882dd362be752c2e7d7c105130adb813238",
+    "output/cloud-acquisition-full-20261006/evidence-result.json": "3e857404bf8a43a8752b7d6d0d805ffa2018717d5489cde0112d99d30d156218",
+    "output/cloud-acquisition-full-20261006/export-evidence-corridors.json": "3280fe836e3c666d5e47fa38cea2d16e294e1a762ac0b13e9ed3f50a772dfe6d",
+    "output/cloud-acquisition-full-20261006/export-evidence-scores.json": "3ccfe816143c08242c998d59cf8e24d0065ee2cdf858fae68fd2d1cdea76f917",
+    "output/cloud-acquisition-full-20261006/export-release-manifest.json": "3cf27c0068b69a15d19fa935d06a7f68e6fafaeee74f54a06c35a1df282b152e",
+    "output/cloud-acquisition-full-20261006/lambda-reports.json": "86cc0c342b963ec152bf3e68f4e0a5f3d4dd04d88492c6caa714a67dd06af035",
+    "output/cloud-acquisition-full-20261006/progress.json": "36c3f461c2ff9eadd8835fe2bc3b82a16a9b0d7679b0b3dce1407981811b7f6e",
+    "output/cloud-acquisition-full-20261006/public-release-verification.json": "a5d710421817d2f3de530c635ec1a9180b2b9992a8b25c4c7f2ee82dd46c23b7"
+  },
+  "verification_helper_sha256": "d24d5a10153c32e5daf61af6d1eee73357787de96b28c9286a2f87b4c0568725",
+  "billing_note": "Recorded durations are operational evidence; no claim of final invoiced cost. Billing can lag these runs."
+}

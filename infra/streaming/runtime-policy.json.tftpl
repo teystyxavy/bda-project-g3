@@ -1,0 +1,95 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DurableStateAndResults",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:${region}:${account}:table/${name}"
+      ],
+      "Condition": {
+        "ArnEquals": {
+          "lambda:SourceFunctionArn": "arn:aws:lambda:${region}:${account}:function:${name}"
+        }
+      }
+    },
+    {
+      "Sid": "AuditOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::${bucket}/streaming/${run_id}/audit/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "s3:ResourceAccount": "${account}"
+        },
+        "ArnEquals": {
+          "lambda:SourceFunctionArn": "arn:aws:lambda:${region}:${account}:function:${name}"
+        }
+      }
+    },
+    {
+      "Sid": "PollOneReplayStream",
+      "Effect": "Allow",
+      "Action": [
+        "kinesis:DescribeStream",
+        "kinesis:DescribeStreamSummary",
+        "kinesis:GetRecords",
+        "kinesis:GetShardIterator",
+        "kinesis:ListShards"
+      ],
+      "Resource": [
+        "arn:aws:kinesis:${region}:${account}:stream/${name}"
+      ]
+    },
+    {
+      "Sid": "PrecreatedLogsOnly",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:${region}:${account}:log-group:/aws/lambda/${name}:*"
+      ]
+    },
+    {
+      "Sid": "RetainFailedInvocationPayload",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::${failure_bucket}/*",
+        "arn:aws:s3:::${failure_bucket}"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "s3:ResourceAccount": "${account}"
+        }
+      }
+    },
+    {
+      "Sid": "DestinationValidation",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::${failure_bucket}"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "s3:ResourceAccount": "${account}"
+        }
+      }
+    }
+  ]
+}

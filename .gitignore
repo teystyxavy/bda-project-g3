@@ -13,9 +13,33 @@ crash.log
 
 # Python virtual environment
 kaggle_venv/
+.venv/
+venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+
+# Credentials and local configuration (examples remain shareable)
+.env
+.env.*
+!.env.example
+.aws/
+.kaggle/
+kaggle.json
+credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
 
 # Jupyter-generated metadata and temporary files
 **/.ipynb_checkpoints/
