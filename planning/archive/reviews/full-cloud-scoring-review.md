@@ -67,7 +67,7 @@ the approved two-update plan has since applied.
 
 ## Local reconciliation and dashboard implementation
 
-`scripts/verify-cloud-scoring-full.py` and `bda_pipeline.cloud_scores` now:
+`scripts/validation/verify-cloud-scoring-full.py` and `bda_pipeline.cloud_scores` now:
 
 1. Require the successful scoring run, captured live job configuration and
    a marker receipt tied to that run and its exact S3 bucket/key. Check full
@@ -89,7 +89,7 @@ the actual successful 1,024-row AWS smoke match the frozen native reference;
 a 100,000-row native fingerprint batch took 1.246 seconds locally. These checks
 do not establish full cloud runtime or full-period score parity.
 
-`scripts/build-model-dashboard.py --cloud-verification ...` now consumes that
+`scripts/dashboard/build-model-dashboard.py --cloud-verification ...` now consumes that
 verified score cache instead of predicting replacement scores locally. The
 existing source/model/population guards and all three chronological model/rule
 metric comparisons remain. Global period queues use cached scores and the
@@ -116,9 +116,9 @@ save a marker receipt containing `job_run_id`, `bucket`, `key` and `metadata`
 `scored/full-frozen-20261006/transactions/_SUCCESS`, not a previous smoke marker.
 
 ```powershell
-output/ml-venv/Scripts/python.exe scripts/verify-cloud-scoring-full.py --curated C:/Users/lowth/AppData/Local/IS459-G3/scoring-full-verification/curated --reference output/cloud-insights-20261005/bq1_scored.parquet --model-dir output/cloud-scoring-retry-prepared-20261005/artifacts --run-report C:/Users/lowth/AppData/Local/IS459-G3/scoring-full-status.json --job-report C:/Users/lowth/AppData/Local/IS459-G3/scoring-full-live-job.json --marker-report C:/Users/lowth/AppData/Local/IS459-G3/scoring-full-marker-receipt.json --output output/scoring-full-verification-20261006
-output/ml-venv/Scripts/python.exe scripts/build-model-dashboard.py --scored output/cloud-insights-20261005/bq1_scored.parquet --baseline output/cloud-insights-20261005/dashboard/dashboard.json --model-dir output/model-comparison-20261005 --cloud-verification output/scoring-full-verification-20261006/verification.json --output output/cloud-model-dashboard-20261006
-output/ml-venv/Scripts/python.exe scripts/prepare-dashboard-release.py --source output/cloud-model-dashboard-20261006 --output output/cloud-dashboard-release-20261006
+output/ml-venv/Scripts/python.exe scripts/validation/verify-cloud-scoring-full.py --curated C:/Users/lowth/AppData/Local/IS459-G3/scoring-full-verification/curated --reference output/cloud-insights-20261005/bq1_scored.parquet --model-dir output/cloud-scoring-retry-prepared-20261005/artifacts --run-report C:/Users/lowth/AppData/Local/IS459-G3/scoring-full-status.json --job-report C:/Users/lowth/AppData/Local/IS459-G3/scoring-full-live-job.json --marker-report C:/Users/lowth/AppData/Local/IS459-G3/scoring-full-marker-receipt.json --output output/scoring-full-verification-20261006
+output/ml-venv/Scripts/python.exe scripts/dashboard/build-model-dashboard.py --scored output/cloud-insights-20261005/bq1_scored.parquet --baseline output/cloud-insights-20261005/dashboard/dashboard.json --model-dir output/model-comparison-20261005 --cloud-verification output/scoring-full-verification-20261006/verification.json --output output/cloud-model-dashboard-20261006
+output/ml-venv/Scripts/python.exe scripts/dashboard/prepare-dashboard-release.py --source output/cloud-model-dashboard-20261006 --output output/cloud-dashboard-release-20261006
 ```
 
 Those three output directories now exist from the completed verification and

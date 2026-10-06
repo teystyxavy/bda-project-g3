@@ -103,7 +103,7 @@ unnecessary transfer/materialisation work.
 
 ## Deployment and running
 
-The update uses `scripts/update-ingestion.ps1` with a freshly prepared directory
+The update uses `scripts/aws/update-ingestion.ps1` with a freshly prepared directory
 and digest-pinned image. Its preview checks the account, absent run lock, existing
 private Terraform state, file/image hashes and an allowlist of resource changes.
 `-Execute` pushes/verifies the ECR digest and applies that exact plan. It does not
@@ -119,13 +119,13 @@ added. Final resource cleanup must also empty retained historical artifact prefi
 The existing entry point stays the same:
 
 ```powershell
-.\scripts\ingest.ps1
-.\scripts\ingest.ps1 -Train
-.\scripts\ingest.ps1 -Rerun -NoWait
-.\scripts\ingest.ps1 -Status <run-id>
+.\scripts\ingestion\ingest.ps1
+.\scripts\ingestion\ingest.ps1 -Train
+.\scripts\ingestion\ingest.ps1 -Rerun -NoWait
+.\scripts\ingestion\ingest.ps1 -Status <run-id>
 ```
 
-Use `scripts/benchmark-ingestion.py` for completed-run timing and stage-cache
+Use `scripts/benchmarks/benchmark-ingestion.py` for completed-run timing and stage-cache
 evidence, alongside the existing acquisition, reconciliation and public-release
 verification helpers. Record measured results rather than claiming the proposal's
 12–16 minute target as an achieved SLA. Single-run comparisons are observations;

@@ -1,5 +1,14 @@
 # Big Data Pipeline Plan — IBM AML Transactions
 
+**Dashboard UI update, 6 October 2026:** an Ingestion tab, authenticated run-control
+API and separate Terraform stack are implemented locally. They reuse the existing
+acquisition/batch workflows and support HI-Small demo/full selection, candidate
+training for full runs, idempotent submission, operator-owned history and live
+stage tracking with an AWS service flow diagram that highlights parallel branches.
+API/sign-in deployment and AWS UI smoke validation are pending;
+the hosted dashboard has not been changed by this task. See
+[dashboard control setup and limits](../infra/dashboard-control/README.md).
+
 **Optimisation update, 6 October 2026:** the full batch optimisations are
 implemented and deployed. The fresh 5,078,345-row rebuild took **20m55s**, versus
 24m59s previously (**16.3% faster**, one observed run per configuration). Both
@@ -11,8 +20,12 @@ the candidate automatically. The current dashboard selects
 `opt-train-cache-20261006-aws1`, Kaggle version 8.
 See the [implementation](runbooks/pipeline-optimisation-implementation.md) and
 [measured evidence](evidence/pipeline-optimisation-result-20261006.json).
-The existing `scripts/ingest.ps1` entry point runs AWS acquisition through publication;
+The existing `scripts/ingestion/ingest.ps1` entry point runs AWS acquisition through publication;
 `-Train` adds candidate training and `-Rerun` bypasses caches.
+The launcher also offers local `-DownloadOnly` selection of HI/LI and
+Small/Medium/Large, optional patterns and individual files, with `-DryRun` previews.
+These exploration options do not expand the reviewed HI-Small AWS/model contract.
+See [download options and costs](runbooks/kaggle-download-options.md).
 
 AWS acquisition revision: Kaggle and historical FX retrieval now have a dedicated
 Lambda container and a Standard Step Functions wrapper before the verified batch.
@@ -30,7 +43,7 @@ and [runbook](runbooks/ingestion-runbook.md); earlier proposed architecture/cost
 below is historical planning and does not establish live deployment success.
 
 Dataset: [IBM Transactions for Anti-Money Laundering (AML)](https://www.kaggle.com/datasets/ealtman2019/ibm-transactions-for-anti-money-laundering-aml)
-(local copy under `dataset/`, see [eda.ipynb](../scripts/eda.ipynb) for exploratory analysis).
+(local copy under `dataset/`, see [eda.ipynb](../notebooks/eda.ipynb) for exploratory analysis).
 
 ## 1. Business questions
 
@@ -437,7 +450,7 @@ No automatic model pointer or dashboard promotion has been introduced.
   (`{run_id, metrics}`) that the streaming Lambda reads. Promoting or rolling
   back a model means updating the pointer file, not redeploying Lambda code.
 
-Local comparison is now implemented by `scripts/compare-local-model.py` using
+Local comparison is now implemented by `scripts/modeling/compare-local-model.py` using
 native XGBoost `.ubj` models plus a separate JSON feature vocabulary/schema.
 This replaces the planned local pickle/joblib format for portable, explicit
 model loading; future cloud/streaming code must consume the same saved schema.
@@ -447,6 +460,13 @@ the frozen selection, reproducibility and exploratory-data limitations. No cloud
 model pointer or production promotion exists yet.
 
 ### 4.5 Streaming layer specifics
+
+**Suggested improvement, 6 October 2026:** connect committed streaming results
+through a separate publisher to S3/CloudFront and an automatically refreshing
+Incoming AML view. Keep the selected replay cohort separate from full batch AML
+and treasury totals. This connection remains proposed, with a bounded one-minute
+publication cadence and measured freshness acceptance; see the
+[Kinesis-to-dashboard proposal](proposals/kinesis-dashboard-improvements.md).
 
 The bounded implementation has fourteen deployed resources. **The single replay
 passed all 884 cloud result comparisons and 32 exact sender-history checks;
@@ -500,7 +520,7 @@ score/corridor reconciliation, tests, execution limits and costs.
 ### 4.7 Visualization — concrete mechanism
 
 The local implementation uses checked-in HTML/CSS/JavaScript in `dashboard/`
-and a generated `dashboard.json` snapshot. `scripts/build-dashboard.py` exports
+and a generated `dashboard.json` snapshot. `scripts/dashboard/build-dashboard.py` exports
 data and copies those assets to a fresh output directory. Native SVG and HTML
 charts need no CDN. Future AWS jobs should generate this data contract, with
 static assets hosted separately on S3/CloudFront. The verified four-file snapshot
@@ -509,9 +529,9 @@ is now published at `https://d1n61tlw9pcrog.cloudfront.net/`; its origin is priv
 - **Dashboard 1 (BQ1):** ranked transaction queue (not an account ranking),
   evidence drilldown, alerts by day, score distribution, period metrics and
   validation-only baseline comparisons. The original local export represents
-  the sender cohort; `scripts/export-verified-batch.py` now exports all 5,078,345
+  the sender cohort; `scripts/dashboard/export-verified-batch.py` now exports all 5,078,345
   verified cloud transactions, with full-population scope shown explicitly.
-  `scripts/build-model-dashboard.py` reloads the frozen model and adds a separately
+  `scripts/dashboard/build-model-dashboard.py` reloads the frozen model and adds a separately
   labelled experimental queue, same-period model/rule comparison and margin
   evidence. The original rule outputs and BQ2 data are retained; rule charts do
   not pretend to be model alerts. Training/explanations/export remain local;
@@ -547,7 +567,7 @@ separate approval. See `archive/reviews/scoring-success-marker-review.md`.
 2026-10-06 full-data preparation: the private scoring plan changes only the
 input/output/temp scopes and expected count to 5,078,345, reusing frozen
 artifacts, workers, ten-minute timeout, zero retries and explicit success markers.
-`scripts/verify-cloud-scoring-full.py` checks all feature fingerprints and frozen
+`scripts/validation/verify-cloud-scoring-full.py` checks all feature fingerprints and frozen
 scores before producing a checked cache. The model dashboard can consume that
 cache without replacing cloud scores with local predictions; rules and BQ2
 remain unchanged. 29 targeted tests pass. The user subsequently approved two
@@ -621,7 +641,7 @@ actual full-run results and remaining gates.
 
 ## 5. EDA write-up — done, one gap remains
 
-`scripts/eda.ipynb` has been run against `HI-Small` and its "4. Summary" section
+`notebooks/eda.ipynb` has been run against `HI-Small` and its "4. Summary" section
 is filled in; §4.3's rule-based weights above are now calibrated against those
 real numbers rather than placeholders. One gap is still open: the notebook only
 profiles **transaction-level** fields (payment format, self-txn, currency

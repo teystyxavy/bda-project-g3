@@ -17,7 +17,7 @@ The static dashboard now shows both the frozen XGBoost model and the original ru
 baseline for the same full-population evaluation periods. This is a local snapshot,
 not cloud deployment, production promotion, retraining or streaming.
 
-Build: `scripts/build-model-dashboard.py`; output:
+Build: `scripts/dashboard/build-model-dashboard.py`; output:
 `output/model-dashboard-20261005/`; preview: `http://127.0.0.1:4175/`.
 The original `output/cloud-insights-20261005/dashboard/` remains untouched.
 

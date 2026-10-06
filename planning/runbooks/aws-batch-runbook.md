@@ -51,7 +51,7 @@ Run in `bda-project-g3/`, using the documented Python environment:
 
 ```powershell
 python -m pip install -e ".[dev]"
-python scripts/prepare-aws-smoke.py
+python scripts/validation/prepare-aws-smoke.py
 python -m pytest -q
 ```
 
@@ -67,7 +67,7 @@ For Spark parity, use the official Glue 5 container. Docker Desktop must be
 running with Linux containers. From the repo:
 
 ```powershell
-.\scripts\test-glue-local.ps1
+.\scripts\validation\test-glue-local.ps1
 ```
 
 The runner pins the tested Glue image digest and mounts the repository read-only.
@@ -104,7 +104,7 @@ that helper, use its JSON filename with `-var-file` in the commands below and
 skip manually copying/editing the example variables file.
 
 To save approved inputs and generate a plan in one command, run
-`scripts/plan-aws.ps1 -AccountId YOUR_ACCOUNT_ID -AlertEmail YOUR_EMAIL` from the
+`scripts/aws/plan-aws.ps1 -AccountId YOUR_ACCOUNT_ID -AlertEmail YOUR_EMAIL` from the
 repository root. It checks the connected account, retains existing budget/project
 settings, and saves variables/state/plan outside the repository. It never applies.
 Pass `-MonthlyBudgetUsd 10` to explicitly select the current alert amount;
@@ -217,7 +217,7 @@ completed Parquet to a new local directory, then run (after installing the
 local package as described in README):
 
 ```powershell
-python scripts/verify-aws-full.py --curated output/full-cloud-optimized-20261005/curated --report output/full-cloud-optimized-20261005/parity-recheck.json
+python scripts/validation/verify-aws-full.py --curated output/full-cloud-optimized-20261005/curated --report output/full-cloud-optimized-20261005/parity-recheck.json
 ```
 
 This checks every source ID for uniqueness and complete coverage, all daily
@@ -252,7 +252,7 @@ Verification already passed and its report exists. To repeat only local
 reconciliation, choose a fresh report filename (existing reports are protected):
 
 ```powershell
-output/ml-venv/Scripts/python.exe scripts/verify-cloud-scoring-smoke.py --curated C:/Users/lowth/AppData/Local/IS459-G3/scoring-success-verification/curated --package output/cloud-scoring-retry-prepared-20261005 --run-report C:/Users/lowth/AppData/Local/IS459-G3/scoring-success-status.json --report output/scoring-smoke-success/parity-repeat.json
+output/ml-venv/Scripts/python.exe scripts/validation/verify-cloud-scoring-smoke.py --curated C:/Users/lowth/AppData/Local/IS459-G3/scoring-success-verification/curated --package output/cloud-scoring-retry-prepared-20261005 --run-report C:/Users/lowth/AppData/Local/IS459-G3/scoring-success-status.json --report output/scoring-smoke-success/parity-repeat.json
 ```
 
 For future approved runs, also verify the run's `_SUCCESS` object exists in S3;
@@ -316,7 +316,7 @@ inspection commands suitable for recording a demonstration without replaying dat
 Local preparation (use a fresh directory):
 
 ```powershell
-python scripts/prepare-orchestration.py --run-id full-orchestrated-20261006 --output output/orchestration-review-local
+python scripts/aws/prepare-orchestration.py --run-id full-orchestrated-20261006 --output output/orchestration-review-local
 python -m pytest tests/test_orchestration.py -q
 ```
 

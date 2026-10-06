@@ -13,7 +13,7 @@ Source: `output/full-cloud-optimized-20261005/curated/`, verified by the adjacen
 `curated/full-20261005/transactions/` prefix.
 
 ```powershell
-python scripts/export-verified-batch.py --curated output/full-cloud-optimized-20261005/curated --verification output/full-cloud-optimized-20261005/parity.json --output output/cloud-insights-new
+python scripts/dashboard/export-verified-batch.py --curated output/full-cloud-optimized-20261005/curated --verification output/full-cloud-optimized-20261005/parity.json --output output/cloud-insights-new
 ```
 
 Actual output: `output/cloud-insights-20261005/`. Use a fresh directory for reruns.

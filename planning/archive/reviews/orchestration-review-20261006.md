@@ -136,7 +136,7 @@ Prepared non-secret evidence is under `output/orchestration-definition-20261006/
 ASL, unapproved input, runtime policy, AWS validators, plan summary and official
 Singapore price records. These generated artifacts are gitignored. Source lives
 in `infra/orchestration/`, `src/bda_pipeline/orchestration.py`,
-`scripts/prepare-orchestration.py` and `sql/full-orchestrated-corridors.sql`.
+`scripts/aws/prepare-orchestration.py` and `sql/full-orchestrated-corridors.sql`.
 
 ## Cost review for one execution
 
@@ -173,7 +173,7 @@ Integration references: [Glue sync](https://docs.aws.amazon.com/step-functions/l
 ## Acceptance procedure — completed for this run
 
 Capture execution/job/query settings, transitions, billing statistics and actual
-marker/object receipts. Reuse `scripts/verify-cloud-scoring-full.py` with the new
+marker/object receipts. Reuse `scripts/validation/verify-cloud-scoring-full.py` with the new
 run evidence to reconcile every identity, feature, score and partition against
 the frozen model. Download the Athena result and compare daily bank/currency
 counts, USD totals, shares and HHI with local aggregates from verified curated
@@ -183,7 +183,7 @@ Do not republish the dashboard in this scope.
 
 
 The treasury reconciliation tooling is implemented by
-`scripts/verify-orchestrated-corridors.py` and `bda_pipeline.treasury_verification`.
+`scripts/validation/verify-orchestrated-corridors.py` and `bda_pipeline.treasury_verification`.
 It hashes the reference/result/query/SQL, checks the successful reviewed query,
 and compares each directed corridor and daily metric independently in batches.
 Athena omits the final SQL semicolon in GetQueryExecution; the verifier permits
@@ -194,8 +194,8 @@ tampering, and narrow SQL delimiter normalization. No replacement query was run.
 To repeat local reconciliation, choose fresh report/output paths:
 
 ```powershell
-output/ml-venv/Scripts/python.exe scripts/verify-orchestrated-corridors.py --reference output/cloud-insights-20261005/bq1_scored.parquet --result C:/Users/lowth/AppData/Local/IS459-G3/orchestration-verification-20261006/treasury-corridors.csv --query-report C:/Users/lowth/AppData/Local/IS459-G3/orchestration-treasury-query-20261006.json --output output/orchestration-treasury-repeat.json
-output/ml-venv/Scripts/python.exe scripts/verify-cloud-scoring-full.py --curated C:/Users/lowth/AppData/Local/IS459-G3/orchestration-verification-20261006/curated --reference output/cloud-insights-20261005/bq1_scored.parquet --model-dir output/cloud-scoring-retry-prepared-20261005/artifacts --run-report C:/Users/lowth/AppData/Local/IS459-G3/orchestration-scoring-status-20261006.json --job-report C:/Users/lowth/AppData/Local/IS459-G3/orchestration-live-job-20261006.json --marker-report C:/Users/lowth/AppData/Local/IS459-G3/orchestration-scoring-marker-receipt-20261006.json --output output/orchestration-score-repeat
+output/ml-venv/Scripts/python.exe scripts/validation/verify-orchestrated-corridors.py --reference output/cloud-insights-20261005/bq1_scored.parquet --result C:/Users/lowth/AppData/Local/IS459-G3/orchestration-verification-20261006/treasury-corridors.csv --query-report C:/Users/lowth/AppData/Local/IS459-G3/orchestration-treasury-query-20261006.json --output output/orchestration-treasury-repeat.json
+output/ml-venv/Scripts/python.exe scripts/validation/verify-cloud-scoring-full.py --curated C:/Users/lowth/AppData/Local/IS459-G3/orchestration-verification-20261006/curated --reference output/cloud-insights-20261005/bq1_scored.parquet --model-dir output/cloud-scoring-retry-prepared-20261005/artifacts --run-report C:/Users/lowth/AppData/Local/IS459-G3/orchestration-scoring-status-20261006.json --job-report C:/Users/lowth/AppData/Local/IS459-G3/orchestration-live-job-20261006.json --marker-report C:/Users/lowth/AppData/Local/IS459-G3/orchestration-scoring-marker-receipt-20261006.json --output output/orchestration-score-repeat
 ```
 
 These commands consume retained outputs locally and start no cloud tasks.

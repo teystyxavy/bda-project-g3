@@ -11,7 +11,7 @@ the candidate automatically. The current dashboard selects
 `opt-train-cache-20261006-aws1`, Kaggle version 8.
 See the [implementation](../runbooks/pipeline-optimisation-implementation.md) and
 [measured evidence](../evidence/pipeline-optimisation-result-20261006.json).
-The existing `scripts/ingest.ps1` entry point runs AWS acquisition through publication;
+The existing `scripts/ingestion/ingest.ps1` entry point runs AWS acquisition through publication;
 `-Train` adds candidate training and `-Rerun` bypasses caches.
 
 Prepared 6 October 2026 from verified project results. This guide uses retained
@@ -33,7 +33,7 @@ and [deployment result](../evidence/ingestion-deployment-result-20261006.json). 
 [full release](https://d1n61tlw9pcrog.cloudfront.net/releases/full-20261006-aws1/index.html)
 includes both views. Existing-data version is honestly reported as unrecorded.
 
-For a separately requested live rerun, `scripts/ingest.ps1 -LocalAcquisition` uses the
+For a separately requested live rerun, `scripts/ingestion/ingest.ps1 -LocalAcquisition` uses the
 currently deployed flow through publication; `-Train` adds a private candidate. An
 unchanged successful manifest returns its cached release. Use retained AWS evidence
 to rehearse without starting additional paid work. Training never auto-promotes.

@@ -27,7 +27,7 @@ The release details below retain the earlier local-model preparation snapshot.
 ## Prepared release
 
 ```powershell
-output/ml-venv/Scripts/python.exe scripts/prepare-dashboard-release.py --source output/model-dashboard-20261005 --output output/dashboard-release-new
+output/ml-venv/Scripts/python.exe scripts/dashboard/prepare-dashboard-release.py --source output/model-dashboard-20261005 --output output/dashboard-release-new
 ```
 
 Use a fresh directory. The saved release is `output/dashboard-release-20261005/`.

@@ -12,7 +12,7 @@ One command acquires the selected Kaggle files and historical FX rates, uploads
 verified inputs, and runs the batch pipeline through a refreshed dashboard:
 
 ```powershell
-.\scripts\ingest.ps1 -LocalAcquisition
+.\scripts\ingestion\ingest.ps1 -LocalAcquisition
 ```
 
 This command is **deployed and verified through a 1,000-row AWS release**.
@@ -59,7 +59,7 @@ after selection and are not used to choose a candidate.
 
 | Component | Change | Current status |
 |---|---|---|
-| Entry point | Add `scripts/ingest.ps1` for preflight, acquisition, upload, start, progress and result links | Implemented; API preparation tested |
+| Entry point | Add `scripts/ingestion/ingest.ps1` for preflight, acquisition, upload, start, progress and result links | Implemented; API preparation tested |
 | Kaggle | Add version/subset options; default `HI-Small`; verify reusable downloads; explicit refresh; record version and hashes | Implemented; version/cache tests pass |
 | FX | Discover transaction dates/currencies, retrieve historical rates and prior-day coverage, retain provider/observation dates, enforce missing/stale-rate checks | Implemented; real API preparation and negative tests pass |
 | Run manifest | Record source hashes, subset/version, dates, counts, FX provenance, active model hashes, code/image versions and unique run locations | Implemented and tested |

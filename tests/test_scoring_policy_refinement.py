@@ -8,7 +8,7 @@ import pytest
 
 spec = importlib.util.spec_from_file_location(
     "scoring_policy_refiner",
-    Path(__file__).parents[1] / "scripts/refine-scoring-deployment-policy.py",
+    Path(__file__).parents[1] / "scripts/aws/refine-scoring-deployment-policy.py",
 )
 refiner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(refiner)

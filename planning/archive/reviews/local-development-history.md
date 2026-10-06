@@ -44,7 +44,7 @@ python -m pip install -e ".[dev]"
 ### 3. Download the dataset
 
 ```bash
-python scripts/kaggle-download.py
+python scripts/ingestion/kaggle-download.py
 ```
 
 This uses `kagglehub`'s per-file download option and writes the files directly to
@@ -64,7 +64,7 @@ each with three files:
 
 The downloader selects `HI-Small_Trans.csv` (about 475MB, 5M rows) and
 `HI-Small_accounts.csv` (about 34MB). To analyze another variant, select one of
-the commented `PREFIX`/`SIZE` options in `scripts/kaggle-download.py` and use the
+the commented `PREFIX`/`SIZE` options in `scripts/ingestion/kaggle-download.py` and use the
 same `PREFIX`/`SIZE` in the notebook config. Set `INCLUDE_PATTERNS = True` only if
 the optional laundering-pattern descriptions are needed.
 
@@ -79,13 +79,13 @@ Generate the daily FX CSV from the currencies and date range present in the
 transaction file:
 
 ```powershell
-python scripts/fetch-fx-rates.py
+python scripts/ingestion/fetch-fx-rates.py
 ```
 
 For a quicker first run, inspect only the same 1,000 rows used by the smoke test:
 
 ```powershell
-python scripts/fetch-fx-rates.py --rows 1000
+python scripts/ingestion/fetch-fx-rates.py --rows 1000
 ```
 
 The downloader uses Frankfurter's historical central-bank-backed rates for the
@@ -95,7 +95,7 @@ queryable records for those three pairs. The output records the source and
 actual observation date; weekends use the latest prior observation. Then run:
 
 ```powershell
-python scripts/run-local-pipeline.py --fx-rates dataset/fx_rates.csv --rows 1000
+python scripts/local/run-local-pipeline.py --fx-rates dataset/fx_rates.csv --rows 1000
 ```
 
 The partitioned result is written under `output/curated/transactions/`. Local
@@ -112,8 +112,8 @@ python -m pytest -q
 After installing the package with `python -m pip install -e ".[dev]"`, run:
 
 ```powershell
-python scripts/fetch-fx-rates.py --lookback-days 1 --output dataset/fx_rates_with_history.csv
-python scripts/run-local-analysis.py --fx-rates dataset/fx_rates_with_history.csv --output output/analysis-run-1
+python scripts/ingestion/fetch-fx-rates.py --lookback-days 1 --output dataset/fx_rates_with_history.csv
+python scripts/local/run-local-analysis.py --fx-rates dataset/fx_rates_with_history.csv --output output/analysis-run-1
 ```
 
 Use a new output directory for each run. The runner scans the complete transaction
@@ -146,7 +146,7 @@ It is unsuitable as the primary holdout for normal-volume operations.
 To re-evaluate previously saved features with the current split policy:
 
 ```powershell
-python scripts/evaluate-local-risk.py --input output/analysis-20261004/bq1_scored.parquet --output output/evaluation-new
+python scripts/local/evaluate-local-risk.py --input output/analysis-20261004/bq1_scored.parquet --output output/evaluation-new
 ```
 
 The evaluation command produces a test-period review queue and `evaluation.json`.
@@ -163,7 +163,7 @@ and observation-date provenance; retain them alongside each run for reproducibil
 Build a static snapshot from the revised AML scores and full-population corridors:
 
 ```powershell
-python scripts/build-dashboard.py --scored output/evaluation-20261004/bq1_scored.parquet --corridors output/analysis-20261004/bq2_daily_corridors.parquet --output output/dashboard
+python scripts/dashboard/build-dashboard.py --scored output/evaluation-20261004/bq1_scored.parquet --corridors output/analysis-20261004/bq2_daily_corridors.parquet --output output/dashboard
 python -m http.server 4173 --bind 127.0.0.1 --directory output/dashboard
 ```
 
@@ -191,7 +191,7 @@ After downloading and verifying a successful full Glue run, score its curated
 Parquet and export both dashboard views locally:
 
 ```powershell
-python scripts/export-verified-batch.py --curated output/full-cloud-optimized-20261005/curated --verification output/full-cloud-optimized-20261005/parity.json --output output/cloud-insights-new
+python scripts/dashboard/export-verified-batch.py --curated output/full-cloud-optimized-20261005/curated --verification output/full-cloud-optimized-20261005/parity.json --output output/cloud-insights-new
 python -m http.server 4174 --bind 127.0.0.1 --directory output/cloud-insights-new/dashboard
 ```
 
@@ -223,7 +223,7 @@ Create an isolated environment for the optional ML dependencies:
 python -m venv output/ml-venv
 output/ml-venv/Scripts/python.exe -m pip install -e ".[dev,ml]"
 output/ml-venv/Scripts/python.exe -m pytest -q
-output/ml-venv/Scripts/python.exe scripts/compare-local-model.py --scored output/cloud-insights-20261005/bq1_scored.parquet --snapshot output/cloud-insights-20261005/dashboard/dashboard.json --output output/model-comparison-new
+output/ml-venv/Scripts/python.exe scripts/modeling/compare-local-model.py --scored output/cloud-insights-20261005/bq1_scored.parquet --snapshot output/cloud-insights-20261005/dashboard/dashboard.json --output output/model-comparison-new
 ```
 
 Use a fresh output directory. The input must match the full-population export's
@@ -258,7 +258,7 @@ production AML validation. The saved 2026-10-05 run is under
 Reuse the saved model without fitting or tuning again:
 
 ```powershell
-output/ml-venv/Scripts/python.exe scripts/build-model-dashboard.py --scored output/cloud-insights-20261005/bq1_scored.parquet --baseline output/cloud-insights-20261005/dashboard/dashboard.json --model-dir output/model-comparison-20261005 --output output/model-dashboard-new
+output/ml-venv/Scripts/python.exe scripts/dashboard/build-model-dashboard.py --scored output/cloud-insights-20261005/bq1_scored.parquet --baseline output/cloud-insights-20261005/dashboard/dashboard.json --model-dir output/model-comparison-20261005 --output output/model-dashboard-new
 python -m http.server 4175 --bind 127.0.0.1 --directory output/model-dashboard-new
 ```
 
@@ -285,7 +285,7 @@ The verified static synthetic-data dashboard is public at
 The origin bucket remains private. An allowlisted four-file release can be built with:
 
 ```powershell
-output/ml-venv/Scripts/python.exe scripts/prepare-dashboard-release.py --source output/model-dashboard-20261005 --output output/dashboard-release-new
+output/ml-venv/Scripts/python.exe scripts/dashboard/prepare-dashboard-release.py --source output/model-dashboard-20261005 --output output/dashboard-release-new
 ```
 
 The approved four-file cloud-backed release is published. See [hosting and cost review](dashboard-hosting-review.md)
@@ -332,20 +332,20 @@ The user updated the live monthly budget alert to USD 10 on 2026-10-05; the loca
 default and validation maximum are also 10. This is not a hard AWS spend cap.
 
 Start with [local AWS login](../../runbooks/aws-login.md). The
-`scripts/configure-aws.ps1` helper opens AWS browser authentication and saves
+`scripts/aws/configure-aws.ps1` helper opens AWS browser authentication and saves
 project settings outside the repository; enter passwords only on the AWS page.
 
 `infra/terraform/` defines the private S3 bucket, Glue sample job, projected
 catalog table, Athena workgroup and saved queries, failure notifications and
 budget. `jobs/curate_transactions.py` implements PySpark curation with account
-and FX validation. `scripts/prepare-aws-smoke.py` creates 1,000 raw sample rows,
+and FX validation. `scripts/validation/prepare-aws-smoke.py` creates 1,000 raw sample rows,
 the required account subset and a local reference result without AWS calls.
 
 Follow [the AWS batch runbook](../../runbooks/aws-batch-runbook.md) for local parity
 tests, configuration, approval-gated deployment, reconciliation and cleanup.
 Terraform validation and three mocked planning tests pass. All 30 Python tests
 pass in the official Glue 5 container, including Spark parity; run them with
-`.\scripts\test-glue-local.ps1` after preparing the sample. An authenticated
+`.\scripts\validation\test-glue-local.ps1` after preparing the sample. An authenticated
 [deployment plan](aws-plan-review.md) was applied with user approval.
 [Deployment checks](../../aws-deployment-status.md) confirm 25 resources and
 no drift. The approved 1,000-row cloud smoke run and both Athena queries succeeded;
@@ -355,7 +355,7 @@ parity tests pass. The user approved a bounded full-data run; see the deployment
 status document for its results: the first run timed out, but the optimized
 retry succeeded in 386 execution seconds and passed full reconciliation.
 The original partial output remains invalid. Full-data verification uses
-`scripts/verify-aws-full.py` and `sql/reconcile-full.sql` against the separate
+`scripts/validation/verify-aws-full.py` and `sql/reconcile-full.sql` against the separate
 `full_transactions` catalog table. Full-population rule scoring and dashboard
 export from the verified cloud data work locally; full AWS scoring and dashboard
 publication subsequently completed and passed verification. ML training remains
@@ -375,7 +375,7 @@ costs, acceptance criteria and the optional disabled one-off Scheduler.
 Prepare an unapproved execution input and definition locally in a fresh directory:
 
 ```powershell
-python scripts/prepare-orchestration.py --run-id full-orchestrated-20261006 --output output/orchestration-review-local
+python scripts/aws/prepare-orchestration.py --run-id full-orchestrated-20261006 --output output/orchestration-review-local
 python -m pytest tests/test_orchestration.py -q
 ```
 

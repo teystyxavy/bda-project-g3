@@ -93,7 +93,7 @@ def test_cloud_options_reject_unsupported_or_unsafe_inputs(event):
 
 def test_launcher_starts_cloud_workflow_without_accessing_local_data():
     root = Path(__file__).resolve().parents[1]
-    spec = importlib.util.spec_from_file_location('cloud_cli', root / 'scripts/ingest.py')
+    spec = importlib.util.spec_from_file_location('cloud_cli', root / 'scripts/ingestion/ingest.py')
     cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
     class States:
         class exceptions:

@@ -259,7 +259,7 @@ not an enforced permissions boundary. Do not attach it to untrusted automation.
 Reproducible offline refinement from the project root:
 
 ```powershell
-output/ml-venv/Scripts/python.exe scripts/refine-scoring-deployment-policy.py --baseline C:/Users/lowth/AppData/Local/IS459-G3/scoring-deployment-policy-review.json --plan C:/Users/lowth/AppData/Local/IS459-G3/scoring-plan.json --references output/scoring-policy-refinement-20261005 --output C:/Users/lowth/AppData/Local/IS459-G3/scoring-deployment-policy-refined-new.json
+output/ml-venv/Scripts/python.exe scripts/aws/refine-scoring-deployment-policy.py --baseline C:/Users/lowth/AppData/Local/IS459-G3/scoring-deployment-policy-review.json --plan C:/Users/lowth/AppData/Local/IS459-G3/scoring-plan.json --references output/scoring-policy-refinement-20261005 --output C:/Users/lowth/AppData/Local/IS459-G3/scoring-deployment-policy-refined-new.json
 output/ml-venv/Scripts/python.exe -m pytest -q tests/test_scoring_policy_refinement.py
 ```
 
@@ -355,7 +355,7 @@ This is not a reconciled bill. Retry planning retains the earlier approximately
 USD 0.225 illustrative total scenario and ten-minute compute estimate of
 USD 0.146667; actual logs, requests and storage may differ.
 
-`scripts/verify-cloud-scoring-smoke.py` is prepared to reconcile downloaded
+`scripts/validation/verify-cloud-scoring-smoke.py` is prepared to reconcile downloaded
 successful output with native fixtures: unique IDs, all features, label
 exclusion, score tolerances, partitions and cohort top-100 order. It requires a
 SUCCEEDED run report; it has not verified cloud output from this failed run.

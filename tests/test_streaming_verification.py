@@ -10,7 +10,7 @@ import pytest
 
 @pytest.fixture
 def audit_fixture(tmp_path, monkeypatch):
-    module_path = Path(__file__).parents[1] / 'scripts/verify-streaming-demo.py'
+    module_path = Path(__file__).parents[1] / 'scripts/streaming/verify-streaming-demo.py'
     spec = importlib.util.spec_from_file_location('stream_verifier', module_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

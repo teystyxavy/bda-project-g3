@@ -6,7 +6,7 @@ import pytest
 
 from bda_pipeline.analytics import add_behaviour, corridor_totals
 
-SPEC = importlib.util.spec_from_file_location("verify_full", Path(__file__).resolve().parents[1] / "scripts/verify-aws-full.py")
+SPEC = importlib.util.spec_from_file_location("verify_full", Path(__file__).resolve().parents[1] / "scripts/validation/verify-aws-full.py")
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 

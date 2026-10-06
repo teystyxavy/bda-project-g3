@@ -39,7 +39,7 @@ the reason for every slow task in the AWS run. The new scan is linear after
 sorting, with memory proportional to one sender's active seven-day history.
 
 Evidence: `output/history-benchmark-20261005/report.json`. Reproduce using
-`scripts/benchmark-glue-history.py` under the official Glue container via
+`scripts/benchmarks/benchmark-glue-history.py` under the official Glue container via
 `spark-submit --master local[4] --driver-memory 4g`, supplying `--transactions`
 for the unchanged source CSV, `--reference` for the local scored cohort Parquet,
 and `--report` for a fresh JSON file. The script makes no AWS calls. Reference
@@ -60,7 +60,7 @@ was approved and completed successfully. Same pinned Glue image, local[4],
 | Total measured job processing | 162.992 |
 
 `CURATION_VERIFIED rows=5078345` was emitted. The separate
-`scripts/verify-aws-full.py` reconciliation then passed:
+`scripts/validation/verify-aws-full.py` reconciliation then passed:
 
 - All 5,078,345 source IDs unique, correctly named and present.
 - 5,177 positive labels; no missing account metadata or USD values.

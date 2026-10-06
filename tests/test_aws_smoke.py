@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "prepare-aws-smoke.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "validation" / "prepare-aws-smoke.py"
 SPEC = importlib.util.spec_from_file_location("prepare_aws_smoke", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)

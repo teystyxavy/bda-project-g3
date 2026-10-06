@@ -8,7 +8,7 @@ You do not need to paste credentials into Codex or create a project secrets file
 2. From `bda-project-g3/`, run:
 
    ```powershell
-   .\scripts\configure-aws.ps1
+   .\scripts\aws\configure-aws.ps1
    ```
 
 3. On AWS's browser page, sign in with your project IAM user or approved role
@@ -19,7 +19,7 @@ You do not need to paste credentials into Codex or create a project secrets file
 For a university/company AWS access portal backed by IAM Identity Center, use:
 
 ```powershell
-.\scripts\configure-aws.ps1 -LoginMethod SSO
+.\scripts\aws\configure-aws.ps1 -LoginMethod SSO
 ```
 
 Use the SSO start URL and SSO region provided by the administrator. These may

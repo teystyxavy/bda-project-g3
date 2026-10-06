@@ -53,7 +53,7 @@ def test_full_runner_fixture_smoke(tmp_path, monkeypatch):
     import json
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
-    spec = importlib.util.spec_from_file_location('analysis_runner', root / 'scripts/run-local-analysis.py')
+    spec = importlib.util.spec_from_file_location('analysis_runner', root / 'scripts/local/run-local-analysis.py')
     runner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runner)
     dataset = tmp_path / 'dataset'

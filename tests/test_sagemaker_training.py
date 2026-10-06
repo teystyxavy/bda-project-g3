@@ -33,7 +33,7 @@ def bundle(tmp_path):
 
 
 def cli():
-    path = Path(__file__).resolve().parents[1] / 'scripts/sagemaker-training.py'
+    path = Path(__file__).resolve().parents[1] / 'scripts/modeling/sagemaker-training.py'
     spec = importlib.util.spec_from_file_location('training_cli', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

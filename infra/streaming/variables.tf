@@ -34,11 +34,17 @@ variable "image_uri" {
     error_message = "Pin the verified image digest in this project's ECR repository."
   }
 }
+# Parked by default: keeps the image, function, state table and audit, but no
+# billable Kinesis shard or consumer mapping. Set true to restore the stream.
+variable "provision_stream" {
+  type    = bool
+  default = false
+}
 variable "enable_consumer" {
   type    = bool
   default = false
   validation {
-    condition     = !var.enable_consumer || (var.provision_streaming && var.provision_failure_bucket && var.image_uri != null && var.replay_approved)
+    condition     = !var.enable_consumer || (var.provision_streaming && var.provision_failure_bucket && var.provision_stream && var.image_uri != null && var.replay_approved)
     error_message = "Consumer activation requires the reviewed image, isolated failure bucket and explicit replay approval."
   }
 }

@@ -43,7 +43,7 @@ From the project root, using the existing ML environment:
 ```powershell
 ./output/ml-venv/Scripts/python.exe -m pip install -e ".[ml,cloud,dev]"
 ./output/ml-venv/Scripts/python.exe -m pytest tests/test_sagemaker_training.py tests/test_model.py -q
-./output/ml-venv/Scripts/python.exe scripts/prepare-sagemaker-container.py --output output/sagemaker-build
+./output/ml-venv/Scripts/python.exe scripts/aws/prepare-sagemaker-container.py --output output/sagemaker-build
 docker build --platform linux/amd64 --provenance=false --sbom=false -t is459-g3-training:reviewed output/sagemaker-build
 ```
 
@@ -95,11 +95,11 @@ After recording the reviewed image digest, set `$smImage` to its complete
 URI. A tag such as `latest` is rejected. Use a fresh job name and directory:
 
 ```powershell
-./output/ml-venv/Scripts/python.exe scripts/sagemaker-training.py prepare --scored output/cloud-insights-20261005/bq1_scored.parquet --snapshot output/cloud-insights-20261005/dashboard/dashboard.json --output output/sagemaker-prepared-v1 --job-name is459-g3-train-full-v1 --image-uri $smImage
+./output/ml-venv/Scripts/python.exe scripts/modeling/sagemaker-training.py prepare --scored output/cloud-insights-20261005/bq1_scored.parquet --snapshot output/cloud-insights-20261005/dashboard/dashboard.json --output output/sagemaker-prepared-v1 --job-name is459-g3-train-full-v1 --image-uri $smImage
 # The command above is local only. This command starts one paid job:
-./output/ml-venv/Scripts/python.exe scripts/sagemaker-training.py start --prepared output/sagemaker-prepared-v1 --execute
-./output/ml-venv/Scripts/python.exe scripts/sagemaker-training.py status --prepared output/sagemaker-prepared-v1
-./output/ml-venv/Scripts/python.exe scripts/sagemaker-training.py collect --prepared output/sagemaker-prepared-v1 --output output/sagemaker-model-v1
+./output/ml-venv/Scripts/python.exe scripts/modeling/sagemaker-training.py start --prepared output/sagemaker-prepared-v1 --execute
+./output/ml-venv/Scripts/python.exe scripts/modeling/sagemaker-training.py status --prepared output/sagemaker-prepared-v1
+./output/ml-venv/Scripts/python.exe scripts/modeling/sagemaker-training.py collect --prepared output/sagemaker-prepared-v1 --output output/sagemaker-model-v1
 ```
 
 Submission claims its input prefix with a conditional S3 write before uploads;

@@ -6,9 +6,9 @@ batch pipeline to verify results and publish both dashboard views. Use the workf
 as the source-to-dashboard entry point; invoking Lambda alone prepares inputs.
 
 ```powershell
-.\scripts\ingest.ps1
-.\scripts\ingest.ps1 -NoWait
-.\scripts\ingest.ps1 -Status <run-id>
+.\scripts\ingestion\ingest.ps1
+.\scripts\ingestion\ingest.ps1 -NoWait
+.\scripts\ingestion\ingest.ps1 -Status <run-id>
 ```
 
 The launcher sends run options and needs AWS access; it does not need a local
@@ -45,7 +45,7 @@ local compatibility, controls and failure recovery.
 Read-only acquisition evidence can be retained with:
 
 ```powershell
-python scripts/inspect-cloud-acquisition.py --run-id <run-id> --output output/run-evidence
+python scripts/ingestion/inspect-cloud-acquisition.py --run-id <run-id> --output output/run-evidence
 ```
 
 This checks wrapper history, the committed manifest, encrypted source metadata,

@@ -1,24 +1,77 @@
 # Script guide
 
-Run scripts from the repository root. Locations remain stable so documented
-commands and container preparation continue to work. Scripts are grouped here
-by purpose; argument details are available through Python `--help` or the runbooks.
+Run commands from the **repository root**, with the project installed as described
+in the [main README](../README.md). Scripts are physically grouped by purpose.
+Application logic lives in `src/bda_pipeline/`, deployed job entry points in
+`jobs/` and the container directories, and exploration in `notebooks/`.
 
-| Task | Entry points |
+## Common commands
+
+```powershell
+# Sign in, then launch the deployed source-to-dashboard pipeline.
+.\scripts\aws\configure-aws.ps1
+.\scripts\ingestion\ingest.ps1 -Python python
+
+# Download the default dataset for local work.
+python scripts/ingestion/kaggle-download.py
+
+# Inspect arguments without starting a pipeline run.
+python scripts/ingestion/ingest.py --help
+
+# Package the dashboard ingestion API locally; creates no AWS resources.
+python scripts/aws/prepare-dashboard-api.py --output output/dashboard-control-package
+
+# Test the ingestion browser logic with offline fixtures.
+node --test tests/dashboard-controls.test.cjs
+
+# Run the local suite; Spark checks use the Glue container separately.
+python -m pytest tests --ignore=tests/spark -q
+```
+
+Launching ingestion can start paid jobs. See the
+[ingestion runbook](../planning/runbooks/ingestion-runbook.md) for prerequisites,
+source selection, caching, smoke runs and recovery. Generated artifacts belong
+under ignored `output/`; downloaded data belongs under ignored `dataset/`.
+For HI/LI, Small/Medium/Large, optional patterns and individual files, use
+`ingestion/ingest.ps1 -DownloadOnly`; `-DryRun` previews the selection.
+See [all download options and costs](../planning/runbooks/kaggle-download-options.md).
+
+## Categories
+
+| Directory | Purpose |
 |---|---|
-| Authenticate and run the deployed pipeline | `configure-aws.ps1`, `ingest.ps1` |
-| Inspect sources/progress/publication | `inspect-cloud-acquisition.py`, `inspect-ingestion.py`, `verify-ingestion-release.py` |
-| Measure elapsed times and cache reuse | `benchmark-ingestion.py` |
-| Prepare/update ingestion deployment | `prepare-ingestion.py`, `prepare-sagemaker-container.py`, `update-ingestion.ps1` |
-| Initial cloud deployments | `deploy-ingestion.ps1`, `deploy-cloud-ingestion.ps1` |
-| Local source acquisition | `kaggle-download.py`, `fetch-fx-rates.py` |
-| Local transformations/analysis | `run-local-pipeline.py`, `run-local-analysis.py`, `evaluate-local-risk.py` |
-| Model comparison and dashboard exports | `compare-local-model.py`, `build-model-dashboard.py`, `export-verified-batch.py`, `build-dashboard.py` |
-| Glue/Spark parity checks | `test-glue-local.ps1`, `test-cloud-scoring-local.ps1`, `verify-aws-full.py`, `verify-cloud-scoring-full.py` |
-| Optional streaming demonstration | `prepare-streaming-demo.py`, `replay-streaming-demo.py`, `verify-streaming-demo.py` |
-| Diagram sources and PNG exports | `build-architecture-diagrams.py`, `export-architecture.ps1` |
+| [ingestion/](ingestion/) | Dataset/FX acquisition, pipeline launch and progress inspection |
+| [local/](local/) | Local transformations, analysis and rule evaluation |
+| [modeling/](modeling/) | Model comparison and SageMaker candidate training |
+| [dashboard/](dashboard/) | Dashboard exports and local release packaging |
+| [aws/](aws/) | Authentication, deployment preparation and guarded deployment helpers |
+| [validation/](validation/) | Smoke fixtures, Glue parity tests and batch/release verification |
+| [streaming/](streaming/) | Optional replay preparation, execution and evidence |
+| [architecture/](architecture/) | Editable diagram generation and image exports |
+| [benchmarks/](benchmarks/) | Local feature benchmarks and completed-run timing evidence |
 
-Other `prepare-*`, `verify-*`, policy and evidence helpers support the separate
-milestones. Use the [documentation index](../planning/README.md) to find their
-prerequisites. Preparation/verification helpers are distinct from paid deployment,
-ingestion and replay commands. Generated artifacts belong under ignored `output/`.
+## Complete command index
+
+Paths below are relative to `scripts/`. Python argument details are available
+through `--help`, except the diagram generator, which builds fixed diagrams.
+
+| Category | Scripts |
+|---|---|
+| Ingestion | [ingest.ps1](ingestion/ingest.ps1), [ingest.py](ingestion/ingest.py), [kaggle-download.py](ingestion/kaggle-download.py), [fetch-fx-rates.py](ingestion/fetch-fx-rates.py), [inspect-ingestion.py](ingestion/inspect-ingestion.py), [inspect-cloud-acquisition.py](ingestion/inspect-cloud-acquisition.py), [check-ingestion.py](ingestion/check-ingestion.py) |
+| Local analysis | [run-local-pipeline.py](local/run-local-pipeline.py), [run-local-analysis.py](local/run-local-analysis.py), [evaluate-local-risk.py](local/evaluate-local-risk.py) |
+| Modelling | [compare-local-model.py](modeling/compare-local-model.py), [sagemaker-training.py](modeling/sagemaker-training.py) |
+| Dashboard | [build-dashboard.py](dashboard/build-dashboard.py), [build-model-dashboard.py](dashboard/build-model-dashboard.py), [export-verified-batch.py](dashboard/export-verified-batch.py), [prepare-dashboard-release.py](dashboard/prepare-dashboard-release.py) |
+| AWS setup and deployment | [configure-aws.ps1](aws/configure-aws.ps1), [plan-aws.ps1](aws/plan-aws.ps1), [deploy-ingestion.ps1](aws/deploy-ingestion.ps1), [deploy-cloud-ingestion.ps1](aws/deploy-cloud-ingestion.ps1), [update-ingestion.ps1](aws/update-ingestion.ps1), [prepare-ingestion.py](aws/prepare-ingestion.py), [prepare-cloud-ingestion.py](aws/prepare-cloud-ingestion.py), [prepare-cloud-scoring.py](aws/prepare-cloud-scoring.py), [prepare-orchestration.py](aws/prepare-orchestration.py), [prepare-sagemaker-container.py](aws/prepare-sagemaker-container.py), [bundle-scoring-wheels.py](aws/bundle-scoring-wheels.py), [refine-scoring-deployment-policy.py](aws/refine-scoring-deployment-policy.py) |
+| Validation | [prepare-aws-smoke.py](validation/prepare-aws-smoke.py), [prepare-ingestion-smoke.py](validation/prepare-ingestion-smoke.py), [test-glue-local.ps1](validation/test-glue-local.ps1), [test-cloud-scoring-local.ps1](validation/test-cloud-scoring-local.ps1), [verify-aws-smoke.py](validation/verify-aws-smoke.py), [verify-aws-full.py](validation/verify-aws-full.py), [verify-cloud-scoring-smoke.py](validation/verify-cloud-scoring-smoke.py), [verify-cloud-scoring-full.py](validation/verify-cloud-scoring-full.py), [verify-ingestion-release.py](validation/verify-ingestion-release.py), [verify-orchestrated-corridors.py](validation/verify-orchestrated-corridors.py) |
+| Streaming | [prepare-streaming-container.py](streaming/prepare-streaming-container.py), [prepare-streaming-demo.py](streaming/prepare-streaming-demo.py), [replay-streaming-demo.py](streaming/replay-streaming-demo.py), [verify-streaming-demo.py](streaming/verify-streaming-demo.py), [collect-streaming-evidence.py](streaming/collect-streaming-evidence.py), [collect-streaming-operations.py](streaming/collect-streaming-operations.py) |
+| Architecture | [build-architecture-diagrams.py](architecture/build-architecture-diagrams.py), [export-architecture.ps1](architecture/export-architecture.ps1) |
+| Benchmarks | [benchmark-glue-history.py](benchmarks/benchmark-glue-history.py), [benchmark-ingestion.py](benchmarks/benchmark-ingestion.py) |
+
+Cloud preparation helpers create local artifacts; deployment helpers can write to
+AWS. Verification helpers reconcile saved output or perform read-only cloud
+inspection. The replay command defaults to a dry run. See the
+[documentation index](../planning/README.md) for each milestone's prerequisites.
+
+The previous flat `scripts/<name>` paths have moved to these categories. Runbooks
+use the new locations; sanitized evidence retains paths recorded at execution
+time. Add new scripts to the relevant category and this index.

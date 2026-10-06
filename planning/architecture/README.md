@@ -1,5 +1,9 @@
 # Architecture sources
 
+- [Dashboard ingestion flow](dashboard-ingestion-flow.md) and
+  [editable diagram](dashboard-ingestion-flow.drawio): AWS service phases shown in
+  the live Ingestion tab; new dashboard controls are locally implemented, deployment pending.
+
 - [Automated ingestion](automated-ingestion.md) and
   [editable diagram](automated-ingestion.drawio): source-to-dashboard batch flow.
   The guide links to the later optimisation changes.
@@ -15,5 +19,5 @@ The latest parallelism/cache behavior is documented in the
 and defined by `infra/ingestion/workflow.asl.json`. Diagram milestone descriptions
 do not replace the deployed workflow or current runbook.
 
-`scripts/build-architecture-diagrams.py` and `scripts/export-architecture.ps1`
+`scripts/architecture/build-architecture-diagrams.py` and `scripts/architecture/export-architecture.ps1`
 use this directory. Follow the project-local architecture skill before changing diagrams.

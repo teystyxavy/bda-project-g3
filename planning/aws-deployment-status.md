@@ -11,7 +11,7 @@ the candidate automatically. The current dashboard selects
 `opt-train-cache-20261006-aws1`, Kaggle version 8.
 See the [implementation](runbooks/pipeline-optimisation-implementation.md) and
 [measured evidence](evidence/pipeline-optimisation-result-20261006.json).
-The existing `scripts/ingest.ps1` entry point runs AWS acquisition through publication;
+The existing `scripts/ingestion/ingest.ps1` entry point runs AWS acquisition through publication;
 `-Train` adds candidate training and `-Rerun` bypasses caches.
 
 **AWS acquisition revision, 6 October 2026:** the dedicated Lambda and wrapper
@@ -112,7 +112,7 @@ Athena query IDs, both SUCCEEDED:
 
 Evidence is under `output/aws-smoke-cloud/`: downloaded curated Parquet,
 `parity.json`, `reconciliation.csv`, and `corridors.csv`. Re-run field comparison
-using `python scripts/verify-aws-smoke.py --curated output/aws-smoke-cloud/curated`.
+using `python scripts/validation/verify-aws-smoke.py --curated output/aws-smoke-cloud/curated`.
 
 Estimated Glue compute: 130 / 3600 Ã— 2 Ã— USD 0.44 = USD 0.03178, using the
 [Singapore AWS Glue price list](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSGlue/current/ap-southeast-1/index.json).
@@ -201,7 +201,7 @@ Input SHA256 hashes, in transaction/accounts/FX order:
 - `D6967EF095D43E165BC730636E76C1482DA89E8828B0426C902FF28C7EE3176F`
 
 The local request is recorded in `output/full-20261005/run-request.json`.
-`scripts/verify-aws-full.py` is ready for a future successful run; it has not
+`scripts/validation/verify-aws-full.py` is ready for a future successful run; it has not
 validated this incomplete output.
 
 Subsequent local-only optimization and benchmark evidence is recorded in
@@ -241,7 +241,7 @@ Athena query `27e82bce-0ed2-4616-80e4-243855b0a12b` ran
 - USD totals: 1,747,869,572,934.3848 same-day and
   1,748,564,754,800.0552 prior-day (distributed floating summation).
 
-Downloaded Parquet passed `scripts/verify-aws-full.py`: every source ID is
+Downloaded Parquet passed `scripts/validation/verify-aws-full.py`: every source ID is
 unique and present; key fields and all five history features match the saved
 256,557-row cohort; all 1,099,714 daily bank/currency corridor aggregates match
 the full local reference. Floating comparisons use rtol 1e-10 and atol 1e-6.

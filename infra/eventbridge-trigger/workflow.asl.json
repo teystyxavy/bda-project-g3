@@ -1,0 +1,106 @@
+{
+  "Comment": "S3 upload trigger: start the existing verified batch once per run ID; no compute retries.",
+  "StartAt": "ParseKey",
+  "TimeoutSeconds": 300,
+  "States": {
+    "ParseKey": {
+      "Type": "Pass",
+      "Parameters": {
+        "key.$": "$.detail.object.key",
+        "run_id.$": "States.ArrayGetItem(States.StringSplit($.detail.object.key, '/'), 2)"
+      },
+      "ResultPath": "$.trigger",
+      "Next": "ExpectedKey"
+    },
+    "ExpectedKey": {
+      "Type": "Pass",
+      "Parameters": {
+        "key.$": "States.Format('pipeline/runs/{}/raw/trigger.json', $.trigger.run_id)"
+      },
+      "ResultPath": "$.expected",
+      "Next": "ValidKey"
+    },
+    "ValidKey": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.trigger.key",
+          "StringEqualsPath": "$.expected.key",
+          "Next": "StartBatch"
+        }
+      ],
+      "Default": "Rejected"
+    },
+    "StartBatch": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::states:startExecution",
+      "Parameters": {
+        "StateMachineArn": "${batch_arn}",
+        "Name.$": "$.trigger.run_id",
+        "Input": {
+          "run_id.$": "$.trigger.run_id",
+          "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID.$": "$$.Execution.Id"
+        }
+      },
+      "ResultPath": "$.batch",
+      "Next": "Started",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "StepFunctions.ExecutionAlreadyExistsException"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "AlreadyStarted"
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "NotifyFailure"
+        }
+      ]
+    },
+    "Started": {
+      "Type": "Pass",
+      "Parameters": {
+        "run_id.$": "$.trigger.run_id",
+        "execution_arn.$": "$.batch.ExecutionArn"
+      },
+      "End": true
+    },
+    "AlreadyStarted": {
+      "Type": "Succeed",
+      "Comment": "The run ID already has a batch execution; nothing is repeated."
+    },
+    "Rejected": {
+      "Type": "Fail",
+      "Error": "UnexpectedTriggerKey",
+      "Cause": "Only pipeline/runs/<run>/raw/trigger.json starts a run."
+    },
+    "NotifyFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${failure_topic}",
+        "Message.$": "States.JsonToString($.failure)"
+      },
+      "ResultPath": null,
+      "Next": "Failed",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": null,
+          "Next": "Failed"
+        }
+      ]
+    },
+    "Failed": {
+      "Type": "Fail",
+      "Error": "RawTriggerFailed",
+      "Cause": "The batch did not start; inspect the run's raw upload. No automatic rerun."
+    }
+  }
+}

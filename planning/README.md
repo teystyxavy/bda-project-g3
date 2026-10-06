@@ -5,6 +5,8 @@ reviews retain the decisions and results from earlier milestones.
 
 | Topic | Entry point |
 |---|---|
+| Repository commands by category | [Script guide](../scripts/README.md) |
+| Transaction-level exploration | [Notebook guide](../notebooks/README.md) |
 | Business questions, schema and modelling policy | [Pipeline plan](big-data-pipeline-plan.md) |
 | Deployed resources and cost notes | [Deployment status](aws-deployment-status.md) |
 | Run ingestion, training and recovery | [Ingestion runbook](runbooks/ingestion-runbook.md) |
@@ -16,6 +18,7 @@ reviews retain the decisions and results from earlier milestones.
 | Editable diagrams and rendered images | [Architecture guide](architecture/README.md) |
 | Presentation and demonstration | [Delivery guide](delivery/README.md) |
 | Remaining optimisation ideas | [Proposal](proposals/pipeline-optimisation-proposal.md) |
+| Kinesis scores flowing into the dashboard | [Proposed streaming dashboard connection](proposals/kinesis-dashboard-improvements.md) |
 | Earlier implementation reviews | [Historical archive](archive/README.md) |
 
 `evidence/` contains sanitized milestone summaries; complete private run outputs

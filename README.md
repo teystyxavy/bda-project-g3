@@ -11,8 +11,18 @@ It answers two separate questions:
   and how does concentration change? High volume does not imply suspiciousness.
 
 [Open dashboard](https://d1n61tlw9pcrog.cloudfront.net/) ·
+[Script guide](scripts/README.md) ·
 [Documentation index](planning/README.md) ·
 [Demonstration runbook](planning/delivery/final-demo-runbook.md)
+
+The dashboard now includes an **Ingestion** tab for selecting HI-Small demo/full
+runs, launching ingestion and tracking workflow stages. The protected API and
+operator sign-in are implemented locally; their new infrastructure has **not**
+been deployed. Controls remain disabled until connected. See the
+[dashboard control setup](infra/dashboard-control/README.md).
+Its AWS service map shows the current phase, parallel analysis branches and
+reused/failed stages. The [editable diagrams and guide](planning/architecture/dashboard-ingestion-flow.md)
+describe the same data flow.
 
 ## Run the deployed pipeline
 
@@ -22,8 +32,8 @@ From this repository, use Python 3.11 or later and the project AWS profile:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[cloud]"
-.\scripts\configure-aws.ps1
-.\scripts\ingest.ps1 -Python python
+.\scripts\aws\configure-aws.ps1
+.\scripts\ingestion\ingest.ps1 -Python python
 ```
 
 The setup helper requires AWS CLI v2 and opens browser sign-in. The default launcher
@@ -33,16 +43,16 @@ SageMaker verification, Athena corridor analysis and dashboard publication.
 
 ```powershell
 # Submit and let AWS continue after the terminal closes.
-.\scripts\ingest.ps1 -Python python -NoWait
+.\scripts\ingestion\ingest.ps1 -Python python -NoWait
 
 # Inspect the run ID returned by submission.
-.\scripts\ingest.ps1 -Python python -Status <run-id>
+.\scripts\ingestion\ingest.ps1 -Python python -Status <run-id>
 
 # Also train a private SageMaker candidate; no automatic model promotion.
-.\scripts\ingest.ps1 -Python python -Train
+.\scripts\ingestion\ingest.ps1 -Python python -Train
 
 # Force a complete rebuild, bypassing release and stage caches.
-.\scripts\ingest.ps1 -Python python -Rerun
+.\scripts\ingestion\ingest.ps1 -Python python -Rerun
 ```
 
 Unchanged verified inputs return their existing release. Compatible new runs can
@@ -50,6 +60,25 @@ reuse verified curated/scored stages. Every new publication retains complete
 score parity, source/FX checks and corridor reconciliation. An uncached run starts
 paid AWS jobs. See the [ingestion runbook](planning/runbooks/ingestion-runbook.md)
 for source controls, smoke runs, failure recovery and deployment prerequisites.
+
+## Choose Kaggle download options
+
+```powershell
+# All available variants, sizes and file types; no download or AWS calls.
+.\scripts\ingestion\ingest.ps1 -ListOptions
+
+# Download LI-Medium locally, including pattern descriptions.
+.\scripts\ingestion\ingest.ps1 -DownloadOnly -Variant LI -Size Medium -IncludePatterns -Refresh
+
+# Preview a transactions-only HI-Large download.
+.\scripts\ingestion\ingest.ps1 -DownloadOnly -Subset HI-Large -Files Transactions -DryRun
+```
+
+Local downloads support HI/LI with Small/Medium/Large, selected files, an output
+directory and a pinned Kaggle version. They start no AWS jobs. The AWS pipeline
+continues to support HI-Small; `-Refresh` without `-DownloadOnly` refreshes its
+cloud source and runs the pipeline. See the
+[download options and cost implications](planning/runbooks/kaggle-download-options.md).
 
 ## Verified results
 
@@ -68,9 +97,10 @@ scores and treasury totals reconciled, and business rankings remained unchanged.
 See the [optimisation implementation](planning/runbooks/pipeline-optimisation-implementation.md)
 and [acceptance evidence](planning/evidence/pipeline-optimisation-result-20261006.json).
 
-The optional Kinesis/Lambda/DynamoDB replay demonstration is separately verified;
-its consumer remains disabled. Incremental ingestion and further streaming
-optimisation are future work. Findings describe synthetic data, and model scores
+The optional Kinesis/Lambda/DynamoDB replay demonstration was verified once and is
+now **parked**: the Kinesis stream is deleted to stop shard charges, while the image,
+function, state table and audit are kept. See [restore steps](streaming/README.md#parked).
+Incremental ingestion and further streaming optimisation are future work. Findings describe synthetic data, and model scores
 are rankings rather than calibrated laundering probabilities.
 
 ## Repository map
@@ -84,14 +114,16 @@ are rankings rather than calibrated laundering probabilities.
 | `sagemaker/` | Training and processing container entry points |
 | `streaming/` | Optional replay consumer container |
 | `dashboard/` | Static HTML, CSS and JavaScript assets |
-| `scripts/` | Stable run, prepare, deploy and verification commands |
+| `scripts/` | Commands grouped by purpose; see the script guide below |
+| `notebooks/` | Exploratory analysis notebooks |
 | `sql/` | Athena analysis and reconciliation queries |
 | `tests/` | Python unit/integration checks and separate Spark parity tests |
 | `planning/` | Current design, runbooks, diagrams, evidence and archived milestones |
 | `dataset/`, `output/` | Ignored local data, artifacts, tools and run outputs |
 
 Use the [script guide](scripts/README.md) to find commands and the
-[infrastructure guide](infra/README.md) to find stacks. Script locations are stable.
+[infrastructure guide](infra/README.md) to find stacks. Run commands from the
+repository root; each script category has its own directory.
 
 ## Develop and validate locally
 
@@ -100,9 +132,9 @@ python -m pip install -e ".[dev,ml,ingest]"
 python -m pytest tests --ignore=tests/spark -q
 ```
 
-The latest non-Spark suite passed **136 tests**, with one skipped. Spark parity
-runs separately in the Glue container through `scripts/test-glue-local.ps1` and
-`scripts/test-cloud-scoring-local.ps1`; see the
+The latest non-Spark suite passed **162 tests**, with one skipped. Spark parity
+runs separately in the Glue container through `scripts/validation/test-glue-local.ps1` and
+`scripts/validation/test-cloud-scoring-local.ps1`; see the
 [batch runbook](planning/runbooks/aws-batch-runbook.md) for fixtures and prerequisites.
 Terraform mock tests live under each stack's `tests/` directory. Historical local
 analysis commands are retained in the
@@ -118,6 +150,6 @@ or the configured AWS secret. Provider lock files and sanitized evidence are com
 
 The course budget is **USD 250**. The deployed monthly alert is **USD 10**; it is
 an alert rather than a spending cap. Jobs use bounded runtimes and no automatic
-paid-job resubmission. Hosting/storage and the provisioned streaming shard can
-continue to incur charges. See [deployment status](planning/aws-deployment-status.md)
+paid-job resubmission. Hosting and storage can continue to incur charges; the
+streaming shard is parked. See [deployment status](planning/aws-deployment-status.md)
 and the runbooks for resource cleanup after the final presentation.

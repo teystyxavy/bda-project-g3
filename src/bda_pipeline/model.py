@@ -84,12 +84,12 @@ def read_split(dataset, name):
     return frame
 
 
-def explain_queue(model, frame, scores, vocabulary):
+def explain_queue(model, frame, scores, vocabulary, k=100):
     """Exact TreeSHAP contributions to the model margin, not causal claims."""
     import xgboost as xgb
     # Sort only keys and scores; copy feature/string columns for displayed rows.
     ordering = frame[['timestamp', 'source_row_index']].reset_index(drop=True)
-    selected = rank(ordering, scores).head(100)
+    selected = rank(ordering, scores).head(k)
     queue = frame.iloc[selected.index].copy()
     queue['risk_score'] = selected.risk_score.to_numpy()
     matrix = encode(queue, vocabulary)
@@ -144,8 +144,8 @@ class SavedRanker:
             raise ValueError('Encoded feature schema mismatch')
         return self.model.predict(xgb.DMatrix(matrix, nthread=self.threads))
 
-    def queue(self, frame, scores):
-        queue = explain_queue(self.model, frame, scores, self.vocabulary)
+    def queue(self, frame, scores, k=100):
+        queue = explain_queue(self.model, frame, scores, self.vocabulary, k=k)
         aliases = {f'{column}_{index}': f'{column}={value}'
                    for column in CATEGORICAL
                    for index, value in enumerate(self.vocabulary[column])}

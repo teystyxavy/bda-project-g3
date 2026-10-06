@@ -59,7 +59,7 @@ Private backend: `%LOCALAPPDATA%/IS459-G3/terraform-cloud-ingestion/`; actual st
 The implemented helper verifies artifact hashes and the local image digest by default:
 
 ```powershell
-.\scripts\deploy-cloud-ingestion.ps1
+.\scripts\aws\deploy-cloud-ingestion.ps1
 ```
 
 After explicit deployment approval, `-Execute` rechecks all nine additions, creates the two ECR resources, pushes/verifies the reviewed image, then applies the seven runtime resources. It starts no acquisition or batch job. Partial deployment requires state inspection and a revised plan; the helper does not reset state or blindly repeat a partial apply.

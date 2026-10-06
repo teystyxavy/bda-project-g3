@@ -113,7 +113,7 @@ with AES256. The output inventory contains that marker and four Parquet objects,
 94,511 Parquet bytes across four date partitions. Logs, job reports, inventory,
 marker metadata and private downloads are preserved outside OneDrive.
 
-Ordinary `scripts/verify-cloud-scoring-smoke.py` verification passed without
+Ordinary `scripts/validation/verify-cloud-scoring-smoke.py` verification passed without
 `--forensic`. Saved report: `output/scoring-smoke-success/parity.json`; durable
 result metadata: `planning/evidence/scoring-smoke-result-20261006.json`. Checks confirm:
 

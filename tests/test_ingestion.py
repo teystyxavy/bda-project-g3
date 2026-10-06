@@ -80,7 +80,9 @@ def test_versioned_download_reuses_only_verified_files(tmp_path):
     acquire_dataset(tmp_path / 'dataset', downloader=lambda *a, **k: pytest.fail('Unexpected download'))
     (tmp_path / 'dataset/HI-Small_accounts.csv').write_text('tampered')
     acquire_dataset(tmp_path / 'dataset', downloader=download)
-    assert len(calls) == 4
+    assert len(calls) == 3  # Repair the changed accounts file; retain verified transactions.
+    assert calls[-1][1] == 'HI-Small_accounts.csv'
+    assert calls[-1][0].endswith('/versions/7')
 
 
 def test_legacy_copy_unknown_version_and_historical_fx_bounds(tmp_path):

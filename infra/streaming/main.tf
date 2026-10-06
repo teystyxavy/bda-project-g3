@@ -1,6 +1,8 @@
 locals {
   count          = var.provision_streaming ? 1 : 0
   function_count = var.provision_streaming && var.image_uri != null ? 1 : 0
+  # The shard is the only resource that bills while idle; provision_stream parks it.
+  stream_count   = var.provision_streaming && var.provision_stream ? 1 : 0
   name           = "is459-g3-${var.run_id}"
   bucket         = "is459-g3-${var.aws_account_id}-${var.aws_region}"
   failure_bucket = "is459-g3-stream-failures-${var.aws_account_id}-${var.aws_region}"
@@ -17,7 +19,7 @@ resource "aws_ecr_repository" "runtime" {
   image_scanning_configuration { scan_on_push = true }
 }
 resource "aws_kinesis_stream" "replay" {
-  count            = local.count
+  count            = local.stream_count
   name             = local.name
   shard_count      = 1
   retention_period = 24
@@ -75,7 +77,7 @@ resource "aws_lambda_function" "consumer" {
   depends_on = [aws_iam_role_policy.consumer, aws_cloudwatch_log_group.consumer, aws_ecr_repository_policy.lambda_retrieval]
 }
 resource "aws_lambda_event_source_mapping" "replay" {
-  count                              = var.provision_failure_bucket ? local.function_count : 0
+  count                              = var.provision_failure_bucket && var.provision_stream ? local.function_count : 0
   event_source_arn                   = aws_kinesis_stream.replay[0].arn
   function_name                      = aws_lambda_function.consumer[0].arn
   enabled                            = var.enable_consumer

@@ -15,7 +15,7 @@ model; it does not rerun training, batch scoring, Athena or publication.
 
 ## Concrete local result
 
-`scripts/prepare-streaming-demo.py` selected 32 senders using composite
+`scripts/streaming/prepare-streaming-demo.py` selected 32 senders using composite
 bank/account hashes and total-history counts, without consulting labels. It
 includes all 884 events for those senders across the dataset calendar, rather
 than truncating a busy account's history. Original transaction timestamps are
@@ -110,7 +110,7 @@ Limits are 1,000 retained events and 128 KiB state, failing closed before the
 per sender. This is not an unbounded account-state production design.
 
 IAM Policy Autopilot 0.3.0 generated SDK baselines from `streaming/handler.py`
-and `scripts/replay-streaming-demo.py` with region, account and Terraform path
+and `scripts/streaming/replay-streaming-demo.py` with region, account and Terraform path
 hints. Evidence is `iam-handler-generated.json` and
 `iam-producer-generated.json` in the local package. The attached template
 refines those baselines: GetItem/PutItem on this table, audit PutObject only on
@@ -182,7 +182,7 @@ Verify published ECR digest equals the reviewed local manifest, inspect scan
 findings, check Lambda Active and actual frozen artifact loading, and confirm
 fresh run-scoped table/audit output before enabling consumption. Retain the
 producer receipt outside OneDrive. Download only this run's audit prefix.
-`scripts/verify-streaming-demo.py` requires exactly 884 unique expected
+`scripts/streaming/verify-streaming-demo.py` requires exactly 884 unique expected
 identities, exact fields/features/input hashes/run IDs, frozen-score tolerance
 and a complete receipt; it hashes every accepted audit file. Also inspect all
 32 sender versions, Lambda/mapping errors and AWS failure archives. Confirm

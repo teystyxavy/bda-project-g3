@@ -258,6 +258,8 @@ def export_stage(inputs, output, assets):
     snapshot['provenance']['scoring_location'] = 'AWS Glue scoring, Athena treasury verification and SageMaker Processing export'
     snapshot['buildStatus'] = 'complete'
     snapshot['generated_at'] = snapshot['pipeline']['refresh_time']
+    from .dashboard_exploration import enrich_snapshot
+    enrich_snapshot(snapshot, dataset, scores, ranker)
     site = output / 'dashboard'
     site.mkdir()
     (site / 'dashboard.json').write_text(json.dumps(snapshot, allow_nan=False))

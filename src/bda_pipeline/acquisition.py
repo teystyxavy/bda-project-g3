@@ -11,6 +11,7 @@ import pandas as pd
 
 from .fx import build_daily_rates, discover_requirements, write_rates_csv
 from .transform import ACCOUNT_COLUMN_MAP
+from .dataset_options import resolve_subset, selected_files
 
 DATASET = 'ealtman2019/ibm-transactions-for-anti-money-laundering-aml'
 HEADER = ['Timestamp', 'From Bank', 'Account', 'To Bank', 'Account', 'Amount Received',
@@ -23,55 +24,68 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def acquire_dataset(directory, subset='HI-Small', version=None, refresh=False, downloader=None):
-    if subset not in [f'{ratio}-{size}' for ratio in ['HI', 'LI'] for size in ['Small', 'Medium', 'Large']]:
-        raise ValueError('Unsupported Kaggle subset')
+def acquire_dataset(directory, subset='HI-Small', version=None, refresh=False, downloader=None,
+                    *, include_patterns=False, files=None):
+    subset = resolve_subset(subset)
     if version is not None and version < 1:
         raise ValueError('Dataset version must be positive')
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    names = [f'{subset}_Trans.csv', f'{subset}_accounts.csv']
+    names = selected_files(subset, files, include_patterns)
     metadata = directory / f'{subset}_download.json'
     old = json.loads(metadata.read_text()) if metadata.exists() else None
-    reusable = not refresh and all((directory / name).is_file() for name in names)
-    if reusable and old:
-        reusable = (version in [None, old.get('dataset_version')] and
-                    all(digest(directory / name) == old['files'][name] for name in names))
-    elif reusable and version is not None:
-        reusable = False  # Unversioned legacy files cannot prove an explicitly requested version.
-    resolved_version = old.get('dataset_version') if reusable and old else None
-    if not reusable:
+    compatible = (not refresh and old is not None and
+                  version in [None, old.get('dataset_version')])
+    reusable_names = {name for name in names if compatible and (directory / name).is_file()
+                      and digest(directory / name) == old.get('files', {}).get(name)}
+    if not old and not refresh and version is None:
+        # Keep legacy local reuse, but never mix unversioned files with a new download.
+        reusable_names = {name for name in names if (directory / name).is_file()}
+    resolved_version = old.get('dataset_version') if compatible else version
+    if len(reusable_names) != len(names) and resolved_version is None:
+        reusable_names.clear()
+    missing = [name for name in names if name not in reusable_names]
+    if missing:
         if downloader is None:
             from kagglehub import dataset_download
             downloader = dataset_download
-        handle = DATASET if version is None else f'{DATASET}/versions/{version}'
-        first = Path(downloader(handle, path=names[0], force_download=refresh))
+        handle = DATASET if resolved_version is None else f'{DATASET}/versions/{resolved_version}'
+        pinned_version = resolved_version
+        first = Path(downloader(handle, path=missing[0], force_download=refresh))
         # KaggleHub's cache path identifies the resolved dataset version.
         parts = first.parts
         if 'versions' in parts:
             resolved_version = int(parts[parts.index('versions') + 1])
-        else:
-            resolved_version = version
         if resolved_version is None:
             raise ValueError('Cannot resolve downloaded dataset version; specify --dataset-version')
-        for name in names:
-            source = first if name == names[0] else Path(downloader(
+        if pinned_version is not None and resolved_version != pinned_version:
+            raise ValueError('Downloaded dataset version differs from requested version')
+        for name in missing:
+            source = first if name == missing[0] else Path(downloader(
                 f'{DATASET}/versions/{resolved_version}', path=name, force_download=refresh))
             if source.is_dir():
                 source = source / name
             if source.resolve() != (directory / name).resolve():
                 shutil.copyfile(source, directory / name)
-    with (directory / names[0]).open(encoding='utf-8-sig', newline='') as stream:
-        if next(csv.reader(stream)) != HEADER:
+    for name in names:
+        if name.endswith('_Patterns.txt'):
+            if not (directory / name).stat().st_size:
+                raise ValueError('Empty patterns file')
+            continue
+        with (directory / name).open(encoding='utf-8-sig', newline='') as stream:
+            header = next(csv.reader(stream), [])
+        if name.endswith('_Trans.csv') and header != HEADER:
             raise ValueError('Unexpected transaction header, including duplicate Account positions')
-    with (directory / names[1]).open(encoding='utf-8-sig', newline='') as stream:
-        if not set(ACCOUNT_COLUMN_MAP).issubset(next(csv.reader(stream))):
+        if name.endswith('_accounts.csv') and not set(ACCOUNT_COLUMN_MAP).issubset(header):
             raise ValueError('Unexpected account header')
+    reusable = not missing
     record = {'dataset': DATASET, 'subset': subset, 'dataset_version': resolved_version,
               'origin': 'verified-local-reuse' if reusable and old else
                         'legacy-local-unversioned' if reusable else 'kaggle-api',
               'files': {name: digest(directory / name) for name in names}}
-    metadata.write_text(json.dumps(record, indent=2), encoding='utf-8')
+    # Preserve provenance for other file selections only when their version matches.
+    saved_files = old.get('files', {}) if old and old.get('dataset_version') == resolved_version else {}
+    metadata.write_text(json.dumps({**record, 'files': {**saved_files, **record['files']}}, indent=2), encoding='utf-8')
     return record
 
 

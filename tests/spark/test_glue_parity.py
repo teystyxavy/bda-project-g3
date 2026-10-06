@@ -27,7 +27,7 @@ def spark():
 def test_real_smoke_parity_and_partition_roundtrip(spark, tmp_path):
     sample = ROOT / "output" / "aws-smoke"
     if not (sample / "expected.parquet").exists():
-        pytest.fail("Run scripts/prepare-aws-smoke.py before the Spark parity test")
+        pytest.fail("Run scripts/validation/prepare-aws-smoke.py before the Spark parity test")
     transactions = MODULE.read_transactions(spark, str(sample / "transactions.csv"))
     indexed = transactions.orderBy("source_row_index").collect()
     assert [row.source_row_index for row in indexed] == list(range(1000))

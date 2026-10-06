@@ -9,7 +9,7 @@ import pytest
 
 @pytest.fixture
 def verifier():
-    path = Path(__file__).resolve().parents[1] / 'scripts/verify-cloud-scoring-smoke.py'
+    path = Path(__file__).resolve().parents[1] / 'scripts/validation/verify-cloud-scoring-smoke.py'
     spec = importlib.util.spec_from_file_location('cloud_scoring_verifier', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

@@ -4,6 +4,10 @@ Status: phases A/B full-rebuild optimisations are now implemented and deployed;
 see [implementation](../runbooks/pipeline-optimisation-implementation.md) and
 [acceptance/observed timings](../evidence/pipeline-optimisation-result-20261006.json).
 Incremental ingestion and aligned streaming in phases C/D remain proposed.
+The [Kinesis dashboard improvement](kinesis-dashboard-improvements.md) proposes
+a smaller first D milestone: a separate Incoming AML replay queue served through
+S3/CloudFront. Its one-minute publisher targets 90-second visibility, distinct
+from the broader sub-30-second scoring target below.
 This proposal's targets and older benchmark are retained as planning context.
 
 ## Objective and measured baseline

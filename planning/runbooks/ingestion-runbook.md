@@ -30,7 +30,7 @@ Python environment:
 python -m pip install -e ".[cloud]"
 ```
 
-Use the existing AWS setup helper `scripts/configure-aws.ps1`. Cloud mode needs no
+Use the existing AWS setup helper `scripts/aws/configure-aws.ps1`. Cloud mode needs no
 local dataset, FX file or Kaggle credential; it uses AWS-side source access and a
 versioned S3 cache. If Kaggle requires authentication, configure an existing Secrets
 Manager ARN as described in the review. Configure local Kaggle credentials only
@@ -44,23 +44,23 @@ to select your own environment. Account and region are checked before AWS work.
 
 ```powershell
 # Complete HI-Small acquisition â†’ Glue â†’ Athena/model verification â†’ dashboard.
-.\scripts\ingest.ps1
+.\scripts\ingestion\ingest.ps1
 
 # Same flow, additionally train a private candidate in SageMaker.
-.\scripts\ingest.ps1 -Train
+.\scripts\ingestion\ingest.ps1 -Train
 
 # Approved small cloud smoke run; publishes a clearly labelled 1,000-row release.
-.\scripts\ingest.ps1 -Rows 1000
+.\scripts\ingestion\ingest.ps1 -Rows 1000
 
 # Return after AWS accepts the workflow; processing continues in AWS.
-.\scripts\ingest.ps1 -NoWait
-.\scripts\ingest.ps1 -Status <run-id>
+.\scripts\ingestion\ingest.ps1 -NoWait
+.\scripts\ingestion\ingest.ps1 -Status <run-id>
 
 # Force a fresh run when the same inputs already have a successful release.
-.\scripts\ingest.ps1 -Rerun
+.\scripts\ingestion\ingest.ps1 -Rerun
 
 # Compatibility path: local acquisition/upload, existing deployed AWS batch.
-.\scripts\ingest.ps1 -LocalAcquisition
+.\scripts\ingestion\ingest.ps1 -LocalAcquisition
 ```
 
 The command reports the run ID, AWS execution link, progress, root dashboard link and
@@ -74,9 +74,9 @@ the active frozen model or its public metrics.
 ## Input controls
 
 ```powershell
-.\scripts\ingest.ps1 -DatasetVersion 1
-.\scripts\ingest.ps1 -Refresh
-.\scripts\ingest.ps1 -LocalAcquisition -FxFile <verified-historical-rates.csv>
+.\scripts\ingestion\ingest.ps1 -DatasetVersion 1
+.\scripts\ingestion\ingest.ps1 -Refresh
+.\scripts\ingestion\ingest.ps1 -LocalAcquisition -FxFile <verified-historical-rates.csv>
 ```
 
 `-DatasetVersion` must name an actual Kaggle version; `1` above is an example, not a
@@ -85,7 +85,10 @@ cache version and pins both files to it. Cloud mode reuses verified versioned fi
 from S3; `-Refresh` requests a fresh Kaggle download. Legacy local files without a
 recorded version remain honestly unversioned in the compatibility path.
 Only HI-Small and the reviewed September 2022 model/schema contract are supported by
-the cloud entry point. The standalone downloader supports other subsets for exploration.
+the cloud entry point. Use `-DownloadOnly` for all six subsets, optional pattern
+descriptions or individual files. `-Size Medium` or `-Variant LI` without
+`-DownloadOnly` is rejected before AWS calls. See the
+[Kaggle download options](kaggle-download-options.md) for examples and costs.
 
 Historical FX is retrieved by default for every transaction currency/day plus the
 preceding day, with bounded API retries and a seven-day freshness limit. Missing,
@@ -103,7 +106,7 @@ The default is full HI-Small with frozen scoring. Use a new run ID for each atte
 ## Local preparation without deployment or paid jobs
 
 ```powershell
-.\scripts\ingest.ps1 -PrepareOnly -Rows 1000 `
+.\scripts\ingestion\ingest.ps1 -PrepareOnly -Rows 1000 `
   -Deployment output/ingestion-artifacts-20261006-v5/deployment.json
 ```
 
@@ -121,13 +124,13 @@ The prepared image/artifacts and private plans were built on 6 October 2026. Fir
 the integrity check:
 
 ```powershell
-.\scripts\deploy-ingestion.ps1
+.\scripts\aws\deploy-ingestion.ps1
 ```
 
 After explicit deployment approval:
 
 ```powershell
-.\scripts\deploy-ingestion.ps1 -Execute
+.\scripts\aws\deploy-ingestion.ps1 -Execute
 ```
 
 It checks hashes/image, validates AWS prerequisites, plans and applies the three-resource
@@ -143,11 +146,11 @@ For a clean machine, build a fresh allowlisted image context and prepare its art
 set; adjust the deployment script's preparation directory/image parameters:
 
 ```powershell
-python scripts/prepare-sagemaker-container.py --output output/new-ingestion-context
+python scripts/aws/prepare-sagemaker-container.py --output output/new-ingestion-context
 docker build --platform linux/amd64 --provenance=false --sbom=false `
   -t is459-g3-ingestion:new output/new-ingestion-context
 # Read the built Descriptor.digest; use its Group 3 ECR repository@sha256 URI below.
-python scripts/prepare-ingestion.py --output output/new-ingestion-artifacts `
+python scripts/aws/prepare-ingestion.py --output output/new-ingestion-artifacts `
   --models <verified-frozen-artifacts-directory> `
   --wheels <verified-runtime.gluewheels.zip> --image-uri <digest-pinned-ECR-URI>
 ```
@@ -163,8 +166,8 @@ the previous selected release remain available. Paid jobs are not retried automa
 Do not repeat the same run ID or manually delete its lock while workers are active.
 
 ```powershell
-.\scripts\ingest.ps1 -Status <failed-run-id>
-.\scripts\ingest.ps1 -Unlock <failed-run-id>
+.\scripts\ingestion\ingest.ps1 -Status <failed-run-id>
+.\scripts\ingestion\ingest.ps1 -Unlock <failed-run-id>
 ```
 
 Unlock performs a recovery check: unsuccessful terminal workflow, owned lock, and no
@@ -209,8 +212,8 @@ plan reports no changes. Evidence is retained under ignored
 For read-only operational verification:
 
 ```powershell
-python scripts/inspect-ingestion.py --run-id <run-id> --output output/run-progress
-python scripts/verify-ingestion-release.py --run-id <run-id> --output output/run-progress
+python scripts/ingestion/inspect-ingestion.py --run-id <run-id> --output output/run-progress
+python scripts/validation/verify-ingestion-release.py --run-id <run-id> --output output/run-progress
 ```
 
 Use the project Python environment configured above. `verify-ingestion-release.py`

@@ -13,7 +13,10 @@ run "default_off" {
 }
 run "staging_without_image" {
   command = apply
-  variables { provision_streaming = true }
+  variables {
+    provision_streaming = true
+    provision_stream    = true
+  }
   assert {
     condition     = aws_kinesis_stream.replay[0].shard_count == 1 && aws_kinesis_stream.replay[0].kms_key_id == "alias/aws/kinesis" && aws_dynamodb_table.state[0].deletion_protection_enabled && !aws_ecr_repository.runtime[0].force_delete && length(aws_lambda_function.consumer) == 0
     error_message = "Use one encrypted shard, protected state/artifacts and no function before an image is reviewed."
@@ -24,6 +27,7 @@ run "image_stays_disabled" {
   variables {
     provision_streaming      = true
     provision_failure_bucket = true
+    provision_stream         = true
     image_uri                = "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-streaming@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   }
   assert {
@@ -37,6 +41,18 @@ run "image_stays_disabled" {
   assert {
     condition     = toset(aws_lambda_event_source_mapping.replay[0].function_response_types) == toset(["ReportBatchItemFailures"]) && aws_lambda_function.consumer[0].timeout == 60 && aws_lambda_function.consumer[0].memory_size == 2048
     error_message = "Use checked partial-failure protocol and bounded execution."
+  }
+}
+run "parked_keeps_consumer_without_stream" {
+  command = plan
+  variables {
+    provision_streaming      = true
+    provision_failure_bucket = true
+    image_uri                = "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-streaming@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+  assert {
+    condition     = length(aws_kinesis_stream.replay) == 0 && length(aws_lambda_event_source_mapping.replay) == 0 && length(aws_lambda_function.consumer) == 1 && length(aws_dynamodb_table.state) == 1 && length(aws_ecr_repository.runtime) == 1
+    error_message = "Parking must remove only the billable shard and its mapping."
   }
 }
 run "image_without_failure_bucket_has_no_mapping" {

@@ -45,9 +45,9 @@ replacement, treasury mart updates or dashboard publication are performed.
 Preparation and local testing:
 
 ```powershell
-output/ml-venv/Scripts/python.exe scripts/prepare-cloud-scoring.py --model-dir output/model-comparison-20261005 --scored output/cloud-insights-20261005/bq1_scored.parquet --output output/cloud-scoring-new
-./scripts/test-cloud-scoring-local.ps1 -PackageName cloud-scoring-new
-output/ml-venv/Scripts/python.exe scripts/bundle-scoring-wheels.py --wheels output/cloud-scoring-20261005/linux-wheels/runtime --output output/cloud-scoring-new/runtime.gluewheels.zip
+output/ml-venv/Scripts/python.exe scripts/aws/prepare-cloud-scoring.py --model-dir output/model-comparison-20261005 --scored output/cloud-insights-20261005/bq1_scored.parquet --output output/cloud-scoring-new
+./scripts/validation/test-cloud-scoring-local.ps1 -PackageName cloud-scoring-new
+output/ml-venv/Scripts/python.exe scripts/aws/bundle-scoring-wheels.py --wheels output/cloud-scoring-20261005/linux-wheels/runtime --output output/cloud-scoring-new/runtime.gluewheels.zip
 ```
 
 The checked package is `output/cloud-scoring-verified-20261005/`. Model manifest

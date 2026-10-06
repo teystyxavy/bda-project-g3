@@ -69,7 +69,7 @@ on the business data paths. Optional enhancements are in
 Rebuild both files locally with:
 
 ```powershell
-output/ml-venv/Scripts/python.exe scripts/build-architecture-diagrams.py
+output/ml-venv/Scripts/python.exe scripts/architecture/build-architecture-diagrams.py
 ```
 
 The generator performs XML/ID/parent/edge-reference validation and preserves the
@@ -80,5 +80,5 @@ the diagram design.
 All four PNG pages were exported locally and visually reviewed. Copies under
 `planning/architecture/exports/` embed their diagram XML and remain editable in
 draw.io. No further third-party upload is required. Use
-`scripts/export-architecture.ps1` with the reviewed portable exporter for local
+`scripts/architecture/export-architecture.ps1` with the reviewed portable exporter for local
 exports. CLI page numbers are one-based in the reviewed release.
