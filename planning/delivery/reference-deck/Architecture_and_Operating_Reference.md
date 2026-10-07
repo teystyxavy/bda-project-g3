@@ -63,7 +63,7 @@ Source: README.md; planning/evidence/pipeline-optimisation-result-20261006.json;
 
 - **Model output:** Uncalibrated ranking score. Native UBJ model plus saved schema replaces probability and joblib language.
 - **Catalog and FX:** Explicit Glue schema and date partition projection replace crawlers. Yahoo fills FX coverage gaps.
-- **Automation:** AWS acquisition and verified publication are implemented. No recurring batch schedule is active.
+- **Automation:** AWS acquisition and verified publication are implemented. No recurring batch schedule is active. An opt-in EventBridge upload trigger (`ingest.ps1 -LocalAcquisition -Trigger EventBridge`, rule `is459-g3-raw-upload-trigger`, wrapper `is459-g3-raw-trigger`) is deployed as of 6 October 2026 but not yet test-run.
 - **Streaming and alerts:** SNS reports processing failures. The demo does not issue high-risk transaction alerts or update a live dashboard.
 
 The published interface is an interactive static snapshot. Current monthly alert is USD 10, separate from the USD 250 course allowance. Historical proposal claims are intentions.

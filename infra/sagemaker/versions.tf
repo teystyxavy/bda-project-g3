@@ -1,3 +1,9 @@
+# =============================================================================
+# infra/sagemaker/versions.tf -- Terraform/provider pins for SageMaker support
+# =============================================================================
+# Own Terraform root with local state; provider is hard-wired to Group 3's
+# account in Singapore and tags resources Component = SageMakerTraining.
+
 terraform {
   required_version = ">= 1.9, < 2.0"
   backend "local" {}

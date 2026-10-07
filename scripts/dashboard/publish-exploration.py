@@ -1,4 +1,13 @@
-"""Publish a reviewed four-asset release to the existing Group 3 dashboard only."""
+"""Publish a reviewed four-asset release to the existing Group 3 dashboard only.
+
+This command writes to AWS. Run only when publication is explicitly requested.
+It verifies the local release manifest, account, pipeline lock and expected
+current pointer; saves predecessor assets under --evidence; uploads an immutable
+release; updates the dashboard assets/pointer; and invalidates CloudFront.
+Reads a prepared --release folder and --expected-pointer JSON. --run-id names
+the new release, and --evidence must be a fresh local directory. Publication
+involves multiple writes, so a failure can leave partial uploaded artifacts;
+saved predecessor files support inspection and recovery."""
 import argparse
 import hashlib
 import json

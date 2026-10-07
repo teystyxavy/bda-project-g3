@@ -1,4 +1,41 @@
-"""Prepare, explicitly submit, inspect and collect one bounded SageMaker training job."""
+"""Prepare, explicitly submit, inspect and collect one bounded SageMaker training job.
+
+Where this sits in the pipeline
+-------------------------------
+BQ1's XGBoost risk model can be trained on a laptop
+(``compare-local-model.py``) or as a managed Amazon SageMaker training job on
+one ml.m5.xlarge instance. This CLI drives the SageMaker route in four
+explicit, separately-run steps, so paid compute is never started by accident:
+
+``prepare`` (local only)
+    ``sagemaker_training.prepare_bundle`` copies the full-population
+    ``bq1_scored.parquet`` and verified ``dashboard.json`` into a fresh bundle
+    folder, records their hashes in ``manifest/input.json`` and writes the
+    exact ``CreateTrainingJob`` request to ``request.json`` (pinned image
+    digest, fixed role/bucket, network isolation, max rounds/runtime).
+``start --execute`` (paid)
+    Re-validates the bundle, claims the S3 input prefix, uploads the two input
+    channels to ``s3://<BUCKET>/sagemaker/inputs/<job>/`` and calls
+    ``CreateTrainingJob``. Without ``--execute`` it refuses to run.
+``status`` (read-only)
+    Prints the job's status, failure reason and training/billable seconds.
+``collect`` (read-only in AWS)
+    Checks the completed job matches the request, downloads
+    ``sagemaker/outputs/<job>/output/model.tar.gz``, safely extracts it, loads
+    the model and verifies its provenance (rows, job name, image, input
+    hashes). The result is only a *candidate* - ``model_promoted`` is always
+    False; promotion is a separate, reviewed step.
+
+Usage
+-----
+    python scripts/modeling/sagemaker-training.py prepare --scored ... \
+        --snapshot .../dashboard.json --output output/train-job-1 \
+        --job-name is459-g3-train-job-1 --image-uri <ecr>@sha256:<digest>
+    python scripts/modeling/sagemaker-training.py start --prepared output/train-job-1 --execute
+    python scripts/modeling/sagemaker-training.py status --prepared output/train-job-1
+    python scripts/modeling/sagemaker-training.py collect --prepared output/train-job-1 \
+        --output output/train-job-1-model
+"""
 import argparse
 import json
 import os
@@ -14,6 +51,21 @@ from bda_pipeline.sagemaker_training import (
 
 
 def clients(profile):
+    """Create S3 and SageMaker clients for the project account.
+
+    boto3 is imported lazily so ``prepare`` works without AWS libraries.
+
+    Args:
+        profile: named AWS CLI profile.
+
+    Returns:
+        ``(s3_client, sagemaker_client)``. S3 uses normal retries (max 3
+        attempts); the SageMaker client makes exactly one attempt (see the
+        comment below for why).
+
+    Raises:
+        ValueError: if the credentials are for a different AWS account.
+    """
     import boto3
     from botocore.config import Config
     os.environ['AWS_SDK_UA_APP_ID'] = 'AWSSkill-SageMaker'
@@ -30,6 +82,25 @@ def clients(profile):
 
 
 def submit(directory, s3, sagemaker):
+    """Upload a validated bundle and start the paid training job.
+
+    Args:
+        directory: prepared bundle folder.
+        s3: boto3 S3 client.
+        sagemaker: boto3 SageMaker client (single-attempt).
+
+    Returns:
+        The submission receipt (job name, ARN, request hash,
+        ``status='submitted'``, ``model_promoted=False``), also saved as
+        ``<directory>/submission.json``.
+
+    Side effects:
+        Writes ``claim.json`` (create-only) and the input files under
+        ``s3://<BUCKET>/sagemaker/inputs/<job>/`` with SSE-S3 encryption, then
+        starts one SageMaker training job (billed per second).
+    """
+    # Re-check the bundle: inputs unchanged and request.json identical to a
+    # freshly built request (catches hand edits such as a bigger instance).
     request = validate_bundle(directory)
     directory = Path(directory)
     name = request['TrainingJobName']
@@ -38,10 +109,13 @@ def submit(directory, s3, sagemaker):
     s3.put_object(Bucket=BUCKET, Key=f'{prefix}/claim.json', IfNoneMatch='*',
                   Body=json.dumps({'request_sha256': digest(directory / 'request.json')}).encode(),
                   ServerSideEncryption='AES256', ContentType='application/json')
+    # Two input channels; SageMaker mounts them in the container at
+    # /opt/ml/input/data/baseline and /opt/ml/input/data/manifest.
     for channel, filename in [('baseline', 'bq1_scored.parquet'),
                               ('manifest', 'dashboard.json'), ('manifest', 'input.json')]:
         s3.upload_file(str(directory / channel / filename), BUCKET, f'{prefix}/{channel}/{filename}',
                        ExtraArgs={'ServerSideEncryption': 'AES256'})
+    # The request is passed exactly as reviewed in request.json.
     response = sagemaker.create_training_job(**request)
     receipt = {'job_name': name, 'training_job_arn': response['TrainingJobArn'],
                'request_sha256': digest(directory / 'request.json'),
@@ -51,7 +125,25 @@ def submit(directory, s3, sagemaker):
 
 
 def extract_model(archive, output):
-    """Accept only bounded, flat regular files; never extract tar links or paths."""
+    """Accept only bounded, flat regular files; never extract tar links or paths.
+
+    ``tarfile.extractall`` on an untrusted archive can write outside the
+    target folder ("path traversal", e.g. ``../../x``) or create symlinks.
+    This function instead validates every member and copies the file
+    contents itself.
+
+    Rules: only regular files (no links, devices or sub-folders), plain
+    names with no directory part or backslash, extensions ``.json``,
+    ``.ubj`` (XGBoost binary model) or ``.csv``; 1-20 files, at most 100 MB
+    in total, no duplicate names.
+
+    Args:
+        archive: path to ``model.tar.gz``.
+        output: fresh folder to extract into (must not exist).
+
+    Raises:
+        ValueError: if any rule is broken (nothing is extracted then).
+    """
     output = Path(output)
     if output.exists():
         raise ValueError('Use a fresh collection directory')
@@ -59,6 +151,7 @@ def extract_model(archive, output):
         members = tar.getmembers()
         files = []
         for member in members:
+            # The archive's own root entry ('.' or './') is harmless; skip it.
             if member.isdir() and member.name in ['.', './']:
                 continue
             name = member.name.removeprefix('./')
@@ -69,6 +162,7 @@ def extract_model(archive, output):
         if (not files or len(files) > 20 or sum(member.size for member, _ in files) > 100_000_000
                 or len({name for _, name in files}) != len(files)):
             raise ValueError('Oversized or duplicate model archive')
+        # Only after every member passed: create the folder and stream each file.
         output.mkdir(parents=True)
         for member, name in files:
             with tar.extractfile(member) as source, (output / name).open('wb') as target:
@@ -77,10 +171,40 @@ def extract_model(archive, output):
 
 
 def collect(directory, output, s3, sagemaker):
+    """Verify a completed training job and download/verify its model artifacts.
+
+    Checks, in order:
+        1. The job status is ``Completed``.
+        2. The job AWS actually ran matches ``request.json``: role,
+           hyperparameters, resources, inputs, stopping condition, output
+           location, training image, and network isolation enabled.
+        3. The model artifact is exactly at
+           ``s3://<BUCKET>/sagemaker/outputs/<job>/output/model.tar.gz``.
+        4. After safe extraction, the model's own report agrees with the
+           bundle's provenance (row count, job name, image, input hashes).
+
+    Args:
+        directory: prepared bundle folder (``model.tar.gz`` is downloaded here).
+        output: fresh folder for the extracted model files.
+        s3: boto3 S3 client.
+        sagemaker: boto3 SageMaker client.
+
+    Returns:
+        Result dict (``status='completed-artifacts-verified-candidate-only'``,
+        model/comparison hashes, whether the validation gate passed, training
+        and billable seconds), also written to ``aws-training-result.json``.
+
+    Raises:
+        ValueError: on any mismatch above or an unsafe archive.
+    """
     request = validate_bundle(directory)
     description = sagemaker.describe_training_job(TrainingJobName=request['TrainingJobName'])
     if description['TrainingJobStatus'] != 'Completed':
         raise ValueError(f"Job has not completed: {description['TrainingJobStatus']}")
+    # Recursive "is expected a subset of actual?" check: DescribeTrainingJob
+    # returns extra fields AWS fills in (defaults), so exact equality would
+    # fail; every field WE asked for must still be present with our value.
+    # Lists must match element by element and in length.
     def contains(actual, expected):
         if isinstance(expected, dict):
             return isinstance(actual, dict) and all(key in actual and contains(actual[key], value)
@@ -93,6 +217,7 @@ def collect(directory, output, s3, sagemaker):
                   'StoppingCondition', 'OutputDataConfig']:
         if not contains(description[field], request[field]):
             raise ValueError(f'Completed job contract mismatch: {field}')
+    # Exact image digest, and the container must have had no network access.
     if (description['AlgorithmSpecification']['TrainingImage'] != request['AlgorithmSpecification']['TrainingImage']
             or not description['EnableNetworkIsolation']):
         raise ValueError('Completed job image or isolation differs from request')
@@ -106,10 +231,13 @@ def collect(directory, output, s3, sagemaker):
     archive = Path(directory) / 'model.tar.gz'
     s3.download_file(BUCKET, expected_key, str(archive))
     extract_model(archive, output)
+    # Loading via SavedRanker also verifies the model artifacts' hashes.
     ranker = SavedRanker(output)
     report = ranker.report
     provenance = json.loads((Path(directory) / 'manifest/input.json').read_text(encoding='utf-8'))
     execution = report['execution']
+    # Provenance: the model must say it was trained by THIS job, with THIS
+    # image, on exactly the inputs recorded at prepare time.
     if (report['total_rows'] != provenance['rows']
             or execution['job_name'] != request['TrainingJobName']
             or execution['image_uri'] != request['AlgorithmSpecification']['TrainingImage']
@@ -128,6 +256,11 @@ def collect(directory, output, s3, sagemaker):
 
 
 def main():
+    """Parse the sub-command and run prepare / start / status / collect.
+
+    Returns:
+        0 on success (used as the process exit code).
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--profile', default='is459-g3-tools')
     commands = parser.add_subparsers(dest='action', required=True)
@@ -148,13 +281,16 @@ def main():
     download.add_argument('--prepared', type=Path, required=True)
     download.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    # prepare is purely local and needs no AWS clients.
     if args.action == 'prepare':
         request = prepare_bundle(args.scored, args.snapshot, args.output, args.job_name,
                                  args.image_uri, args.rounds, args.max_runtime)
         print(json.dumps({'status': 'prepared-not-submitted', 'job_name': request['TrainingJobName']}))
         return 0
+    # Paid compute requires an explicit --execute flag.
     if args.action == 'start' and not args.execute:
         parser.error('start requires --execute; preparation and status do not start compute')
+    # Every AWS action first re-validates the local bundle.
     request = validate_bundle(args.prepared)
     s3, sagemaker = clients(args.profile)
     if args.action == 'start':

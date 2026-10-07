@@ -1,5 +1,14 @@
 # AWS foundation deployment â€” 2026-10-05
 
+**EventBridge acceptance, 7 October 2026:** the existing opt-in S3 upload trigger
+passed a live 1,000-row run through Glue curation/scoring, Athena corridor analysis,
+SageMaker verification and publication. All 1,000 native scores matched exactly;
+corridor totals reconciled within tolerance. Re-uploading the trigger reached
+`AlreadyStarted` in a second wrapper, while the batch execution count remained one.
+The previous dashboard release was restored and the pipeline lock was released.
+No infrastructure changes or model training were performed. Delivery DLQ/alarm
+coverage remains absent. See [evidence](evidence/eventbridge-trigger-result-20261007.json).
+
 **Dashboard update, 7 October 2026:** BQ1/BQ2 exploration and the public read-only
 Ingestion status feed are deployed. The status stack added 10 resources with no
 updates/deletions. The separately reviewed bundled worker update retained its

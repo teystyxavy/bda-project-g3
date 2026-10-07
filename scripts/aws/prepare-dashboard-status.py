@@ -1,4 +1,10 @@
-"""Build the public dashboard status Lambda zip locally. No cloud calls or secrets."""
+"""Build the public dashboard status Lambda zip locally. No cloud calls or secrets.
+
+Packages dashboard_status.py and dashboard_api.py (shared stage mapping) from
+src/bda_pipeline into dashboard-status.zip, with a SHA-256 manifest beside it.
+Requires a fresh --output directory. This builds an artifact only; deploying
+infra/dashboard-status is a separate operation. The public handler reports
+workflow status and has no run-start or cancellation route."""
 import argparse
 import hashlib
 import json

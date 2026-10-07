@@ -1,4 +1,11 @@
-"""Enrich a reviewed snapshot with complete-population exploration, without AWS calls."""
+"""Enrich a reviewed snapshot with complete-population exploration, without AWS calls.
+
+Reads a published snapshot, baseline-scored Parquet, corridor Parquet, frozen
+model artifacts and a verified cloud-score cache. Source/model hashes and row
+counts must match before BQ1 capacity comparisons and BQ2 projections are added.
+Writes dashboard.json plus the three static assets to a fresh --output folder.
+Use prepare-dashboard-release.py next to package these assets for review.
+Run from the installed repository; --help lists all six required input options."""
 import argparse
 import json
 import shutil

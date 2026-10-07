@@ -6,6 +6,8 @@ Evidence date: 6 October 2026. Open [the editable three-page diagram](IS459_G3_C
 
 Lambda acquires the Kaggle source files and historical FX, then writes a traceable manifest into private S3. Glue curates the records, computes features from preceding events, and writes Parquet partitioned by transaction date. The analysis and verification stage creates both business outputs before Lambda publishes the verified HTML, CSS, JavaScript and JSON files. CloudFront serves the private S3 origin.
 
+The dashed lane at the top is the opt-in EventBridge start path (deployed 6 October 2026, not yet test-run). `ingest.ps1 -LocalAcquisition -Trigger EventBridge` uploads the CSVs and manifest to S3 raw, then writes `raw/trigger.json` last. S3 sends "Object Created" to EventBridge; rule `is459-g3-raw-upload-trigger` matches only that key and starts Step Functions `is459-g3-raw-trigger`, which starts the unchanged `is459-g3-ingest` batch once, named after the run ID, and notifies `is459-g3-failures` on failure without retrying. Default runs and cloud acquisition still start the batch themselves.
+
 Arrows show the logical movement of data and artifacts. The top row runs from sources to curated data, then the bottom row returns from business analysis to the dashboard. Step Functions controls stage dependencies and failure handling; it does not carry the transaction files. The diagram combines logical S3 zones for readability rather than asserting a specific number of buckets.
 
 ## Page 2: Parallel business branches

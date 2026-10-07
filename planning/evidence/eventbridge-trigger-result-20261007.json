@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-07T22:17:09.569929+08:00",
+  "status": "live-smoke-and-duplicate-event-passed",
+  "authorization": "User authorized the 1000-row live EventBridge test and duplicate-event verification; AWS browser sign-in separately approved.",
+  "infrastructure_changes": 0,
+  "training_requested": false,
+  "model_promoted": false,
+  "preflight": {
+    "aws_account_verified": true,
+    "region": "ap-southeast-1",
+    "rule_name": "is459-g3-raw-upload-trigger",
+    "rule_state": "ENABLED",
+    "bucket_eventbridge_enabled": true,
+    "wrapper_target_verified": true,
+    "pipeline_idle_before_run": true,
+    "deployed_wrapper_definition_sha256": "205acd3c6a371a5398bc22f34a59fa1ed38eae927987578275c1f4f9783e750b"
+  },
+  "smoke": {
+    "run_id": "evb-smoke-20261007-135938",
+    "batch_execution_arn": "arn:aws:states:ap-southeast-1:588738581042:execution:is459-g3-ingest:evb-smoke-20261007-135938",
+    "status": "SUCCEEDED",
+    "started_at": "2026-10-07T22:00:19.837000+08:00",
+    "stopped_at": "2026-10-07T22:08:47.387000+08:00",
+    "batch_duration_seconds": 507.55,
+    "rows": 1000,
+    "scope": "HI-Small prefix, 2022-09-01; existing local transactions/accounts and historical FX",
+    "dataset_version": null,
+    "processing_caches_bypassed": true,
+    "scores": {
+      "status": "passed",
+      "rows": 1000,
+      "max_absolute_score_difference": 0.0,
+      "labels_excluded": true,
+      "model_sha256": "f0dc65ca43901f9f02c57c09605121d48570c64d49991eb952f2d2df6a7e4765"
+    },
+    "corridors": {
+      "status": "passed",
+      "reference_rows": 1000,
+      "corridor_rows": 177,
+      "days": [
+        "2022-09-01"
+      ],
+      "identifiers_preserved": true,
+      "max_absolute_differences": {
+        "transactions": 0.0,
+        "volume_usd": 3.5762786865234375e-06,
+        "volume_share": 1.6653345369377348e-16,
+        "daily_hhi": 8.326672684688674e-17
+      },
+      "volume_rtol": 1e-10,
+      "volume_atol_usd": 0.01
+    },
+    "publication_status": "passed",
+    "public_files": [
+      {
+        "file": "index.html",
+        "bytes": 20063,
+        "sha256": "8c91bf006c829407cd331eb1a18ecc55cf8ebe91621c0ebb96339a2b7a241ecb"
+      },
+      {
+        "file": "dashboard.css",
+        "bytes": 10635,
+        "sha256": "373d641558d8e2487ec314306737a01dbf7ec6dcebd8c114fced682b938fe29e"
+      },
+      {
+        "file": "dashboard.js",
+        "bytes": 59461,
+        "sha256": "41d6862644f143cdce49929e66b888d3a216b791ecec037790566b4586617c51"
+      },
+      {
+        "file": "dashboard.json",
+        "bytes": 37073,
+        "sha256": "118fd33d64625dd8ceb257adc75e2af7702e3447dee142621d7061c00bd4669c"
+      }
+    ],
+    "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/evb-smoke-20261007-135938/index.html",
+    "pipeline_lock_released": true
+  },
+  "duplicate_test": {
+    "method": "Re-uploaded the same trigger.json object once after batch completion; real S3 Object Created event delivered through EventBridge.",
+    "wrapper_execution_count": 2,
+    "batch_execution_count": 1,
+    "duplicate_path": "AlreadyStarted",
+    "second_batch_started": false,
+    "wrappers": [
+      {
+        "execution_arn": "arn:aws:states:ap-southeast-1:588738581042:execution:is459-g3-raw-trigger:61e39f49-a291-854e-0e18-26eef6fa986e_5de54c33-3d9e-654d-7c0d-30e816941668",
+        "status": "SUCCEEDED",
+        "started_at": "2026-10-07 22:00:19.703000+08:00",
+        "stopped_at": "2026-10-07 22:00:19.890000+08:00",
+        "states": [
+          "ParseKey",
+          "ExpectedKey",
+          "ValidKey",
+          "StartBatch",
+          "Started"
+        ],
+        "source": "aws.s3",
+        "detail_type": "Object Created",
+        "object_key": "pipeline/runs/evb-smoke-20261007-135938/raw/trigger.json",
+        "s3_event_time": "2026-10-07T14:00:19Z"
+      },
+      {
+        "execution_arn": "arn:aws:states:ap-southeast-1:588738581042:execution:is459-g3-raw-trigger:da04f84d-2f34-7806-056f-e1d192ae679b_ef7bdc4e-0b7d-dad3-fba1-0f5ef6e67f23",
+        "status": "SUCCEEDED",
+        "started_at": "2026-10-07 22:12:52.627000+08:00",
+        "stopped_at": "2026-10-07 22:12:52.844000+08:00",
+        "states": [
+          "ParseKey",
+          "ExpectedKey",
+          "ValidKey",
+          "StartBatch",
+          "AlreadyStarted"
+        ],
+        "source": "aws.s3",
+        "detail_type": "Object Created",
+        "object_key": "pipeline/runs/evb-smoke-20261007-135938/raw/trigger.json",
+        "s3_event_time": "2026-10-07T14:12:52Z"
+      }
+    ]
+  },
+  "dashboard_restoration": {
+    "previous_release": "20261006-233414-8e88f592",
+    "status": "passed",
+    "all_predecessor_hashes_match": true,
+    "cloudfront_invalidation": "Completed",
+    "pipeline_idle": true,
+    "public_predecessor_hashes_match": true,
+    "immutable_smoke_release_retained": true
+  },
+  "limits": [
+    "One 1000-row live smoke run; no full-population EventBridge run.",
+    "Local acquisition and existing historical FX; no fresh Kaggle or FX API acquisition tested.",
+    "No injected delivery failure, SNS failure notification test, malformed-event live test or concurrent distinct-run test.",
+    "EventBridge target has no dead-letter queue or dedicated delivery-failure alarm.",
+    "Billed cost not measured; two Glue jobs and baseline/export SageMaker processing were authorized."
+  ],
+  "private_evidence_directory": "output/eventbridge-live-20261007/"
+}

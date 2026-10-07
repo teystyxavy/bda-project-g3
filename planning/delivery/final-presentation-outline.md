@@ -26,7 +26,7 @@ the final presentation, not a finished PPTX/PDF. The proposal remains historical
 | Frankfurter / ECB only | Frankfurter plus Yahoo historical rates for three uncovered currency histories |
 | Glue crawlers | Explicit catalog schema and date partition projection |
 | Cloud model training and model.joblib | Local frozen XGBoost training; UBJ model with hashed schema/manifest; AWS inference |
-| EventBridge starts scheduled batch runs | Failure notifications exist; no schedule is deployed |
+| EventBridge starts scheduled batch runs | No schedule is deployed. An opt-in EventBridge rule starts the batch when a laptop upload writes `raw/trigger.json` (deployed 6 Oct; not yet test-run) |
 | Workflow covers ingestion, ETL, training and publication | Reviewed workflow consumes verified curated data and runs frozen scoring plus treasury SELECT |
 | SNS alerts on high-risk transactions | SNS monitors processing failures; no transaction alert threshold exists |
 | Live dashboard | Published static snapshot with interactive exploration |

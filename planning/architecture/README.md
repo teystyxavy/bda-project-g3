@@ -1,5 +1,9 @@
 # Architecture sources
 
+- [Current batch architecture](../delivery/reference-deck/IS459_G3_Current_Architecture.md) and
+  [editable diagram](../delivery/reference-deck/IS459_G3_Current_Architecture.drawio): page 1 includes
+  the opt-in EventBridge upload trigger (deployed 6 Oct 2026, not yet test-run).
+
 - [Dashboard ingestion flow](dashboard-ingestion-flow.md) and
   [editable diagram](dashboard-ingestion-flow.drawio): AWS service phases shown in
   the live Ingestion tab; new dashboard controls are locally implemented, deployment pending.

@@ -1,3 +1,8 @@
+# =============================================================================
+# infra/hosting/variables.tf -- inputs and safety gates for hosting
+# =============================================================================
+# aws_account_id: approved 12-digit account (no default).
+
 variable "aws_account_id" {
   type = string
   validation {
@@ -6,17 +11,21 @@ variable "aws_account_id" {
   }
 }
 
+# aws_region: region of the dashboard bucket (CloudFront itself is global).
 variable "aws_region" {
   type    = string
   default = "ap-southeast-1"
 }
 
+# provision_hosting: master switch for the whole hosting stack.
 variable "provision_hosting" {
   description = "Creates a separate hosting stack only after deployment approval. Default creates nothing."
   type        = bool
   default     = false
 }
 
+# publish_dashboard: turns the CloudFront distribution on (public URL). The
+# validation refuses it unless hosting exists AND public_demo_approved.
 variable "publish_dashboard" {
   description = "Enables public CloudFront delivery. Keep false during staging."
   type        = bool
@@ -27,6 +36,8 @@ variable "publish_dashboard" {
   }
 }
 
+# public_demo_approved: explicit human approval for public exposure and the
+# (small) CloudFront traffic cost.
 variable "public_demo_approved" {
   description = "Human approval to expose the reviewed synthetic dashboard and accept traffic costs."
   type        = bool

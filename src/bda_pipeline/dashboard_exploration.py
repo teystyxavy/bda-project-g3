@@ -1,4 +1,11 @@
-"""Bounded dashboard projections from complete verified populations; no AWS calls."""
+"""Bounded dashboard projections from complete verified populations; no AWS calls.
+
+Called by the export stage and scripts/dashboard/build-exploration.py to enrich
+an existing snapshot. BQ1 compares model/baseline review capacity using aggregate
+label-based metrics and bounded queues; BQ2 projects corridor volume and
+concentration. High corridor volume is not an AML risk score. Inputs must have
+passed the caller's provenance checks; this module does not acquire data,
+train models or publish assets. Queue exports remove row-level labels."""
 import gc
 from collections import defaultdict
 

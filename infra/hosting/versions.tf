@@ -1,3 +1,9 @@
+# =============================================================================
+# infra/hosting/versions.tf -- Terraform/provider pins for hosting
+# =============================================================================
+# Own Terraform root with local state; provider locked to var.aws_account_id;
+# resources tagged Component = Dashboard.
+
 terraform {
   required_version = ">= 1.9, < 2.0"
   backend "local" {}

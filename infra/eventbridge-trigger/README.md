@@ -3,6 +3,16 @@
 Implements the proposal's "raw files land in S3; EventBridge starts the workflow".
 This stack adds no compute; it starts the existing `is459-g3-ingest` workflow.
 
+Live acceptance passed on **7 October 2026**: run
+`evb-smoke-20261007-135938` processed 1,000 rows through verified publication
+in 8m27.55s. Re-uploading the same trigger marker started another wrapper that
+took `AlreadyStarted`, with exactly one batch execution. The original dashboard
+release was restored afterward. See
+[acceptance evidence](../../planning/evidence/eventbridge-trigger-result-20261007.json).
+The target has bounded delivery retries but no DLQ or dedicated delivery-failure
+alarm; these failure-recovery enhancements remain unimplemented. SNS notification
+inside the wrapper covers failures after it starts, not delivery failures before it.
+
 ```text
 laptop: ingest.ps1 -LocalAcquisition -Trigger EventBridge
   -> S3 pipeline/runs/<run>/raw/{transactions,accounts,fx}.csv, manifest.json

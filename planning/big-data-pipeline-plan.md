@@ -1,5 +1,14 @@
 # Big Data Pipeline Plan — IBM AML Transactions
 
+**EventBridge live acceptance, 7 October 2026:** the opt-in local-upload route
+passed a 1,000-row source-to-publication smoke in 8m27.55s. Re-uploading its marker
+reached `AlreadyStarted` in a second wrapper without creating another batch.
+Native score parity and corridor reconciliation passed, and the previous dashboard
+release was restored and checked publicly. No infrastructure changes or training
+were performed. This does not establish a full-population EventBridge run or
+delivery-failure recovery; the target has no DLQ/dedicated failure alarm. See
+[acceptance evidence](evidence/eventbridge-trigger-result-20261007.json).
+
 **Dashboard deployment, 7 October 2026:** expanded BQ1/BQ2 exploration and a public
 read-only Ingestion status feed are deployed. UI release `insights-ui-20261007-v1`
 retains the verified 5,078,345-row source run and frozen model. The status-only
