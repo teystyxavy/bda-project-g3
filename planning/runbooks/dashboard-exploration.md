@@ -67,8 +67,8 @@ needed to publish this existing verified snapshot.
 
 Follow [the status-stack deployment steps](../../infra/dashboard-status/README.md).
 The public feed is read-only and refreshes while the tab is visible. It cannot
-start or cancel jobs. Operator controls and sign-in remain a separate,
-undeployed stack. `status-config.json` is a public endpoint configuration outside
+start or cancel jobs. Operator controls and AWS identity sign-in use the separate
+[deployed control stack](../../infra/dashboard-control/README.md). `status-config.json` is a public endpoint configuration outside
 the four-asset release; pipeline publication preserves it.
 
 ## Verification recorded before deployment

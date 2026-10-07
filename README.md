@@ -20,8 +20,9 @@ exploration; see [coverage and limits](planning/runbooks/dashboard-exploration.m
 Its **Ingestion** tab has a deployed, public **read-only** AWS status feed showing
 the latest workflow and recent runs without sign-in. See the
 [status deployment and verification](infra/dashboard-status/README.md).
-HI-Small demo/full run controls and operator sign-in are implemented locally in
-the separate, undeployed [control stack](infra/dashboard-control/README.md).
+HI-Small demo/custom/full run controls and operator sign-in use
+the deployed [control stack](infra/dashboard-control/README.md), using the existing
+Group 3 AWS identity through a local sign-in helper. No separate dashboard account is needed.
 The public view cannot start or cancel jobs.
 Its AWS service map shows the current phase, parallel analysis branches and
 reused/failed stages. The [editable diagrams and guide](planning/architecture/dashboard-ingestion-flow.md)
@@ -63,6 +64,17 @@ reuse verified curated/scored stages. Every new publication retains complete
 score parity, source/FX checks and corridor reconciliation. An uncached run starts
 paid AWS jobs. See the [ingestion runbook](planning/runbooks/ingestion-runbook.md)
 for source controls, smoke runs, failure recovery and deployment prerequisites.
+
+An opt-in EventBridge start path is deployed (6 October 2026) and live-tested
+on 7 October: a 1,000-row run passed through publication, and replaying its S3
+trigger took `AlreadyStarted` without creating a second batch. The preceding
+dashboard release was restored after the test. See
+[acceptance evidence](planning/evidence/eventbridge-trigger-result-20261007.json).
+`ingest.ps1 -LocalAcquisition -Trigger EventBridge` uploads the raw files, then
+writes `raw/trigger.json`; EventBridge rule `is459-g3-raw-upload-trigger` starts
+Step Functions `is459-g3-raw-trigger`, which starts the same `is459-g3-ingest` batch
+once. Runs without `-Trigger` are unchanged. See
+[the trigger stack](infra/eventbridge-trigger/README.md) to pause or remove it.
 
 ## Choose Kaggle download options
 

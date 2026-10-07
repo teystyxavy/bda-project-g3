@@ -1,8 +1,9 @@
 """Authenticated dashboard control API. Reuses the existing acquisition workflow.
 
 Packaged on its own for Lambda; no data/model libraries or browser credentials.
-API Gateway verifies JWT signatures; this handler also enforces access-token use,
-the operator group and per-user execution ownership. Never return workflow payloads.
+API Gateway verifies AWS signatures on session bootstrap. This handler restricts
+bootstrap to the Group 3 operator, verifies revocable sessions and enforces execution
+ownership. Never return workflow payloads.
 """
 import base64
 import hashlib
@@ -95,7 +96,7 @@ def options():
         {'value': 'HI-Small', 'label': 'HI-Small', 'supported': True},
         *[{'value': v, 'label': v + ' (not supported by cloud pipeline)', 'supported': False}
           for v in ['HI-Medium', 'HI-Large', 'LI-Small', 'LI-Medium', 'LI-Large']]],
-        'demo_rows': 1000, 'poll_seconds': 10,
+        'demo_rows': 1000, 'row_bounds': {'minimum': 1, 'maximum': 5100000}, 'poll_seconds': 10,
         'notice': 'New processing can incur AWS charges. Reuse verified inputs by default. '
                   'Training creates a private candidate; it never promotes the model.'}
 
@@ -110,8 +111,8 @@ def validate_submission(body):
     if body.get('subset') != 'HI-Small':
         raise ApiError(400, 'The cloud pipeline currently supports HI-Small only.')
     rows = body.get('rows')
-    if rows is not None and (type(rows) is not int or rows != 1000):
-        raise ApiError(400, 'Choose the 1,000-row demo or the full dataset.')
+    if rows is not None and (type(rows) is not int or not 1 <= rows <= 5100000):
+        raise ApiError(400, 'Row limit must be an integer from 1 to 5,100,000, or choose the full dataset.')
     version = body.get('dataset_version')
     if version is not None and (type(version) is not int or not 1 <= version <= 100000):
         raise ApiError(400, 'Dataset version must be a positive integer.')
@@ -313,25 +314,28 @@ def response(status, body):
 
 def handler(event, context):
     try:
-        claims = event.get('requestContext', {}).get('authorizer', {}).get('jwt', {}).get('claims', {})
-        if not claims.get('sub') or claims.get('token_use') != 'access':
-            raise ApiError(401, 'Sign in to manage ingestion.')
-        group = claims.get('cognito:groups', '')
-        groups = group if isinstance(group, list) else (
-            [item.strip().strip('"\'') for item in group.strip('[]').split(',')]
-            if isinstance(group, str) else [])
-        if 'ingestion-operators' not in groups:
-            raise ApiError(403, 'Your account needs ingestion operator access.')
+        from bda_pipeline.dashboard_sessions import authenticate, bootstrap, exchange, revoke, SessionError
+    except ImportError:
+        from dashboard_sessions import authenticate, bootstrap, exchange, revoke, SessionError
+    try:
         method = event['requestContext']['http']['method']
         path = event.get('rawPath', '').rstrip('/')
+        states, table = clients()
+        if method == 'POST' and path == '/session/bootstrap':
+            return response(200, bootstrap(event, table))
+        if method == 'POST' and path == '/session/exchange':
+            return response(200, exchange(event, table))
+        subject, token = authenticate(event, table)
+        if method == 'POST' and path == '/session/logout':
+            revoke(table, token)
+            return response(200, {'status': 'signed-out'})
         if method == 'GET' and path == '/options':
             return response(200, options())
-        states, table = clients()
         machine, batch = os.environ['ACQUISITION_MACHINE'], os.environ['BATCH_MACHINE']
         if method == 'GET' and path == '/runs':
-            return response(200, list_runs(states, machine, claims['sub']))
+            return response(200, list_runs(states, machine, subject))
         if method == 'GET' and path.startswith('/runs/'):
-            return response(200, run_status(states, machine, batch, claims['sub'], path[6:], os.environ['DASHBOARD_URL']))
+            return response(200, run_status(states, machine, batch, subject, path[6:], os.environ['DASHBOARD_URL']))
         if method == 'POST' and path == '/runs':
             raw = event.get('body') or ''
             if len(raw) > 4096:
@@ -342,9 +346,9 @@ def handler(event, context):
                 body = json.loads(raw)
             except (ValueError, UnicodeError):
                 raise ApiError(400, 'Invalid JSON submission.') from None
-            return response(202, submit(states, table, machine, batch, claims['sub'], body))
+            return response(202, submit(states, table, machine, batch, subject, body))
         raise ApiError(404, 'Route not found.')
-    except ApiError as error:
+    except (ApiError, SessionError) as error:
         return response(error.status, {'message': error.message})
     except (BotoCoreError, ClientError):
         # Never log tokens, workflow input/output or provider exception messages.

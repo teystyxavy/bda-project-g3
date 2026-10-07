@@ -12,7 +12,7 @@ from bda_pipeline import dashboard_api as api
 
 MACHINE = 'arn:aws:states:ap-southeast-1:588738581042:stateMachine:is459-g3-cloud-ingest'
 BATCH = MACHINE.replace('cloud-ingest', 'ingest')
-SUBJECT = 'test-operator'
+SUBJECT = 'arn:aws:iam::588738581042:user/g1team3'
 NOW = datetime.now(timezone.utc)
 
 
@@ -70,6 +70,8 @@ def states():
 
         def get_item(self, **request):
             assert request['ConsistentRead'] is True
+            if request['Key']['id'].startswith('session:'):
+                return {'Item': {'subject': SUBJECT, 'expires_at': 9999999999}}
             return {'Item': copy.deepcopy(self.item)} if self.item else {}
 
         def put_item(self, **request):
@@ -89,7 +91,7 @@ def body(**extra):
 
 
 def event(method='POST', path='/runs', payload=None, claims=None):
-    return {'rawPath': path, 'body': json.dumps(body() if payload is None else payload),
+    return {'headers': {'authorization': 'Bearer ' + 'a'*43}, 'rawPath': path, 'body': json.dumps(body() if payload is None else payload),
             'requestContext': {'http': {'method': method}, 'authorizer': {'jwt': {'claims': claims or {
                 'sub': SUBJECT, 'token_use': 'access', 'cognito:groups': '[ingestion-operators]'}}}}}
 
@@ -150,7 +152,7 @@ def test_terminal_reservation_can_be_replaced(control):
 
 
 @pytest.mark.parametrize('changes', [
-    {'subset': 'LI-Small'}, {'rows': True}, {'rows': 5_000_000}, {'train': True},
+    {'subset': 'LI-Small'}, {'rows': True}, {'rows': 5_100_001}, {'rows': 0}, {'rows': 1.5}, {'train': True},
     {'dataset_version': False}, {'dataset_version': -1}, {'refresh': 'true'},
     {'request_id': '../unsafe'}, {'stateMachineArn': 'anything'},
 ])
@@ -159,15 +161,18 @@ def test_reject_unreviewed_or_malformed_inputs_before_aws(control, changes):
     assert not control[0].starts and control[1].item is None
 
 
-@pytest.mark.parametrize('claims,status', [
-    ({'sub': SUBJECT, 'token_use': 'id', 'cognito:groups': 'ingestion-operators'}, 401),
-    ({'sub': SUBJECT, 'token_use': 'access'}, 403),
-    ({'sub': SUBJECT, 'token_use': 'access', 'cognito:groups': 'fake-ingestion-operators'}, 403),
-    ({'sub': SUBJECT, 'token_use': 'access', 'cognito:groups': 'other ingestion-operators'}, 403),
-])
-def test_auth_and_operator_group_required(control, claims, status):
-    assert api.handler(event(claims=claims), None)['statusCode'] == status
+@pytest.mark.parametrize('authorization', ['', 'Bearer malformed', 'Basic invalid'])
+def test_session_required(control, authorization):
+    request = event()
+    request['headers'] = {'authorization': authorization}
+    assert api.handler(request, None)['statusCode'] == 401
     assert not control[0].calls
+
+
+@pytest.mark.parametrize('rows', [1, 2500, 5100000])
+def test_custom_rows_match_script_bounds(control, rows):
+    assert api.handler(event(payload=body(rows=rows)), None)['statusCode'] == 202
+    assert json.loads(control[0].starts[0]['input'])['rows'] == rows
 
 
 def test_cannot_inspect_other_operators_execution(control):

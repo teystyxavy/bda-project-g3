@@ -192,6 +192,8 @@ start();
     element('ingestion-signout').disabled=submitting;
     element('ingestion-fields').disabled=!login || submitting || pending || lastStatus?.status==='RUNNING';
     const full=element('ingestion-size').value==='full';
+    element('ingestion-rows-field').hidden=element('ingestion-size').value!=='custom';
+    element('ingestion-preview').disabled=!login || submitting || pending;
     element('ingestion-train').disabled=!full;
     if(!full) element('ingestion-train').checked=false;
     element('ingestion-start').disabled=!login || submitting || lastStatus?.status==='RUNNING';
@@ -216,6 +218,10 @@ start();
   }
 
   async function signIn() {
+    if(config.auth_mode==='aws-iam-helper') {
+      element('ingestion-aws-signin').hidden=false;
+      message('Run the local AWS sign-in helper. It verifies g1team3 and opens this dashboard with a single-use sign-in link.');return;
+    }
     try {
       const verifier=base64url(crypto.getRandomValues(new Uint8Array(32))), state=random();
       save('oauth',{verifier,state,created_at:Date.now(),client_id:config.client_id});
@@ -227,6 +233,23 @@ start();
   }
 
   async function finishSignIn() {
+    if(config.auth_mode==='aws-iam-helper') {
+      const fragment=new URLSearchParams(location.hash.slice(1)), code=fragment.get('operator_code');
+      if(!code) return;
+      history.replaceState(null,'',location.pathname+location.search);
+      selectDashboardView('ingestion');
+      const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),15000);
+      let response;
+      try {response=await fetch(config.api_url+'/session/exchange',{method:'POST',signal:controller.signal,
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});}
+      finally {clearTimeout(timeout);}
+      if(!response.ok) throw new Error('Sign-in link is invalid or expired. Run the AWS sign-in helper again.');
+      const tokens=await response.json();
+      if(typeof tokens.access_token!=='string'||!Number.isFinite(tokens.expires_in)||tokens.expires_in>3600)
+        throw new Error('Unexpected sign-in response.');
+      auth={access_token:tokens.access_token,expires_at:Date.now()+tokens.expires_in*1000,client_id:config.client_id};
+      save('auth',auth);element('ingestion-aws-signin').hidden=true;return;
+    }
     const params=new URLSearchParams(location.search);
     if(!params.has('code') && !params.has('error')) return;
     selectDashboardView('ingestion');
@@ -394,10 +417,9 @@ start();
 
   async function submit(event) {
     event.preventDefault();if(submitting || !signedIn() || lastStatus?.status==='RUNNING') return;
-    const pending=read('pending') || {request_id:random(),subset:element('ingestion-subset').value,
-      rows:element('ingestion-size').value==='demo'?1000:null,
-      dataset_version:element('ingestion-version').value===''?null:Number(element('ingestion-version').value),
-      refresh:element('ingestion-refresh').checked,rerun:element('ingestion-rerun').checked,train:element('ingestion-train').checked};
+    let pending;
+    try {pending=read('pending') || {request_id:random(),...selectedRunOptions()};}
+    catch(error) {message(error.message);return;}
     save('pending',pending);submitting=true;updateControls();
     try {
       const receipt=await request('/runs',{method:'POST',body:JSON.stringify(pending)});
@@ -411,6 +433,28 @@ start();
     } finally {submitting=false;updateControls();}
   }
 
+  function selectedRunOptions() {
+    const mode=element('ingestion-size').value;
+    const rows=mode==='full'?null:mode==='demo'?1000:Number(element('ingestion-rows').value);
+    const version=element('ingestion-version').value===''?null:Number(element('ingestion-version').value);
+    if(rows!==null && (!Number.isInteger(rows)||rows<1||rows>5100000)) throw new Error('Choose a transaction limit from 1 to 5,100,000.');
+    if(version!==null && (!Number.isInteger(version)||version<1||version>100000)) throw new Error('Choose a positive whole-number dataset version.');
+    if(element('ingestion-subset').value!=='HI-Small') throw new Error('Cloud ingestion currently supports HI-Small only.');
+    return {subset:'HI-Small',rows,dataset_version:version,refresh:element('ingestion-refresh').checked,
+      rerun:element('ingestion-rerun').checked,train:mode==='full'&&element('ingestion-train').checked};
+  }
+  element('ingestion-preview').onclick=()=>{
+    try {
+      const options=selectedRunOptions();
+      let command='.\\scripts\\ingestion\\ingest.ps1 -NoWait';
+      if(options.rows!==null) command+=` -Rows ${options.rows}`;
+      if(options.dataset_version!==null) command+=` -DatasetVersion ${options.dataset_version}`;
+      for(const [key,flag] of [['refresh','Refresh'],['rerun','Rerun'],['train','Train']]) if(options[key]) command+=` -${flag}`;
+      element('ingestion-preview-output').textContent=JSON.stringify(options,null,2)+'\n\nEquivalent script configuration:\n'+command;
+      element('ingestion-preview-panel').hidden=false;
+    } catch(error) {message(error.message);}
+  };
+
   const callbackParams=new URLSearchParams(location.search);
   async function initialise() {
     try {
@@ -423,8 +467,8 @@ start();
       if(!response.ok) throw new Error('Unable to read ingestion configuration.');
       const value=await response.json();
       if(value.schema_version!==1 || !/^https:\/\/[a-z0-9]+\.execute-api\.ap-southeast-1\.amazonaws\.com$/.test(value.api_url)
-        || !/^https:\/\/[a-z0-9-]+\.auth\.ap-southeast-1\.amazoncognito\.com$/.test(value.cognito_domain)
-        || !/^[a-z0-9]{1,128}$/.test(value.client_id) || new URL(value.redirect_uri).origin!==location.origin)
+        || (value.auth_mode!=='aws-iam-helper' && !/^https:\/\/[a-z0-9-]+\.auth\.ap-southeast-1\.amazoncognito\.com$/.test(value.cognito_domain))
+        || !/^[a-z0-9-]{1,128}$/.test(value.client_id) || new URL(value.redirect_uri).origin!==location.origin)
         throw new Error('Invalid ingestion configuration.');
       config=value;auth=read('auth');await finishSignIn();updateControls();
       if(signedIn()) {
@@ -439,7 +483,13 @@ start();
     finally {updateControls();}
   }
   element('ingestion-signin').onclick=signIn;
-  element('ingestion-signout').onclick=()=>{
+  element('ingestion-signout').onclick=async()=>{
+    if(config.auth_mode==='aws-iam-helper') {
+      try {await request('/session/logout',{method:'POST'});}
+      catch {message('Local session cleared. If server sign-out was unavailable, the session expires within one hour.');}
+      stopPolling();auth=null;lastStatus=null;save('auth',null);save('pending',null);save('active',null);updateControls();
+      if(await loadStatusConfig()) enterReadOnly();return;
+    }
     stopPolling();auth=null;save('auth',null);save('pending',null);save('oauth',null);updateControls();
     location.assign(config.cognito_domain+'/logout?'+new URLSearchParams({client_id:config.client_id,logout_uri:config.redirect_uri}));
   };

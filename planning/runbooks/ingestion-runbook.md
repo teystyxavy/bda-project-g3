@@ -103,6 +103,52 @@ You can also start `is459-g3-cloud-ingest` directly in the AWS console with
 `dataset_version`, `train`, `refresh` and `rerun`; credentials are never input fields.
 The default is full HI-Small with frozen scoring. Use a new run ID for each attempt.
 
+## Start a run by uploading to S3 (EventBridge, opt-in)
+
+Status: deployed on 6 October 2026; live acceptance passed on 7 October 2026.
+Run `evb-smoke-20261007-135938` processed and published 1,000 rows. Re-uploading
+its trigger marker created a second wrapper execution that ended through
+`AlreadyStarted`; only one batch execution existed. All scores matched the
+independent reference exactly, and corridor totals reconciled within tolerance.
+The preceding dashboard release was restored after acceptance. See
+[evidence](../evidence/eventbridge-trigger-result-20261007.json).
+
+This verifies the opt-in upload route, not scheduled ingestion or every failure
+mode. The target still has no dead-letter queue or dedicated delivery-failure
+alarm; SNS in the wrapper cannot report failures that prevent the wrapper from
+starting. The smoke used existing local files and historical FX; it does not
+establish fresh Kaggle/API acquisition or a full-population EventBridge run.
+
+This is an extra way to start the same batch. The default command above and
+`is459-g3-cloud-ingest` still start the batch themselves.
+
+```powershell
+.\scripts\ingestion\ingest.ps1 -LocalAcquisition -Trigger EventBridge -Rows 1000
+```
+
+1. The laptop uploads the transactions, accounts and FX CSVs plus `manifest.json` to
+   `pipeline/runs/<run>/raw/`, then writes `raw/trigger.json` last.
+2. S3 sends an "Object Created" event to EventBridge. Rule
+   `is459-g3-raw-upload-trigger` matches only `pipeline/runs/*/raw/trigger.json`.
+3. Step Functions `is459-g3-raw-trigger` checks the key and starts `is459-g3-ingest`
+   with an execution named after the run ID. A repeated S3 event finds that execution
+   and stops, so it cannot start a second paid run. It does not retry, and it notifies
+   `is459-g3-failures` on failure.
+4. The command waits for the batch to start and follows it like a direct run.
+
+Manage the trigger from the repository root (plan only unless `-Execute` is given):
+
+```powershell
+.\scripts\aws\deploy-eventbridge-trigger.ps1                    # plan only
+.\scripts\aws\deploy-eventbridge-trigger.ps1 -Execute           # apply
+.\scripts\aws\deploy-eventbridge-trigger.ps1 -Disable -Execute  # pause the rule
+.\scripts\aws\deploy-eventbridge-trigger.ps1 -Destroy -Execute  # remove the stack
+```
+
+Cost is effectively zero: S3-to-EventBridge delivery and rule matching are free, and
+the wrapper uses about five Standard state transitions per run. See
+[the stack README](../../infra/eventbridge-trigger/README.md).
+
 ## Local preparation without deployment or paid jobs
 
 ```powershell
@@ -220,3 +266,15 @@ Use the project Python environment configured above. `verify-ingestion-release.p
 also checks whether another run has since become current; immutable releases remain
 verifiable. An already-open browser can retain its previous cached script: use the
 reported versioned release link or a hard refresh when checking a newly selected run.
+
+## Live dashboard operator controls
+
+The deployed [Ingestion tab](https://d1n61tlw9pcrog.cloudfront.net/) can start and track cloud runs using the existing Group 3 AWS identity. With the project Python environment activated, run:
+
+```powershell
+python scripts/aws/dashboard-signin.py --profile is459-g3-tools
+```
+
+The helper verifies g1team3 and opens a single-use sign-in link; no email invitation or separate dashboard password is needed. If expired, restore the AWS session with `aws login --profile is459-g3` first. See the [control deployment and security guide](../../infra/dashboard-control/README.md).
+
+The dashboard exposes HI-Small demo/custom/full row selection, latest or pinned dataset version, refresh, stage rebuild, full-run candidate training, configuration preview and real workflow progress. Local download-only choices and administrative recovery remain script operations. Starting new processing can incur AWS charges. Signing out revokes dashboard access but does not stop a running workflow.

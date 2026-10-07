@@ -1,0 +1,87 @@
+{
+  "verified_on": "2026-10-07",
+  "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+  "control_api_url": "https://a6xganspgk.execute-api.ap-southeast-1.amazonaws.com",
+  "status_url": "https://i5xro01dni.execute-api.ap-southeast-1.amazonaws.com/status",
+  "auth_mode": "aws-iam-helper",
+  "operator_arn": "arn:aws:iam::588738581042:user/g1team3",
+  "control_deployment": {
+    "created": 18,
+    "changed": 0,
+    "deleted": 0
+  },
+  "worker_update": {
+    "created_artifacts": 11,
+    "changed": 4,
+    "deleted": 0,
+    "predecessor_artifacts_retained": true,
+    "image_digest": "sha256:1a2976e1b033a361a8b3de635dad017f0c98e7db7233826e032e03ec11f40b22"
+  },
+  "tests": {
+    "python_non_spark_passed": 215,
+    "python_non_spark_skipped": 1,
+    "additional_helper_tests_passed": 3,
+    "dashboard_interaction_tests_passed": 15,
+    "terraform_mock_tests_passed": 1,
+    "terraform_validate": "passed"
+  },
+  "authentication_checks": [
+    "unsigned bootstrap rejected",
+    "unsigned read and launch rejected",
+    "invalid handoff rejected",
+    "exact existing AWS identity verified",
+    "single-use handoff enforced",
+    "authenticated options/history available",
+    "sign-out revokes session",
+    "CloudFront browser preflight allowed",
+    "expired handoff rejected by deployed service"
+  ],
+  "ingestion_checks": [
+    "idempotent-submission",
+    "concurrent-submission-refused",
+    "verified-release-reuse",
+    "real-parent-child-stage-progress"
+  ],
+  "runs": [
+    {
+      "run_id": "ui-20e8248e6c5b-18ccd271b367",
+      "status": "SUCCEEDED",
+      "elapsed_seconds": 515,
+      "cache_hit": false,
+      "selection": {
+        "dataset_version": 8,
+        "refresh": false,
+        "rerun": false,
+        "rows": 1000,
+        "subset": "HI-Small",
+        "train": false
+      },
+      "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/ui-20e8248e6c5b-18ccd271b367/index.html"
+    },
+    {
+      "run_id": "ui-20e8248e6c5b-9b6c0fd37ab2",
+      "status": "SUCCEEDED",
+      "elapsed_seconds": 10,
+      "cache_hit": true,
+      "selection": {
+        "dataset_version": 8,
+        "refresh": false,
+        "rerun": false,
+        "rows": 1000,
+        "subset": "HI-Small",
+        "train": false
+      },
+      "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/ui-20e8248e6c5b-18ccd271b367/index.html"
+    }
+  ],
+  "cloudfront_assets_hash_checked": true,
+  "visual_browser_acceptance": "unavailable: browser tool failed to initialize its kernel assets; no visual acceptance claimed",
+  "final_publication": {
+    "schema_version": 1,
+    "run_id": "live-controls-20261007-v2",
+    "snapshot": "releases/live-controls-20261007-v2/dashboard.json",
+    "sha256": "db01a52c9e3d0f5eef88f8d8aa3e88c88c037df6430ce7ac6701907ef4b1731f",
+    "previous_run_id": "ui-20e8248e6c5b-18ccd271b367",
+    "source_pipeline_run_id": "opt-train-cache-20261006-aws1"
+  }
+}

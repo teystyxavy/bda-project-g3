@@ -49,7 +49,7 @@ function snapshot() {
     pipeline:{run_id:'verified-run',start_date:'2022-09-01',end_date:'2022-09-01',refresh_time:'2026-10-06'}};
 }
 
-async function harness({configured=true,authenticated=true,stored={},search='',fetchHook}={}) {
+async function harness({configured=true,authenticated=true,stored={},search='',hash='',configuration=CONFIG,fetchHook}={}) {
   const elements=new Map(Array.from(html.matchAll(/id="([^"]+)"/g),match=>[match[1],new Element()]));
   const el=id=>elements.get(id);
   el('ingestion-flow').mapNodes=Array.from(html.matchAll(/data-stage="([^"]+)"/g),match=>{
@@ -59,11 +59,11 @@ async function harness({configured=true,authenticated=true,stored={},search='',f
   el('split').value='test';el('scoring').value='rules';el('day').value='all';el('day').options=[new Element()];
   const storage=new Map(Object.entries(stored).map(([key,value])=>['is459-ingestion-'+key,JSON.stringify(value)]));
   if(authenticated) storage.set('is459-ingestion-auth',JSON.stringify({access_token:'fixture-access-token',
-    expires_at:Date.now()+3600000,client_id:CONFIG.client_id}));
+    expires_at:Date.now()+3600000,client_id:configuration.client_id}));
   const calls=[],timers=new Map(),listeners={};let timerId=0;
   const doc={hidden:false,getElementById:el,createElement:()=>new Element(),
     querySelector:()=>new Element(),querySelectorAll:()=>[],addEventListener:(name,fn)=>listeners[name]=fn};
-  const location={origin:'https://example.cloudfront.net',pathname:'/',search,hash:'',assign:url=>{location.destination=url;}};
+  const location={origin:'https://example.cloudfront.net',pathname:'/',search,hash,assign:url=>{location.destination=url;}};
   const context={document:doc,location,window:{},console,TextEncoder,TextDecoder,Intl,URL,URLSearchParams,Date,Number,String,Array,Math,JSON,Boolean,
     crypto:webcrypto,AbortController,Blob,btoa:binary=>Buffer.from(binary,'binary').toString('base64'),
     sessionStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
@@ -71,7 +71,7 @@ async function harness({configured=true,authenticated=true,stored={},search='',f
     setTimeout:(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),
     fetch:async(url,init={})=>{
       calls.push({url,init});const custom=fetchHook?await fetchHook(url,init):null;if(custom) return custom;
-      if(url==='/ingestion-config.json') return respond(configured?CONFIG:{},configured?200:404);
+      if(url==='/ingestion-config.json') return respond(configured?configuration:{},configured?200:404);
       if(url===CONFIG.api_url+'/options') return respond({notice:'fixture notice',subsets:[
         {value:'HI-Small',label:'HI-Small',supported:true},{value:'LI-Small',label:'LI-Small unavailable',supported:false}]});
       if(url===CONFIG.api_url+'/runs' && !init.method) return respond({runs:[]});
@@ -248,4 +248,33 @@ test('signed-in operators keep the controls instead of the public view',async()=
   assert.equal(h.calls.some(call=>call.url===STATUS_URL),false);
   assert.equal(h.el('ingestion-new').hidden,false);
   assert.equal(h.el('ingestion-start').disabled,false);
+});
+
+test('custom rows preview starts no workflow and submission preserves script flags',async()=>{
+  let submitted;
+  const h=await harness({fetchHook:async(url,init)=>{
+    if(url===CONFIG.api_url+'/runs' && init.method==='POST') {submitted=JSON.parse(init.body);return respond(run(),202);}
+    if(url===CONFIG.api_url+'/runs/'+RUN_ID) return respond(run());
+  }});
+  h.el('ingestion-size').value='custom';h.el('ingestion-rows').value='2500';h.el('ingestion-size').onchange();
+  h.el('ingestion-version').value='8';h.el('ingestion-refresh').checked=true;h.el('ingestion-rerun').checked=true;
+  h.el('ingestion-preview').onclick();
+  assert.match(h.el('ingestion-preview-output').textContent,/-Rows 2500 -DatasetVersion 8 -Refresh -Rerun/);
+  assert.equal(h.calls.some(call=>call.init.method==='POST'),false);
+  await h.el('ingestion-form').onsubmit({preventDefault(){}});
+  assert.equal(submitted.rows,2500);assert.equal(submitted.dataset_version,8);
+  assert.equal(submitted.refresh,true);assert.equal(submitted.rerun,true);assert.equal(submitted.train,false);
+});
+
+test('IAM helper consumes its fragment once and enables controls without AWS credentials',async()=>{
+  const configuration={schema_version:1,api_url:CONFIG.api_url,auth_mode:'aws-iam-helper',client_id:'is459-g3-aws-operator',redirect_uri:CONFIG.redirect_uri};
+  const h=await harness({configuration,authenticated:false,hash:'#operator_code='+'a'.repeat(43),fetchHook:async(url)=>
+    url===CONFIG.api_url+'/session/exchange'?respond({access_token:'fixture-session',expires_in:3600,token_type:'Bearer'}):null});
+  assert.equal(h.location.cleaned,'/');assert.equal(h.el('ingestion-start').disabled,false);
+  const calls=h.calls.filter(call=>call.url.endsWith('/session/exchange'));
+  assert.equal(calls.length,1);assert.deepEqual(JSON.parse(calls[0].init.body),{code:'a'.repeat(43)});
+  assert.equal(h.calls.some(call=>call.url.includes('cognito')||call.url.includes('sts.')),false);
+  await h.el('ingestion-signout').onclick();
+  assert.equal(h.storage.has('is459-ingestion-auth'),false);
+  assert.equal(h.calls.some(call=>call.url.endsWith('/session/logout')),true);
 });

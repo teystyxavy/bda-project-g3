@@ -18,6 +18,9 @@ python scripts/ingestion/kaggle-download.py
 # Inspect arguments without starting a pipeline run.
 python scripts/ingestion/ingest.py --help
 
+# Open the live dashboard using the existing Group 3 AWS identity.
+python scripts/aws/dashboard-signin.py --profile is459-g3-tools
+
 # Package the dashboard ingestion API locally; creates no AWS resources.
 python scripts/aws/prepare-dashboard-api.py --output output/dashboard-control-package
 
@@ -35,6 +38,31 @@ under ignored `output/`; downloaded data belongs under ignored `dataset/`.
 For HI/LI, Small/Medium/Large, optional patterns and individual files, use
 `ingestion/ingest.ps1 -DownloadOnly`; `-DryRun` previews the selection.
 See [all download options and costs](../planning/runbooks/kaggle-download-options.md).
+
+## Reading the code
+
+Script docstrings and PowerShell help describe each command's pipeline role,
+inputs, outputs and side effects. Shared modules under `src/bda_pipeline/` explain
+the transformations and verification contracts; Glue jobs, SQL, Dockerfiles and
+Terraform files describe their part of the same flow. Run Python commands from
+the installed repository as above; `--help` shows arguments without running jobs.
+
+For the newer dashboard paths:
+
+- [build-exploration.py](dashboard/build-exploration.py) enriches verified local
+  data and copies static assets; it makes no AWS calls.
+- [prepare-dashboard-release.py](dashboard/prepare-dashboard-release.py) checks
+  and packages the four assets locally.
+- [publish-exploration.py](dashboard/publish-exploration.py) writes the prepared
+  release to AWS and saves predecessor assets for recovery. Use only when
+  publication is explicitly requested.
+- [prepare-dashboard-status.py](aws/prepare-dashboard-status.py) packages the
+  public read-only status handler; [prepare-dashboard-api.py](aws/prepare-dashboard-api.py)
+  packages the separate authenticated control handler. Neither deploys resources.
+
+Comments explain code behavior, not deployment evidence. Use current runbooks
+and recorded verification results for deployed status; changing documentation in
+a packaged source file can change its artifact hash on the next build.
 
 ## Categories
 

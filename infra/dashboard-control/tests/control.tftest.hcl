@@ -1,7 +1,4 @@
 mock_provider "aws" {
-  mock_resource "aws_cognito_user_pool" {
-    defaults = { id = "ap-southeast-1_OperatorFixture" }
-  }
   mock_resource "aws_iam_role" {
     defaults = { arn = "arn:aws:iam::588738581042:role/is459-g3-dashboard-control" }
   }
@@ -33,12 +30,12 @@ run "protected_bounded_control_plane" {
   # Apply is entirely simulated by mock_provider; computed policy ARNs are known.
   command = apply
   assert {
-    condition     = alltrue([for route in aws_apigatewayv2_route.control : route.authorization_type == "JWT" && contains(route.authorization_scopes, "ingestion/control")])
-    error_message = "Every API route must require an access token with the control scope."
+    condition = aws_apigatewayv2_route.control["POST /session/bootstrap"].authorization_type == "AWS_IAM" && length(aws_apigatewayv2_route.control) == 7
+    error_message = "IAM must authenticate the one-time sign-in bootstrap; session routes are enforced in Lambda."
   }
   assert {
-    condition     = aws_cognito_user_pool.operators.admin_create_user_config[0].allow_admin_create_user_only && !aws_cognito_user_pool_client.dashboard.generate_secret && aws_cognito_user_pool_client.dashboard.allowed_oauth_flows == toset(["code"])
-    error_message = "Use invited accounts and a public authorization-code client, never implicit grants or browser secrets."
+    condition = aws_dynamodb_table.launch.ttl[0].enabled && aws_dynamodb_table.launch.ttl[0].attribute_name == "expires_at"
+    error_message = "Expired handoffs and sessions must have bounded storage."
   }
   assert {
     condition     = aws_dynamodb_table.launch.billing_mode == "PAY_PER_REQUEST" && aws_lambda_function.control.timeout == 30 && aws_lambda_function.control.reserved_concurrent_executions == 2

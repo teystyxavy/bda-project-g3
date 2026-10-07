@@ -6,6 +6,7 @@
 <section id="ingestion" hidden aria-labelledby="ingestion-title">
 <div class="heading"><div><h2 id="ingestion-title">Ingest data. Follow every stage.</h2><p id="ingestion-intro">Choose your input, start the pipeline and watch it move from acquisition to verified results.</p></div><div class="controls"><span id="ingestion-connection" class="connection">Checking connection</span><button id="ingestion-signin" type="button" disabled>Sign in</button><button id="ingestion-signout" type="button" hidden>Sign out</button></div></div>
 <p id="ingestion-message" class="note" role="status" aria-live="polite">Checking ingestion controls…</p>
+<article id="ingestion-aws-signin" hidden><h3>Sign in with the Group 3 AWS identity</h3><p>On your computer, open the project folder and run:</p><pre>python scripts/aws/dashboard-signin.py --profile is459-g3-tools</pre><p>The helper uses your existing AWS session, verifies g1team3 and opens a single-use sign-in link. If your AWS session has expired, run <code>aws login --profile is459-g3</code> first. No AWS password or credentials are entered here.</p></article>
 <article class="pipeline-map" aria-labelledby="pipeline-map-title"><div class="heading"><div><h3 id="pipeline-map-title">Your data’s journey through AWS</h3><p>Each box is a pipeline phase. Its colour follows the selected run; arrows show how data and verified results move.</p></div><span class="connection">Batch pipeline</span></div>
 <div class="map-orchestrator"><strong>AWS Step Functions</strong><span>Coordinates acquisition, parallel analysis, verification and publication</span><span id="pipeline-orchestrator-state">Waiting for a run</span></div>
 <p id="ingestion-active-services" class="active-services" role="status" aria-live="polite">Select a run to see its current AWS service.</p>
@@ -39,7 +40,8 @@
 <fieldset id="ingestion-fields" disabled>
 <label>Dataset<select id="ingestion-subset"><option value="HI-Small">HI-Small</option><option disabled>HI-Medium — unavailable</option><option disabled>HI-Large — unavailable</option><option disabled>LI-Small — unavailable</option><option disabled>LI-Medium — unavailable</option><option disabled>LI-Large — unavailable</option></select></label>
 <p class="field-help">Cloud processing currently supports HI-Small. Other subsets need pipeline and model validation.</p>
-<label>Run size<select id="ingestion-size"><option value="demo">Demo · first 1,000 transactions</option><option value="full">Full dataset · about 5.1 million transactions</option></select></label>
+<label>Run size<select id="ingestion-size"><option value="demo">Demo · first 1,000 transactions</option><option value="custom">Custom transaction limit</option><option value="full">Full dataset · about 5.1 million transactions</option></select></label>
+<label id="ingestion-rows-field" hidden>Maximum transactions<input id="ingestion-rows" type="number" min="1" max="5100000" step="1" value="1000" inputmode="numeric"></label>
 <p class="field-help">The demo verifies the pipeline. Use the full dataset for business findings.</p>
 <label>Dataset version<input id="ingestion-version" type="number" min="1" max="100000" step="1" placeholder="Latest available" inputmode="numeric"></label>
 <label class="check-control"><input id="ingestion-refresh" type="checkbox"><span>Refresh source files<small>Fetch Kaggle and historical FX again.</small></span></label>
@@ -48,6 +50,9 @@
 </fieldset>
 <div class="run-notice"><strong>Uses the project AWS budget</strong><p>New processing can incur charges. Verified inputs and stages are reused by default. Each accepted submission starts at most one workflow.</p></div>
 <button id="ingestion-start" class="primary" type="submit" disabled>Start ingestion</button>
+<button id="ingestion-preview" type="button" disabled>Preview configuration</button>
+<div id="ingestion-preview-panel" hidden><h4>Run configuration preview</h4><p>No ingestion has been started. A row limit selects the first transactions in source-file order; it is not a date filter.</p><pre id="ingestion-preview-output"></pre><p class="field-help">The workflow continues in AWS when you leave this page. Run IDs are generated per operator and submission so retries cannot create duplicate jobs.</p></div>
+<details><summary>How this matches the ingestion script</summary><p>Cloud options: HI-Small; demo, custom row limit or full dataset; latest or pinned Kaggle version; refresh source; rebuild stages; full-run candidate training; configuration preview; background execution and run tracking.</p><p>All cloud runs acquire transactions, accounts and historical FX inside AWS. The script’s six-subset and individual-file download choices, local folders, offline FX, PrepareOnly and EventBridge upload mode operate on your computer and remain in the script. Unlock is an administrator recovery action.</p></details>
 </form></article>
 <article aria-labelledby="ingestion-progress-title"><div class="heading"><h3 id="ingestion-progress-title">Live progress</h3><button id="ingestion-refresh-status" type="button" disabled>Refresh status</button></div>
 <div id="ingestion-empty" class="empty-state"><span class="empty-mark" aria-hidden="true">→</span><strong id="ingestion-empty-title">Your next run starts here</strong><p id="ingestion-empty-text">Sign in and submit a run, or select a recent run below. Progress updates every 10 seconds while this page is visible.</p></div>
