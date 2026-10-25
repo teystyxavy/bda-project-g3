@@ -197,3 +197,21 @@ def test_streaming_image_ships_its_handler_imports(tmp_path, monkeypatch):
 
 def test_whole_source_tree_has_no_dangling_imports():
     check_closure({p.relative_to(PACKAGE_ROOT).as_posix(): p.read_text() for p in package_sources()})
+
+
+# Pipeline order: a subpackage may import only from itself or earlier stages.
+LAYERS = ['common', 'ingestion', 'features', 'baseline', 'treasury', 'modeling', 'scoring', 'dashboards', 'control']
+
+
+def test_subpackages_only_import_earlier_pipeline_stages():
+    violations = []
+    for path in package_sources():
+        relative = path.relative_to(PACKAGE_ROOT)
+        if len(relative.parts) < 2:
+            continue  # Top-level __init__ re-exports conveniences.
+        own = LAYERS.index(relative.parts[0])
+        for module, _ in required_modules(path.read_text(), relative.as_posix()):
+            parts = module.split('.')
+            if len(parts) > 1 and parts[1] in LAYERS and LAYERS.index(parts[1]) > own:
+                violations.append(f'{relative.as_posix()} -> {module}')
+    assert not violations

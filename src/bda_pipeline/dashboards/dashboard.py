@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from ..analytics import ranking_metrics
+from ..common.metrics import ranking_metrics
 
 
 def records(frame):

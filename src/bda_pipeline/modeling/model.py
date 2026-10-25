@@ -42,7 +42,6 @@ on 7-8 Sep (validation), report on 9-10 Sep (test) and the sparse 11-18 Sep
 tail separately.
 """
 import gc
-import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,8 +50,10 @@ import numpy as np
 import pandas as pd
 import pyarrow.dataset as ds
 
-from ..analytics import ranking_metrics
-from ..batch import FEATURES, QUEUE_COLUMNS
+from ..baseline.batch import QUEUE_COLUMNS
+from ..common.integrity import digest
+from ..common.metrics import ranking_metrics
+from ..features.behaviour import FEATURES
 
 # String columns that are one-hot encoded for the model.
 CATEGORICAL = ['payment_format', 'payment_currency', 'receiving_currency']
@@ -71,16 +72,6 @@ SPLITS = {'train': ('2022-09-01', '2022-09-07'),
 # Keeping the search tiny and pre-declared limits overfitting to validation.
 CANDIDATES = [{'name': 'hist-depth3', 'max_depth': 3},
               {'name': 'hist-depth5', 'max_depth': 5}]
-
-
-def digest(path):
-    """Return the SHA-256 hex digest of a file.
-
-    Used everywhere in the project as a tamper/consistency check: inputs,
-    model files and manifests are recorded by hash and re-verified before use.
-    """
-    with Path(path).open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
 def fit_encoder(training):

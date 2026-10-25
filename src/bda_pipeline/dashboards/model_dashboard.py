@@ -37,9 +37,10 @@ from pathlib import Path
 import numpy as np
 import pyarrow.dataset as ds
 
-from ..analytics import ranking_metrics
+from ..common.metrics import ranking_metrics
 from .dashboard import records
-from ..modeling.model import SavedRanker, digest, rank, read_split
+from ..common.integrity import digest
+from ..modeling.model import SavedRanker, rank, read_split
 
 
 def export_model_dashboard(scored, baseline_path, model_dir, output, assets, cloud_verification=None):

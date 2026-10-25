@@ -41,7 +41,8 @@ from pathlib import Path
 
 import pyarrow.dataset as ds
 
-from .model import SavedRanker, compare_models, digest
+from ..common.integrity import digest
+from .model import SavedRanker, compare_models
 
 # Fixed deployment target for Group 3. Hard-coding these (instead of reading
 # them from the environment) means the request can only ever target the
