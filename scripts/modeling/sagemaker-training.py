@@ -263,7 +263,7 @@ def main():
         0 on success (used as the process exit code).
     """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--profile', default='is459-g3-tools')
+    parser.add_argument('--profile', default='default')
     commands = parser.add_subparsers(dest='action', required=True)
     prepare = commands.add_parser('prepare', help='Local preparation only; no AWS calls')
     prepare.add_argument('--scored', type=Path, required=True)

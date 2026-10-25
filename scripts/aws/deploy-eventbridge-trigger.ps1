@@ -24,7 +24,7 @@
 # trigger). This script never starts a pipeline run.
 # =============================================================================
 [CmdletBinding()]
-param([string]$Profile = 'is459-g3-tools', [switch]$Disable, [switch]$Destroy, [switch]$Execute)
+param([string]$Profile = 'default', [switch]$Disable, [switch]$Destroy, [switch]$Execute)
 # Plans by default. -Execute applies the saved plan; -Destroy plans (and with -Execute applies) the teardown.
 $ErrorActionPreference = 'Stop'
 if ($Disable -and $Destroy) { throw '-Disable and -Destroy cannot be combined.' }

@@ -45,7 +45,7 @@ Key S3 objects (bucket ``BUCKET`` from ``bda_pipeline.common.ingest_contract``)
 
 Example
 -------
-    python scripts/ingestion/ingest.py --profile is459-g3-tools run --rows 1000
+    python scripts/ingestion/ingest.py run --rows 1000
 """
 import argparse
 import json
@@ -68,7 +68,7 @@ def aws_clients(profile):
     ``--dry-run``) work on a machine without AWS credentials or boto3.
 
     Args:
-        profile: named AWS CLI profile (e.g. ``is459-g3-tools``).
+        profile: named AWS CLI profile (e.g. ``default``).
 
     Returns:
         ``(session, s3_client, stepfunctions_client)``; the session is returned so
@@ -376,7 +376,7 @@ def main():
     RuntimeError if it did not succeed.
     """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--profile', default='is459-g3-tools')
+    parser.add_argument('--profile', default='default')
     # Sub-commands share options; build them in a loop so they stay consistent.
     commands = parser.add_subparsers(dest='action', required=True)
     for action in ['download', 'prepare', 'run']:

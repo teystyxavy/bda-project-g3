@@ -37,7 +37,7 @@ def login_url(profile):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--profile', default='is459-g3-tools')
+    parser.add_argument('--profile', default='default')
     args = parser.parse_args()
     url = login_url(args.profile)
     if not webbrowser.open(url):

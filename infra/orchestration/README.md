@@ -15,7 +15,7 @@ State and provider working files are private, outside OneDrive. From the
 repository root, initialize this stack only against its own state:
 
 ```powershell
-$env:AWS_PROFILE='is459-g3-tools'
+$env:AWS_PROFILE='default'
 $env:AWS_REGION='ap-southeast-1'
 $env:AWS_DEFAULT_REGION='ap-southeast-1'
 $env:TF_DATA_DIR='C:/Users/lowth/AppData/Local/IS459-G3/terraform-orchestration'

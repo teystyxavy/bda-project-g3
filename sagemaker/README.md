@@ -64,7 +64,7 @@ Keep Terraform data, plans and state outside OneDrive, following existing projec
 practice. After approval, use these commands from the project root:
 
 ```powershell
-$env:AWS_PROFILE = 'is459-g3-tools'
+$env:AWS_PROFILE = 'default'
 $env:AWS_REGION = 'ap-southeast-1'
 $env:AWS_DEFAULT_REGION = 'ap-southeast-1'
 $env:AWS_SDK_UA_APP_ID = 'AWSSkill-SageMaker'

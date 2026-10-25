@@ -16,6 +16,11 @@ You do not need to paste credentials into Codex or create a project secrets file
    in PowerShell. Account ID comes from AWS automatically.
 4. Tell Codex: `Login ready; use profile is459-g3-tools`.
 
+Project scripts default to the AWS CLI `default` profile. If you set up the
+`is459-g3-tools` profile with this helper, pass `--profile is459-g3-tools`
+(Python scripts) or `-Profile is459-g3-tools` (PowerShell scripts), or set
+`AWS_PROFILE`; every script pins region `ap-southeast-1` itself.
+
 For a university/company AWS access portal backed by IAM Identity Center, use:
 
 ```powershell

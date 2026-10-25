@@ -54,7 +54,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--package',type=Path,required=True)
     parser.add_argument('--execute-approved',action='store_true')
-    parser.add_argument('--profile',default='is459-g3-tools')
+    parser.add_argument('--profile',default='default')
     parser.add_argument('--rate',type=float,default=10)
     parser.add_argument('--receipt',type=Path)
     args=parser.parse_args()

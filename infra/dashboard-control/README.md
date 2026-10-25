@@ -7,7 +7,7 @@ The live dashboard uses the existing Group 3 AWS identity through a local sign-i
 From the repository root with the project Python environment activated:
 
 ```powershell
-python scripts/aws/dashboard-signin.py --profile is459-g3-tools
+python scripts/aws/dashboard-signin.py
 ```
 
 If AWS login has expired, first run `aws login --profile is459-g3`, complete AWS sign-in and rerun the helper. The existing tools profile obtains credentials from that login session. Never enter console passwords or access keys into the dashboard.

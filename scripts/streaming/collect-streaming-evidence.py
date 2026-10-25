@@ -78,7 +78,7 @@ def main():
     if args.output.exists(): raise ValueError('Use a fresh evidence directory')
     # At most 2 attempts and short timeouts: fail fast rather than hang.
     config = Config(retries={'total_max_attempts': 2, 'mode': 'standard'}, connect_timeout=3, read_timeout=20)
-    session = boto3.Session(profile_name='is459-g3-tools', region_name='ap-southeast-1')
+    session = boto3.Session(profile_name='default', region_name='ap-southeast-1')
     # Small factory so every client shares the same session and retry config.
     client = lambda service: session.client(service, config=config)
     # Guard against running with credentials for some other AWS account.

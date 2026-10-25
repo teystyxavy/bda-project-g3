@@ -39,7 +39,7 @@ def main():
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--expected-pointer', type=Path, required=True)
     parser.add_argument('--evidence', type=Path, required=True)
-    parser.add_argument('--profile', default='is459-g3-tools')
+    parser.add_argument('--profile', default='default')
     args = parser.parse_args()
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]{2,35}', args.run_id) or args.evidence.exists():
         raise ValueError('Require a safe release ID and fresh evidence directory')

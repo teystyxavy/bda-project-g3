@@ -19,7 +19,7 @@ python scripts/ingestion/kaggle-download.py
 python scripts/ingestion/ingest.py --help
 
 # Open the live dashboard using the existing Group 3 AWS identity.
-python scripts/aws/dashboard-signin.py --profile is459-g3-tools
+python scripts/aws/dashboard-signin.py
 
 # Package the dashboard ingestion API locally; creates no AWS resources.
 python scripts/aws/prepare-dashboard-api.py --output output/dashboard-control-package

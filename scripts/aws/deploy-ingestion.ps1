@@ -33,7 +33,7 @@
 param(
     [string]$PreparedDirectory = 'output/optimisation-artifacts-20261006',
     [string]$Image = 'is459-g3-training:optimised-20261006',
-    [string]$Profile = 'is459-g3-tools',
+    [string]$Profile = 'default',
     [switch]$Execute
 )
 # Stop at the first error; 'finally' restores the caller's directory.

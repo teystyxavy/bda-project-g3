@@ -129,7 +129,7 @@ def verify(run_id, profile, output):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-id', required=True)
-    parser.add_argument('--profile', default='is459-g3-tools')
+    parser.add_argument('--profile', default='default')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     verify(args.run_id, args.profile, args.output)

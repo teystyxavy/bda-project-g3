@@ -33,7 +33,7 @@ param(
     [Parameter(Mandatory)]
     [ValidatePattern('^[^@\s]+@[^@\s]+\.[^@\s]+$')]
     [string]$AlertEmail,
-    [string]$ProfileName = 'is459-g3-tools',
+    [string]$ProfileName = 'default',
     [string]$Region = 'ap-southeast-1',
     [ValidateRange(0.01, 250)]
     [decimal]$MonthlyBudgetUsd = 5

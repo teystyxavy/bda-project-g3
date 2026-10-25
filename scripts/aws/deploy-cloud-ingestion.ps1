@@ -33,7 +33,7 @@
 [CmdletBinding()]
 param([string]$Prepared = 'output/cloud-acquisition-context-20261006',
       [string]$Image = 'is459-g3-acquisition:local-20261006',
-      [string]$Profile = 'is459-g3-tools', [switch]$Execute)
+      [string]$Profile = 'default', [switch]$Execute)
 # Stop at the first error; Push-Location/finally restores the caller's folder.
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)

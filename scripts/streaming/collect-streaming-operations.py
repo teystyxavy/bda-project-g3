@@ -48,7 +48,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.output.exists(): raise ValueError('Use a fresh operations report')
-    session = boto3.Session(profile_name='is459-g3-tools', region_name='ap-southeast-1')
+    session = boto3.Session(profile_name='default', region_name='ap-southeast-1')
     config = Config(retries={'total_max_attempts': 2, 'mode': 'standard'}, connect_timeout=3, read_timeout=20)
     if session.client('sts', config=config).get_caller_identity()['Account'] != '588738581042':
         raise ValueError('Wrong AWS account')

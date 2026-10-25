@@ -155,6 +155,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--profile', default='is459-g3-tools')
+    parser.add_argument('--profile', default='default')
     args = parser.parse_args()
     inspect(args.run_id, args.output, args.profile)

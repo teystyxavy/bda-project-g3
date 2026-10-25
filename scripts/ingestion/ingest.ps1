@@ -37,7 +37,7 @@ Refresh HI-Small in AWS and run the pipeline.
 # options that were actually set, so ingest.py's own defaults apply otherwise.
 [CmdletBinding()]
 param(
-    [string]$Python = '', [string]$Profile = 'is459-g3-tools',
+    [string]$Python = '', [string]$Profile = 'default',
     [string]$DatasetDirectory = 'dataset', [int]$DatasetVersion = 0, [int]$Rows = 0,
     [ValidateSet('HI-Small', 'HI-Medium', 'HI-Large', 'LI-Small', 'LI-Medium', 'LI-Large')]
     [string]$Subset = '',

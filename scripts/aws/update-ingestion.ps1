@@ -29,7 +29,7 @@
 param(
     [Parameter(Mandatory)][string]$PreparedDirectory,
     [Parameter(Mandatory)][string]$Image,
-    [string]$Profile = 'is459-g3-tools',
+    [string]$Profile = 'default',
     [switch]$Execute
 )
 # Stop at the first error; 'finally' restores the caller's directory.

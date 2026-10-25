@@ -272,7 +272,7 @@ reported versioned release link or a hard refresh when checking a newly selected
 The deployed [Ingestion tab](https://d1n61tlw9pcrog.cloudfront.net/) can start and track cloud runs using the existing Group 3 AWS identity. With the project Python environment activated, run:
 
 ```powershell
-python scripts/aws/dashboard-signin.py --profile is459-g3-tools
+python scripts/aws/dashboard-signin.py
 ```
 
 The helper verifies g1team3 and opens a single-use sign-in link; no email invitation or separate dashboard password is needed. If expired, restore the AWS session with `aws login --profile is459-g3` first. See the [control deployment and security guide](../../infra/dashboard-control/README.md).

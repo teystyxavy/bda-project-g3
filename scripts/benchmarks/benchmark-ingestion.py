@@ -34,7 +34,7 @@ Usage::
 
     python scripts/benchmarks/benchmark-ingestion.py --run-id <run> \\
         --output output/bench.json [--previous older-report.json] \\
-        [--profile is459-g3-tools]
+        [--profile default]
 """
 import argparse
 import json
@@ -143,7 +143,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-id', required=True)
     # Default profile is the project's least-privilege tools profile.
-    parser.add_argument('--profile', default='is459-g3-tools')
+    parser.add_argument('--profile', default='default')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--previous', type=Path)
     args = parser.parse_args()

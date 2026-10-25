@@ -36,7 +36,7 @@ Reads / writes
 Usage
 -----
     python scripts/ingestion/check-ingestion.py \\
-        --profile is459-g3-tools --output output/checks/ingestion-check.json
+        --output output/checks/ingestion-check.json
 
 The script exits with an exception if the account is wrong, the Athena cost
 guard changed, or the ASL definition is invalid (after writing the report).
@@ -53,7 +53,7 @@ def main():
     """Run every read-only readiness check and write a JSON report.
 
     Command-line arguments:
-        --profile: named AWS CLI profile to use (default ``is459-g3-tools``).
+        --profile: named AWS CLI profile to use (default ``default``).
         --output: path of the JSON report file to create (parent folders are
             created if needed).
 
@@ -67,7 +67,7 @@ def main():
         botocore errors: if a bucket/workgroup is missing or access is denied.
     """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--profile', default='is459-g3-tools')
+    parser.add_argument('--profile', default='default')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     # All clients share one session pinned to the project region (ap-southeast-1).
