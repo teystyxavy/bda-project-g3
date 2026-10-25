@@ -7,7 +7,7 @@ depth-5 candidate passed its validation gate: precision@100 46% versus baseline 
 test precision@100 44% versus baseline 0%. Candidate artifacts remain private. This is an on-demand **candidate training** path.
 The verified dashboard, Glue scorer and streaming image keep their existing model.
 
-The trainer reuses `bda_pipeline.model.compare_models`: September 1-6 training,
+The trainer reuses `bda_pipeline.modeling.model.compare_models`: September 1-6 training,
 September 7-8 validation, September 9-10 main test, and a separately reported sparse
 September 11-18 tail. Two depth candidates are selected on validation average
 precision, then precision@100, then name. The choice is saved before test labels

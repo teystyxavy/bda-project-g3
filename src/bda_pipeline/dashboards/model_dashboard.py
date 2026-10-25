@@ -2,7 +2,7 @@
 
 Where this sits in the pipeline
 -------------------------------
-``batch.export_verified_batch`` produces a baseline ``dashboard.json`` from the
+``control.export.export_verified_batch`` produces a baseline ``dashboard.json`` from the
 transparent rule score (BQ1) and corridor totals (BQ2). Separately, an
 XGBoost ranker is trained and frozen (``model.compare_models`` / SageMaker).
 This module adds a ``model`` section to that baseline snapshot so the

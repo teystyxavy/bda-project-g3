@@ -26,7 +26,7 @@ def corridor_totals(frame):
         One row per (txn_date, from_bank, to_bank, payment_currency,
         receiving_currency) with ``transaction_count`` and ``volume_usd``.
         Because batches can be aggregated separately and summed later,
-        ``batch.py`` calls this chunk by chunk.
+        ``control/export.py`` calls this chunk by chunk.
     """
     frame = frame.assign(from_bank=bank_key(frame.from_bank), to_bank=bank_key(frame.to_bank))
     keys = ['txn_date', 'from_bank', 'to_bank', 'payment_currency', 'receiving_currency']

@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from bda_pipeline.ingest_contract import BUCKET, canonical, paths, processing_request, sha
-from bda_pipeline.ingest_control import get_json, put_json, stop_owned_workers
-from bda_pipeline.stage_cache import register, reuse, stage_key
+from bda_pipeline.common.ingest_contract import BUCKET, canonical, paths, processing_request, sha
+from bda_pipeline.control.ingest_control import get_json, put_json, stop_owned_workers
+from bda_pipeline.control.stage_cache import register, reuse, stage_key
 from test_ingestion import MemoryS3, config, manifest, load_script
 
 

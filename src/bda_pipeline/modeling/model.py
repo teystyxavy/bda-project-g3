@@ -3,7 +3,7 @@
 Purpose
 -------
 BQ1 asks for a *ranked, explainable* AML review queue. The rule-based baseline
-(``analytics.score_baseline``) is easy to explain but coarse. This module trains
+(``baseline.rules.score_baseline``) is easy to explain but coarse. This module trains
 a gradient-boosted tree model (XGBoost) on the same curated features, compares
 it to the baseline with identical metrics, and explains each queued alert with
 exact TreeSHAP feature contributions.
@@ -11,7 +11,7 @@ exact TreeSHAP feature contributions.
 Where it sits in the pipeline
 -----------------------------
 Input is ``bq1_scored.parquet``: the full curated dataset already scored by the
-baseline (written by ``batch.export_verified_batch``), plus the dashboard
+baseline (written by ``control.export.export_verified_batch``), plus the dashboard
 snapshot ``dashboard.json`` that records that file's SHA-256 hash, row count
 and per-period positive counts. Both are checked before training so the model
 is provably trained on the same verified data the dashboard shows.
@@ -134,7 +134,7 @@ def encode(frame, vocabulary):
         if not np.isfinite(numbers).all() or (numbers < 0).any():
             raise ValueError(f'Invalid nonnegative numeric feature: {column}')
         values['log1p_' + column] = np.log1p(numbers).astype(np.float32)
-    # Same zero-stripping rule as analytics.bank_key ("010" == "10").
+    # Same zero-stripping rule as features.behaviour.bank_key ("010" == "10").
     bank = lambda column: frame[column].astype(str).str.lstrip('0').replace('', '0')
     values['is_self_txn'] = (bank('from_bank').eq(bank('to_bank')) &
                              frame.from_account.eq(frame.to_account)).to_numpy(dtype=np.float32)
@@ -157,10 +157,10 @@ def encode(frame, vocabulary):
 def rank(frame, scores):
     """Attach model scores and sort into review-queue order.
 
-    Ordering matches ``analytics.score_baseline``: highest score first, then
+    Ordering matches ``baseline.rules.score_baseline``: highest score first, then
     earliest timestamp, then original file order, using a stable sort so the
     queue is reproducible. The scores are written into ``risk_score`` so
-    ``analytics.ranking_metrics`` can evaluate model and baseline identically.
+    ``common.metrics.ranking_metrics`` can evaluate model and baseline identically.
 
     Args:
         frame: Rows to rank (must include ``timestamp`` and
@@ -379,7 +379,7 @@ class SavedRanker:
                         'is_self_txn': 'Self-transfer', 'currency_mismatch': 'Currency mismatch',
                         'hour_sin': 'Transaction hour (cyclic sine)',
                         'hour_cos': 'Transaction hour (cyclic cosine)'})
-        # Labels listed in the same order as batch.FEATURES.
+        # Labels listed in the same order as features.behaviour.FEATURES.
         aliases.update({f'log1p_{name}': label for name, label in zip(FEATURES,
                        ['Prior-hour transaction count (log)', 'Prior-day transaction count (log)',
                         'Prior-week transaction count (log)', 'Prior-day counterparties (log)',

@@ -4,7 +4,7 @@ Where this sits in the pipeline
 -------------------------------
 The very first, purely local step: getting the Kaggle "IBM Transactions for
 Anti Money Laundering (AML)" CSVs onto this computer. It is a thin CLI around
-``bda_pipeline.acquisition.acquire_dataset`` (the same function ``ingest.py
+``bda_pipeline.ingestion.acquisition.acquire_dataset`` (the same function ``ingest.py
 download`` uses), so local analysis scripts and offline preparation have the
 source data. No AWS calls are made.
 
@@ -33,8 +33,8 @@ Usage
 import argparse
 import json
 from pathlib import Path
-from bda_pipeline.acquisition import acquire_dataset
-from bda_pipeline.dataset_options import add_selection_arguments, resolve_subset, selected_files, selection_options
+from bda_pipeline.ingestion.acquisition import acquire_dataset
+from bda_pipeline.ingestion.dataset_options import add_selection_arguments, resolve_subset, selected_files, selection_options
 
 
 # Default download folder: <repo>/dataset (this file is two levels below root).

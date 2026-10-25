@@ -1,6 +1,6 @@
 import pandas as pd
 import pytest
-from bda_pipeline.dashboard import aml_view, treasury_view, diagnose_rules
+from bda_pipeline.dashboards.dashboard import aml_view, treasury_view, diagnose_rules
 
 
 def test_treasury_uses_full_denominator_before_top15():

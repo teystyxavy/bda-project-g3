@@ -6,7 +6,7 @@ Creates a small "smoke test" fixture for the Glue curation job. It takes the
 first ``--rows`` (default 1,000) transactions of the Kaggle HI-Small CSV,
 the matching account metadata and the FX rate table, and also computes the
 *expected* curated output with the trusted local pandas implementation
-(``bda_pipeline.transform``). After the sample is uploaded to S3 raw and the
+(``bda_pipeline.ingestion.transform``). After the sample is uploaded to S3 raw and the
 Glue job runs on it, ``verify-aws-smoke.py`` compares the Glue output with
 this expected Parquet. The same fixture is used by ``test-glue-local.ps1``
 inside the AWS Glue Docker image.
@@ -40,7 +40,7 @@ import pandas as pd
 
 # Local reference implementation of the curation logic (pandas), used as the
 # "known good" answer the Glue PySpark job must reproduce.
-from bda_pipeline.transform import build_curated_transactions, read_accounts, read_transactions
+from bda_pipeline.ingestion.transform import build_curated_transactions, read_accounts, read_transactions
 
 
 def prepare(transactions, accounts, fx, output, rows=1000):

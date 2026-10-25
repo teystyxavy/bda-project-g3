@@ -2,7 +2,7 @@
 
 Purpose
 -------
-Command-line wrapper around ``bda_pipeline.cloud_scores.verify_full_scores``.
+Command-line wrapper around ``bda_pipeline.scoring.cloud_scores.verify_full_scores``.
 After the Glue job ``is459-g3-score-frozen`` scored all 5,078,345 curated
 transactions on AWS (BQ1), its output is downloaded and this check proves,
 before anything is published to the dashboard, that:
@@ -32,7 +32,7 @@ import argparse
 import json
 from pathlib import Path
 
-from bda_pipeline.cloud_scores import verify_full_scores
+from bda_pipeline.scoring.cloud_scores import verify_full_scores
 
 
 # Script entry point (there is no main(); the logic lives in the shared library).

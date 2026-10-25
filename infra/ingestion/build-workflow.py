@@ -15,7 +15,7 @@ Where it sits in the pipeline
 and substitutes the two placeholders left in it:
 
 * ``${control_arn}``   - ARN of the control Lambda ``is459-g3-ingest-control``
-  (``src/bda_pipeline/ingest_control.py``), which does validation, locking,
+  (``src/bda_pipeline/control/ingest_control.py``), which does validation, locking,
   caching, request building and publishing (selected by the ``op`` field);
 * ``${failure_topic}`` - ARN of the shared SNS topic ``is459-g3-failures``.
 

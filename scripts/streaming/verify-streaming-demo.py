@@ -28,7 +28,7 @@ Usage::
 import argparse,json
 from pathlib import Path
 import numpy as np
-from bda_pipeline.model import digest
+from bda_pipeline.common.integrity import digest
 
 
 def main():

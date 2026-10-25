@@ -3,7 +3,7 @@
 What this file is
 -----------------
 The handler of the ``is459-g3-acquire`` AWS Lambda (container image built from
-``cloud-ingestion/Dockerfile``; ``CMD bda_pipeline.cloud_acquisition.handler``).
+``cloud-ingestion/Dockerfile``; ``CMD bda_pipeline.ingestion.cloud_acquisition.handler``).
 It is the *first* task of the ``is459-g3-cloud-ingest`` Step Functions state
 machine, which is started by ``scripts/ingestion/ingest.py run`` (the default,
 non-``--local-acquisition`` path). After this Lambda succeeds, that state

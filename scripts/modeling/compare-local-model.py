@@ -5,7 +5,7 @@ Where this sits in the pipeline
 BQ1 asks for a ranked, explainable AML review queue. The rule-based baseline
 is the transparent reference; this script checks whether a machine-learning
 model ranks suspicious transactions better. It runs
-``bda_pipeline.model.compare_models`` locally (the same logic SageMaker
+``bda_pipeline.modeling.model.compare_models`` locally (the same logic SageMaker
 training uses), which:
 
 1. verifies ``--scored`` (full-population ``bq1_scored.parquet``) matches the
@@ -30,7 +30,7 @@ Usage
 import argparse
 from pathlib import Path
 
-from bda_pipeline.model import compare_models
+from bda_pipeline.modeling.model import compare_models
 
 
 if __name__ == '__main__':

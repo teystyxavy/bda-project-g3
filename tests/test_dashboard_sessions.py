@@ -3,7 +3,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from bda_pipeline import dashboard_sessions as sessions
+from bda_pipeline.dashboards import dashboard_sessions as sessions
 
 
 class Conditional(Exception):

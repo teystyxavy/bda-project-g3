@@ -41,12 +41,12 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'src'))
 
-from bda_pipeline.acquisition import HEADER, prepare_inputs
-from bda_pipeline.analytics import add_behaviour
-from bda_pipeline.inference import prepare_inference
-from bda_pipeline.ingest_compute import baseline_stage
-from bda_pipeline.model import compare_models
-from bda_pipeline.transform import build_curated_transactions, read_accounts, read_transactions
+from bda_pipeline.ingestion.acquisition import HEADER, prepare_inputs
+from bda_pipeline.features.behaviour import add_behaviour
+from bda_pipeline.scoring.inference import prepare_inference
+from bda_pipeline.control.ingest_compute import baseline_stage
+from bda_pipeline.modeling.model import compare_models
+from bda_pipeline.ingestion.transform import build_curated_transactions, read_accounts, read_transactions
 
 # Files that embed (or hash) the model's generation timestamp, so they differ on
 # every run even when nothing changed. Reported separately as metadata.

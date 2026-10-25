@@ -39,7 +39,7 @@ from urllib.request import urlopen
 import boto3
 from botocore.config import Config
 # Shared constants: account, region, private data bucket, dashboard site bucket.
-from bda_pipeline.ingest_contract import ACCOUNT, BUCKET, REGION, SITE_BUCKET, valid_run
+from bda_pipeline.common.ingest_contract import ACCOUNT, BUCKET, REGION, SITE_BUCKET, valid_run
 
 
 def verify(run_id, profile, output):

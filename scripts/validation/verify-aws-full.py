@@ -35,7 +35,7 @@ import pandas as pd
 import pyarrow.dataset as ds
 
 # corridor_totals: groups rows by day/bank pair/currency pair -> count + USD sum.
-from bda_pipeline.analytics import corridor_totals
+from bda_pipeline.treasury.corridors import corridor_totals
 
 
 def verify(curated, reference, corridor_reference, expected_rows):

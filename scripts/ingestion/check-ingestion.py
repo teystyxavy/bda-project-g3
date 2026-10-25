@@ -46,7 +46,7 @@ import json
 from pathlib import Path
 import boto3
 from botocore.config import Config
-from bda_pipeline.ingest_contract import ACCOUNT, REGION, BUCKET, SITE_BUCKET
+from bda_pipeline.common.ingest_contract import ACCOUNT, REGION, BUCKET, SITE_BUCKET
 
 
 def main():

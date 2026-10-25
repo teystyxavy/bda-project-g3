@@ -2,7 +2,7 @@ import base64,copy,json
 from datetime import datetime,timedelta
 
 import pytest
-from bda_pipeline.streaming import MemoryStore,account_key,canonical,handle_records,process_event,transition
+from bda_pipeline.scoring.streaming import MemoryStore,account_key,canonical,handle_records,process_event,transition
 
 RUN='stream-smoke-20261006'
 

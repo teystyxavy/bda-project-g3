@@ -4,8 +4,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bda_pipeline.model import (choose_candidate, compare_models, digest, encode,
-                                explain_queue, fit_encoder, rank, SavedRanker)
+from bda_pipeline.common.integrity import digest
+from bda_pipeline.modeling.model import (
+    choose_candidate, compare_models, encode, explain_queue, fit_encoder, rank, SavedRanker
+)
 
 
 def sample():
@@ -59,7 +61,7 @@ def test_tiny_model_comparison_artifact_reload_and_explanations(tmp_path, monkey
         aml={name: dict(metrics=dict(positives=int(frame.iloc[start:end].is_laundering.sum())))
              for name, start, end in [('validation',80,160), ('test',160,240), ('tail',240,320)]})))
     output = tmp_path / 'model'
-    from bda_pipeline import model as module
+    from bda_pipeline.modeling import model as module
     original_read = module.read_split
     def guarded_read(dataset, name):
         if name in ['test', 'tail']:
@@ -89,7 +91,7 @@ def test_tiny_model_comparison_artifact_reload_and_explanations(tmp_path, monkey
     with pytest.raises(ValueError, match='hash'):
         SavedRanker(output)
     feature_path.write_text(original_features)
-    from bda_pipeline.model_dashboard import export_model_dashboard
+    from bda_pipeline.dashboards.model_dashboard import export_model_dashboard
     snapshot_data = json.loads(snapshot.read_text())
     snapshot_data['treasury'] = {'all': {'transactions': len(frame), 'volume_usd': 999}}
     snapshot_data['treasury_daily'] = [{'day': '2022-09-01', 'volume_usd': 999}]

@@ -48,8 +48,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'src'))
 from bda_pipeline.common.packaging import module_closure, package_sources, write_package_zip
-from bda_pipeline.ingest_contract import ACCOUNT, REGION, BUCKET, sha
-from bda_pipeline.inference import verify_artifacts
+from bda_pipeline.common.ingest_contract import ACCOUNT, REGION, BUCKET, sha
+from bda_pipeline.scoring.inference import verify_artifacts
 
 # Entry module of the control Lambda (Terraform handler
 # ``bda_pipeline.control.ingest_control.lambda_handler``); its imports are followed
@@ -137,7 +137,7 @@ def prepare(output, models, wheels, image_uri):
         'model_manifest_sha256': model_hash, 'image_uri': image_uri,
         'processing_role_arn': f'arn:aws:iam::{ACCOUNT}:role/is459-g3-ingest-processing',
         'distribution_id': 'EU1WB6XM4GKHQ', 'dashboard_url': 'https://d1n61tlw9pcrog.cloudfront.net/'}
-    # Stage versions feed the stage cache key (bda_pipeline.stage_cache): if
+    # Stage versions feed the stage cache key (bda_pipeline.control.stage_cache): if
     # the curate/score code, package, wheels or Glue runtime change, the
     # version changes and earlier cached Glue outputs are no longer reused.
     config['stage_versions'] = {

@@ -45,16 +45,16 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 # worker_ranker loads + verifies the frozen XGBoost model; score_frame scores a DataFrame.
-from bda_pipeline.inference import worker_ranker,score_frame
-from bda_pipeline.model import digest
-from bda_pipeline.orchestration import MANIFEST
+from bda_pipeline.scoring.inference import worker_ranker,score_frame
+from bda_pipeline.common.integrity import digest
+from bda_pipeline.control.orchestration import MANIFEST
 # Streaming helpers: INPUT_COLUMNS (raw scoring inputs without the rolling
 # features or labels), MemoryStore (in-memory stand-in for DynamoDB),
 # account_key (hashed sender id), canonical (sorted compact JSON),
 # process_event (validate -> update sender state -> score -> commit).
-from bda_pipeline.streaming import INPUT_COLUMNS,MemoryStore,account_key,canonical,process_event
+from bda_pipeline.scoring.streaming import INPUT_COLUMNS,MemoryStore,account_key,canonical,process_event
 # The five behaviour feature names, shared with the batch pipeline.
-from bda_pipeline.batch import FEATURES
+from bda_pipeline.features.behaviour import FEATURES
 
 
 def main():

@@ -13,16 +13,17 @@ from botocore.validate import validate_parameters
 import pandas as pd
 import pytest
 
-from bda_pipeline.acquisition import HEADER, acquire_dataset, prepare_inputs, validate_fx
-from bda_pipeline.ingest_contract import sha, canonical, paths, processing_request, validate_manifest, corridor_query
-from bda_pipeline.ingest_control import handle, BUCKET, SITE_BUCKET, release_lock
-from bda_pipeline.ingest_compute import baseline_stage, export_stage
-from bda_pipeline.analytics import add_behaviour
-from bda_pipeline.transform import read_transactions, read_accounts, build_curated_transactions
-from bda_pipeline.inference import SCORING_COLUMNS, prepare_inference
-from bda_pipeline.model import compare_models, SavedRanker, digest
-from bda_pipeline.sagemaker_training import train_channels
-from bda_pipeline.treasury_verification import expected_corridors
+from bda_pipeline.ingestion.acquisition import HEADER, acquire_dataset, prepare_inputs, validate_fx
+from bda_pipeline.common.ingest_contract import sha, canonical, paths, processing_request, validate_manifest, corridor_query
+from bda_pipeline.control.ingest_control import handle, BUCKET, SITE_BUCKET, release_lock
+from bda_pipeline.control.ingest_compute import baseline_stage, export_stage
+from bda_pipeline.features.behaviour import add_behaviour
+from bda_pipeline.ingestion.transform import read_transactions, read_accounts, build_curated_transactions
+from bda_pipeline.scoring.inference import SCORING_COLUMNS, prepare_inference
+from bda_pipeline.common.integrity import digest
+from bda_pipeline.modeling.model import compare_models, SavedRanker
+from bda_pipeline.modeling.sagemaker_training import train_channels
+from bda_pipeline.treasury.treasury_verification import expected_corridors
 
 ROOT = Path(__file__).resolve().parents[1]
 

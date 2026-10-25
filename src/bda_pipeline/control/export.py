@@ -133,7 +133,7 @@ class AmlSummary:
             # Tied-score average precision: walk score blocks from highest to
             # lowest. Each block contributes (its share of all positives) x
             # (cumulative precision after including the whole block). This
-            # matches analytics.ranking_metrics and does not depend on how
+            # matches common.metrics.ranking_metrics and does not depend on how
             # ties happen to be ordered.
             cumulative_rows = cumulative_hits = 0
             ap = 0.
@@ -222,7 +222,7 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
             # BQ2: partial corridor totals for this batch; summed at the end.
             aggregates.append(corridor_totals(frame))
             # BQ1: score = 50 (ACH) + 20 (above training P99) + 30 (velocity
-            # or fan-out); flagged when score >= 60. See analytics.score_baseline.
+            # or fan-out); flagged when score >= 60. See baseline.rules.score_baseline.
             scored = score_baseline(frame, thresholds)
             # Append to one Parquet file; the schema is taken from the first
             # batch so later batches must match it.

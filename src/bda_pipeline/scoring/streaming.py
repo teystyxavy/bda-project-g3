@@ -13,7 +13,7 @@ This module holds the cloud-independent logic so it can be tested locally:
 * ``validate_event``  strict schema / value checks for one replayed event.
 * ``transition``      update one sender's rolling history and compute the
                       same 5 behaviour features as the batch path
-                      (``analytics.add_behaviour``), i.e. counts over the
+                      (``features.behaviour.add_behaviour``), i.e. counts over the
                       half-open window [t - window, t), with transactions at
                       exactly the same timestamp excluded.
 * ``MemoryStore``     in-memory stand-in for DynamoDB used by local tests and
@@ -62,7 +62,7 @@ def account_key(bank, account):
     """Hashed identity of a (bank, account) pair.
 
     Leading zeros are stripped from the bank code (an all-zero code becomes
-    '0'), matching ``analytics.bank_key`` in the batch path, so '012' and '12'
+    '0'), matching ``features.behaviour.bank_key`` in the batch path, so '012' and '12'
     are the same bank. Hashing also avoids putting raw account numbers in
     DynamoDB keys and Kinesis partition keys.
     """

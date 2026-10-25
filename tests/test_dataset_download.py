@@ -10,8 +10,8 @@ import sys
 
 import pytest
 
-from bda_pipeline.acquisition import HEADER, acquire_dataset
-from bda_pipeline.dataset_options import SUBSETS, resolve_subset, selected_files
+from bda_pipeline.ingestion.acquisition import HEADER, acquire_dataset
+from bda_pipeline.ingestion.dataset_options import SUBSETS, resolve_subset, selected_files
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -140,7 +140,7 @@ def test_preview_needs_no_network_or_directory(tmp_path, monkeypatch, capsys, sc
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, 'argv', [script, *arguments, '--dry-run'])
     no_download = lambda *a, **k: pytest.fail('Download attempted')
-    monkeypatch.setattr('bda_pipeline.acquisition.acquire_dataset', no_download)
+    monkeypatch.setattr('bda_pipeline.ingestion.acquisition.acquire_dataset', no_download)
     if script == 'ingest':
         monkeypatch.setattr(cli, 'aws_clients', lambda *a: pytest.fail('AWS attempted'))
     else:
@@ -155,7 +155,7 @@ def test_preview_needs_no_network_or_directory(tmp_path, monkeypatch, capsys, sc
 def test_download_launcher_smoke_uses_real_acquisition_without_aws(tmp_path, monkeypatch, capsys):
     cli = load_script('ingest')
     download, _ = source_files(tmp_path, 'LI-Small')
-    monkeypatch.setattr('bda_pipeline.acquisition.acquire_dataset',
+    monkeypatch.setattr('bda_pipeline.ingestion.acquisition.acquire_dataset',
                         lambda *a, **kw: acquire_dataset(*a, downloader=download, **kw))
     monkeypatch.setattr(cli, 'aws_clients', lambda *a: pytest.fail('AWS attempted'))
     directory = tmp_path / 'dataset with spaces'
@@ -178,7 +178,7 @@ def test_invalid_selection_fails_before_aws_or_download(monkeypatch, arguments):
     cli = load_script('ingest')
     monkeypatch.setattr(sys, 'argv', ['ingest', *arguments])
     monkeypatch.setattr(cli, 'aws_clients', lambda *a: pytest.fail('AWS attempted'))
-    monkeypatch.setattr('bda_pipeline.acquisition.acquire_dataset', lambda *a, **k: pytest.fail('Download attempted'))
+    monkeypatch.setattr('bda_pipeline.ingestion.acquisition.acquire_dataset', lambda *a, **k: pytest.fail('Download attempted'))
     with pytest.raises(SystemExit) as error:
         cli.main()
     assert error.value.code == 2

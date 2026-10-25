@@ -17,7 +17,7 @@
 # Gating: nothing is created unless provision_orchestration = true, and the
 # execution input carries execution_approved so a paid run needs explicit
 # approval. Prepared/validated by scripts/aws/prepare-orchestration.py and
-# src/bda_pipeline/orchestration.py (which renders the same template).
+# src/bda_pipeline/control/orchestration.py (which renders the same template).
 
 locals {
   # count / schedule_count: on/off switches for the workflow and the scheduler.

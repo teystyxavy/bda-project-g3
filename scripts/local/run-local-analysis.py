@@ -44,8 +44,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from bda_pipeline.analytics import add_behaviour, bank_key, concentration, corridor_totals, evaluate_baseline
-from bda_pipeline.transform import TRANSACTION_COLUMNS, IDENTIFIER_DTYPES, build_curated_transactions, read_accounts
+from bda_pipeline.baseline.rules import evaluate_baseline
+from bda_pipeline.features.behaviour import add_behaviour, bank_key
+from bda_pipeline.treasury.corridors import concentration, corridor_totals
+from bda_pipeline.ingestion.transform import TRANSACTION_COLUMNS, IDENTIFIER_DTYPES, build_curated_transactions, read_accounts
 
 
 def main():

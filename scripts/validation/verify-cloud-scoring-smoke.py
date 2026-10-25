@@ -39,9 +39,9 @@ import pandas as pd
 import pyarrow.dataset as ds
 
 # worker_ranker: loads the frozen model after verifying its manifest hash.
-from bda_pipeline.inference import worker_ranker
+from bda_pipeline.scoring.inference import worker_ranker
 # digest: SHA-256 of a file.
-from bda_pipeline.model import digest
+from bda_pipeline.common.integrity import digest
 
 
 def verify(curated, package, run_report, forensic=False):

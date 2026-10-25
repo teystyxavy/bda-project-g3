@@ -7,9 +7,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from bda_pipeline.acquisition import HEADER
-from bda_pipeline.cloud_acquisition import acquire, request, kaggle_environment
-from bda_pipeline.ingest_contract import CONFIG_KEY, validate_manifest, sha
+from bda_pipeline.ingestion.acquisition import HEADER
+from bda_pipeline.ingestion.cloud_acquisition import acquire, request, kaggle_environment
+from bda_pipeline.common.ingest_contract import CONFIG_KEY, validate_manifest, sha
 
 
 class S3:
@@ -77,7 +77,7 @@ def test_credentials_restored_and_bad_fx_never_commits_manifest(tmp_path, monkey
     assert os.environ['KAGGLE_API_TOKEN'] == 'prior-value'
     s3 = S3(); root = tmp_path / 'failed'; root.mkdir()
     def failed_prepare(*args, **kwargs): raise ValueError('Missing historical FX')
-    monkeypatch.setattr('bda_pipeline.cloud_acquisition.prepare_inputs', failed_prepare)
+    monkeypatch.setattr('bda_pipeline.ingestion.cloud_acquisition.prepare_inputs', failed_prepare)
     with pytest.raises(ValueError, match='Missing historical FX'):
         acquire({'run_id': 'cloud-failed'}, {'s3': s3}, root, downloader=fixture(tmp_path))
     assert not any(key.endswith('manifest.json') for key in s3.data)

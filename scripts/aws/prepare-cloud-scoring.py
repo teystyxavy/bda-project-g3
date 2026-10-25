@@ -5,7 +5,7 @@ Where this sits in the pipeline
 BQ1 risk scores are produced in AWS by a Glue job that loads a *frozen*
 (already trained, never retrained in this step) XGBoost model. Before that
 model can be deployed, this script packages it locally with
-``bda_pipeline.inference.prepare_inference``:
+``bda_pipeline.scoring.inference.prepare_inference``:
 
 * copies the selected model file and its JSON companions
   (``comparison.json``, ``features.json``, ``selection.json``) into
@@ -32,7 +32,7 @@ import argparse
 import json
 from pathlib import Path
 
-from bda_pipeline.inference import prepare_inference
+from bda_pipeline.scoring.inference import prepare_inference
 
 
 if __name__ == '__main__':

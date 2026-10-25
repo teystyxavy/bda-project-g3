@@ -33,7 +33,7 @@ Sub-commands
 * ``unlock --run-id ID`` - invoke the ``is459-g3-ingest-control`` Lambda with
   ``op=recover`` to release ``pipeline/lock.json`` after a failed run.
 
-Key S3 objects (bucket ``BUCKET`` from ``bda_pipeline.ingest_contract``)
+Key S3 objects (bucket ``BUCKET`` from ``bda_pipeline.common.ingest_contract``)
 --------------------------------------------------------------------------
 * ``pipeline/deployment.json`` (``CONFIG_KEY``) - deployed configuration; its
   SHA-256 is stored in each manifest so a run is tied to one deployment.
@@ -54,9 +54,9 @@ import secrets
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from bda_pipeline.dataset_options import add_selection_arguments, resolve_subset, selected_files, selection_options
+from bda_pipeline.ingestion.dataset_options import add_selection_arguments, resolve_subset, selected_files, selection_options
 
-from bda_pipeline.ingest_contract import (
+from bda_pipeline.common.ingest_contract import (
     ACCOUNT, BUCKET, REGION, MACHINE, CONFIG_KEY, canonical, sha, paths, valid_run, validate_manifest,
 )
 
@@ -152,7 +152,7 @@ def prepare(args, config):
             subset so the chronological train/validation/test splits are valid),
             or any validation failure from the helpers.
     """
-    from bda_pipeline.acquisition import acquire_dataset, prepare_inputs
+    from bda_pipeline.ingestion.acquisition import acquire_dataset, prepare_inputs
     if args.train and args.rows:
         raise ValueError('Training needs the full subset and chronological splits; omit --rows')
     record = acquire_dataset(args.dataset_directory, version=args.dataset_version, refresh=args.refresh)
@@ -439,7 +439,7 @@ def main():
                               'would_start_aws_workflow': args.action == 'run'}, indent=2))
             return
         if args.action == 'download':
-            from bda_pipeline.acquisition import acquire_dataset
+            from bda_pipeline.ingestion.acquisition import acquire_dataset
             record = acquire_dataset(args.dataset_directory, args.subset, args.dataset_version, args.refresh,
                                      include_patterns=args.include_patterns, files=args.files)
             print(json.dumps({'status': 'downloaded-not-submitted', 'directory': str(args.dataset_directory.resolve()),

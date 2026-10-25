@@ -140,6 +140,28 @@ Use the [script guide](scripts/README.md) to find commands and the
 [infrastructure guide](infra/README.md) to find stacks. Run commands from the
 repository root; each script category has its own directory.
 
+### Package layout
+
+`src/bda_pipeline/` is grouped by pipeline stage. A subpackage imports only
+from itself and earlier stages in this order, which `tests/test_packaging.py`
+enforces:
+
+| Subpackage | Stage | Main modules |
+|---|---|---|
+| `common/` | Shared helpers | `ingest_contract` (S3 layout, run manifest), `integrity` (`digest`), `metrics` (`ranking_metrics`), `packaging` (AWS package builder) |
+| `ingestion/` | 1. Acquire and curate | `acquisition`, `cloud_acquisition` (acquisition Lambda), `dataset_options`, `fx`, `transform` |
+| `features/` | 2. Behaviour features | `behaviour` (`FEATURES`, `add_behaviour`) |
+| `baseline/` | 3a. Rule baseline (BQ1) | `rules` (`score_baseline`), `batch` (column contracts, periods, thresholds) |
+| `treasury/` | BQ2 corridors | `corridors`, `treasury_verification` |
+| `modeling/` | 3b. XGBoost training | `model` (`compare_models`, `SavedRanker`), `sagemaker_training` |
+| `scoring/` | 4. Batch and streaming inference | `inference` (Glue), `cloud_scores`, `streaming` (Lambda) |
+| `dashboards/` | 5. Dashboard data and Lambdas | `dashboard`, `dashboard_exploration`, `model_dashboard`, `dashboard_api`, `dashboard_sessions`, `dashboard_status` |
+| `control/` | Orchestration | `ingest_control` (control Lambda), `stage_cache`, `orchestration`, `ingest_compute` (SageMaker stages), `export`, `release` |
+
+Build scripts select package files through `common/packaging.py`, which
+includes subfolders and refuses to build a package that is missing an
+imported module.
+
 ## Develop and validate locally
 
 ```powershell
@@ -147,7 +169,8 @@ python -m pip install -e ".[dev,ml,ingest]"
 python -m pytest tests --ignore=tests/spark -q
 ```
 
-The latest non-Spark suite passed **162 tests**, with one skipped. Spark parity
+The latest non-Spark suite passed **230 tests**, with three skipped. On macOS,
+XGBoost also needs the OpenMP runtime (`brew install libomp`). Spark parity
 runs separately in the Glue container through `scripts/validation/test-glue-local.ps1` and
 `scripts/validation/test-cloud-scoring-local.ps1`; see the
 [batch runbook](planning/runbooks/aws-batch-runbook.md) for fixtures and prerequisites.

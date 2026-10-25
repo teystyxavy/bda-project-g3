@@ -5,9 +5,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bda_pipeline import cloud_scores as module
-from bda_pipeline.inference import SCORING_COLUMNS
-from bda_pipeline.model import digest
+from bda_pipeline.scoring import cloud_scores as module
+from bda_pipeline.scoring.inference import SCORING_COLUMNS
+from bda_pipeline.common.integrity import digest
 
 
 @pytest.fixture

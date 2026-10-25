@@ -34,7 +34,7 @@ from pathlib import Path
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from bda_pipeline.ingest_contract import ACCOUNT, BUCKET, REGION, paths, valid_run
+from bda_pipeline.common.ingest_contract import ACCOUNT, BUCKET, REGION, paths, valid_run
 
 
 def inspect(run_id, profile, output):

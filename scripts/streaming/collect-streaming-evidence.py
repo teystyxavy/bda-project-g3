@@ -48,7 +48,7 @@ from boto3.s3.transfer import TransferConfig
 
 # account_key = SHA-256 of [bank without leading zeros, account]; the same
 # hashed sender key the Lambda uses in its DynamoDB partition keys.
-from bda_pipeline.streaming import account_key
+from bda_pipeline.scoring.streaming import account_key
 
 # Fixed identifiers of the single reviewed streaming run. They are hard-coded
 # on purpose: this script must only ever inspect that one approved run.

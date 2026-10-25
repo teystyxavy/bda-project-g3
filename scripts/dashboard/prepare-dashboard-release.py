@@ -3,7 +3,7 @@
 Where this sits in the pipeline
 -------------------------------
 The final gate before the dashboard is published to the S3 site bucket and
-CloudFront. ``bda_pipeline.release.prepare_release`` copies exactly the four
+CloudFront. ``bda_pipeline.control.release.prepare_release`` copies exactly the four
 runtime files (``index.html``, ``dashboard.css``, ``dashboard.js``,
 ``dashboard.json``) from a built dashboard folder into a fresh release folder,
 and refuses to continue if:
@@ -25,7 +25,7 @@ Usage
 import argparse
 from pathlib import Path
 
-from bda_pipeline.release import prepare_release
+from bda_pipeline.control.release import prepare_release
 
 
 if __name__ == '__main__':

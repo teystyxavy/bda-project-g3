@@ -29,7 +29,7 @@ import shutil
 from pathlib import Path
 
 from bda_pipeline.common.packaging import copy_package, package_sources
-from bda_pipeline.model import digest
+from bda_pipeline.common.integrity import digest
 
 
 def main():
@@ -50,7 +50,7 @@ def main():
     # Every module, subfolders included; caches and compatibility stubs excluded.
     copy_package(args.output / 'bda_pipeline', package_sources())
     shutil.copytree(root / 'dashboard', args.output / 'dashboard')
-    # digest() is bda_pipeline.model's SHA-256 helper.
+    # digest() is bda_pipeline.common.integrity's SHA-256 helper.
     files = {str(path.relative_to(args.output)): digest(path)
              for path in sorted(args.output.rglob('*')) if path.is_file()}
     (args.output / 'build-context.json').write_text(json.dumps(files, indent=2), encoding='utf-8')

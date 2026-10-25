@@ -16,7 +16,7 @@ Two ways it is used:
    ``scripts/dashboard/build-dashboard.py --scored ... --corridors ...
    --output ...`` on Parquet files already on disk.
 2. The small helpers (``records``, ``ranked``, ``treasury_view``) are reused
-   by ``batch.py`` (full-population streaming export), ``model_dashboard.py``
+   by ``control/export.py`` (full-population streaming export), ``model_dashboard.py``
    and ``ingest_compute.py`` in the AWS SageMaker Processing path, so every
    route produces the same JSON shape (``schema_version=1``).
 
@@ -58,7 +58,7 @@ def diagnose_rules(scored):
     """Compare rule variants on the validation window only (an ablation study).
 
     Args:
-        scored: output of ``analytics.score_baseline`` for the whole cohort,
+        scored: output of ``baseline.rules.score_baseline`` for the whole cohort,
             including the label column and the behaviour features.
 
     Returns:
@@ -166,8 +166,8 @@ def build_snapshot(scored, corridors):
     """Assemble the full ``dashboard.json`` structure from in-memory tables.
 
     Args:
-        scored: scored transactions (from ``analytics.score_baseline``).
-        corridors: daily corridor totals (from ``analytics.corridor_totals``).
+        scored: scored transactions (from ``baseline.rules.score_baseline``).
+        corridors: daily corridor totals (from ``treasury.corridors.corridor_totals``).
 
     Returns:
         dict with ``aml`` (validation/test/tail views), ``treasury`` (an
@@ -186,7 +186,7 @@ def build_snapshot(scored, corridors):
     if corridors[['volume_usd', 'transaction_count']].isna().any().any():
         raise ValueError('Missing corridor measurements')
     aml = {}
-    # Same half-open chronological windows as batch.PERIODS.
+    # Same half-open chronological windows as baseline.batch.PERIODS.
     for name, start, end in [('validation','2022-09-07','2022-09-09'), ('test','2022-09-09','2022-09-11'),
                              ('tail','2022-09-11','2022-09-19')]:
         aml[name] = aml_view(scored.loc[scored.timestamp.ge(start) & scored.timestamp.lt(end)])

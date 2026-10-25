@@ -37,8 +37,8 @@ Usage::
 import argparse,json,time
 from pathlib import Path
 import pandas as pd
-from bda_pipeline.model import digest
-from bda_pipeline.streaming import account_key,canonical,INPUT_COLUMNS,validate_event
+from bda_pipeline.common.integrity import digest
+from bda_pipeline.scoring.streaming import account_key,canonical,INPUT_COLUMNS,validate_event
 
 
 def main():

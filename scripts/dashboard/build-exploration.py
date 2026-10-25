@@ -14,9 +14,10 @@ from pathlib import Path
 import pandas as pd
 import pyarrow.dataset as ds
 
-from bda_pipeline.cloud_scores import load_verified_scores
-from bda_pipeline.dashboard_exploration import enrich_snapshot
-from bda_pipeline.model import SavedRanker, digest
+from bda_pipeline.scoring.cloud_scores import load_verified_scores
+from bda_pipeline.dashboards.dashboard_exploration import enrich_snapshot
+from bda_pipeline.common.integrity import digest
+from bda_pipeline.modeling.model import SavedRanker
 
 
 def main():

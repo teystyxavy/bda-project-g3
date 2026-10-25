@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from bda_pipeline.treasury_verification import compare_corridors, expected_corridors, same_query
+from bda_pipeline.treasury.treasury_verification import compare_corridors, expected_corridors, same_query
 
 
 def test_athena_statement_delimiter_normalization_is_narrow():

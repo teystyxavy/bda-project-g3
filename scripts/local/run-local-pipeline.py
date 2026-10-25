@@ -6,7 +6,7 @@ The cloud pipeline's "curate" step is the Glue PySpark job
 ``jobs/curate_transactions.py``: it reads the raw Kaggle CSVs from S3, joins
 account metadata and FX rates, converts amounts to USD and writes
 date-partitioned Parquet to the curated zone. This script runs the *pandas
-equivalent* of that step (``bda_pipeline.transform``) on a small sample
+equivalent* of that step (``bda_pipeline.ingestion.transform``) on a small sample
 (default the first 1,000 rows) on a laptop - a quick "smoke test" that the
 transformation logic and inputs work before paying for Glue.
 
@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from bda_pipeline.transform import (
+from bda_pipeline.ingestion.transform import (
     build_curated_transactions,
     read_accounts,
     read_transactions,
@@ -84,7 +84,7 @@ def main() -> None:
     """Read the sample, curate it and write partitioned Parquet.
 
     Raises:
-        ValueError: (from ``bda_pipeline.transform``) on schema, validation or
+        ValueError: (from ``bda_pipeline.ingestion.transform``) on schema, validation or
             FX-coverage problems - no partial output is written in that case.
     """
     args = parse_args()

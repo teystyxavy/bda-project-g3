@@ -7,7 +7,7 @@
 #   replay producer (scripts/streaming/replay-streaming-demo.py)
 #     -> Kinesis Data Stream (1 shard)
 #     -> Lambda consumer (container image built from streaming/Dockerfile,
-#        code in streaming/handler.py + src/bda_pipeline/streaming.py)
+#        code in streaming/handler.py + src/bda_pipeline/scoring/streaming.py)
 #     -> DynamoDB table (per-key state + per-record results, de-duplicated)
 #     -> S3 audit files under s3://<pipeline bucket>/streaming/<run_id>/audit/
 # Records the consumer cannot process are sent by the event-source mapping to
@@ -188,7 +188,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "failures" {
 }
 
 # Turns every JSON log line containing "stream_record_failed": 1 (printed by
-# src/bda_pipeline/streaming.py when a record cannot be processed) into a +1
+# src/bda_pipeline/scoring/streaming.py when a record cannot be processed) into a +1
 # on the custom metric IS459/Streaming/<run_id> RecordFailures.
 resource "aws_cloudwatch_log_metric_filter" "record_failures" {
   count          = local.count

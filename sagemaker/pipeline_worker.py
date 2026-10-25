@@ -9,7 +9,7 @@ entrypoint with ``python /app/pipeline_worker.py <stage>``:
 
 * ``baseline``: ``ingest_compute.baseline_stage`` re-verifies the curated
   Parquet against the raw CSVs and FX rates, then scores the full population
-  with the rule baseline (``batch.export_verified_batch``).
+  with the rule baseline (``control.export.export_verified_batch``).
 * ``export``: ``ingest_compute.export_stage`` verifies the Glue model scores
   and the Athena corridor result, builds ``dashboard.json`` and prepares the
   release (``release.prepare_release``).

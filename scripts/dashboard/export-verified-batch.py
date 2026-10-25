@@ -8,7 +8,7 @@ the *whole* population (about 5.08 million HI-Small transactions) is scored
 with the rule-based BQ1 baseline and aggregated into BQ2 corridors. In AWS this
 runs inside the SageMaker "baseline" processing job
 (``ingest_compute.baseline_stage``). This script runs the same function,
-``bda_pipeline.batch.export_verified_batch``, locally on a downloaded copy of
+``bda_pipeline.control.export.export_verified_batch``, locally on a downloaded copy of
 the verified cloud data, which also produces extra CSV reports.
 
 Inputs
@@ -28,7 +28,7 @@ Usage
 """
 import argparse
 from pathlib import Path
-from bda_pipeline.batch import export_verified_batch
+from bda_pipeline.control.export import export_verified_batch
 
 
 def main():

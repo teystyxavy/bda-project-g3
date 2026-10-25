@@ -6,7 +6,7 @@ BQ2 (corridor volume and concentration in USD) needs every transaction amount
 converted to US dollars, but the Kaggle IBM AML dataset has no exchange rates.
 This stand-alone CLI scans a transaction CSV to find which currencies and which
 calendar dates occur, then downloads one historical daily USD rate per
-(date, currency) using ``bda_pipeline.fx`` (Frankfurter/ECB reference rates,
+(date, currency) using ``bda_pipeline.ingestion.fx`` (Frankfurter/ECB reference rates,
 with Yahoo Finance daily closes for BTC, RUB and SAR, which Frankfurter lacks
 for September 2022).
 
@@ -34,7 +34,7 @@ import argparse
 from datetime import timedelta
 from pathlib import Path
 
-from bda_pipeline.fx import build_daily_rates, discover_requirements, write_rates_csv
+from bda_pipeline.ingestion.fx import build_daily_rates, discover_requirements, write_rates_csv
 
 
 # Repository root (this file is scripts/ingestion/fetch-fx-rates.py), so the

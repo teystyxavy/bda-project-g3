@@ -39,14 +39,14 @@ import json
 import shutil
 from pathlib import Path
 import pandas as pd
-from bda_pipeline.acquisition import prepare_inputs
-from bda_pipeline.analytics import add_behaviour
-from bda_pipeline.ingest_contract import sha
-from bda_pipeline.ingest_compute import baseline_stage
-from bda_pipeline.inference import SCORING_COLUMNS
-from bda_pipeline.model import SavedRanker
-from bda_pipeline.transform import read_transactions, read_accounts, build_curated_transactions
-from bda_pipeline.treasury_verification import expected_corridors
+from bda_pipeline.ingestion.acquisition import prepare_inputs
+from bda_pipeline.features.behaviour import add_behaviour
+from bda_pipeline.common.ingest_contract import sha
+from bda_pipeline.control.ingest_compute import baseline_stage
+from bda_pipeline.scoring.inference import SCORING_COLUMNS
+from bda_pipeline.modeling.model import SavedRanker
+from bda_pipeline.ingestion.transform import read_transactions, read_accounts, build_curated_transactions
+from bda_pipeline.treasury.treasury_verification import expected_corridors
 
 
 def main():

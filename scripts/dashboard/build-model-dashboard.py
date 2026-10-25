@@ -6,7 +6,7 @@ BQ1 has two ranked review queues: the transparent rule-based *baseline* and
 the XGBoost *model*. This script takes an existing full-population baseline
 dashboard (``dashboard.json`` from ``export-verified-batch.py``) and adds the
 model's queue and metrics by re-running inference with the *frozen* model
-(``bda_pipeline.model_dashboard.export_model_dashboard``). It never retrains
+(``bda_pipeline.dashboards.model_dashboard.export_model_dashboard``). It never retrains
 or promotes a model.
 
 Safety checks done by the library: the scored Parquet's hash must equal the
@@ -34,7 +34,7 @@ Usage
 import argparse
 from pathlib import Path
 
-from bda_pipeline.model_dashboard import export_model_dashboard
+from bda_pipeline.dashboards.model_dashboard import export_model_dashboard
 
 
 if __name__ == '__main__':

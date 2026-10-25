@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from bda_pipeline.fx import build_daily_rates, discover_requirements
+from bda_pipeline.ingestion.fx import build_daily_rates, discover_requirements
 
 
 def test_discover_requirements_reads_currency_names_and_dates(tmp_path):

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from bda_pipeline.release import ASSETS, prepare_release
+from bda_pipeline.control.release import ASSETS, prepare_release
 
 
 def fixture(tmp_path):

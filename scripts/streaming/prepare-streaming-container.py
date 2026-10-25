@@ -6,7 +6,7 @@ Assembles the Docker build context for the streaming Lambda container image
 (the consumer in Kinesis -> Lambda -> DynamoDB). The image must contain the
 *frozen* XGBoost model release, so this script first verifies the model
 artifacts against the trusted manifest hash (``MANIFEST`` in
-``bda_pipeline.orchestration``) before copying anything.
+``bda_pipeline.control.orchestration``) before copying anything.
 
 Resulting ``--output`` folder (fresh directory)::
 
@@ -27,9 +27,9 @@ Usage::
 import argparse,json,shutil
 from pathlib import Path
 from bda_pipeline.common.packaging import copy_package,package_sources
-from bda_pipeline.inference import verify_artifacts
-from bda_pipeline.model import digest
-from bda_pipeline.orchestration import MANIFEST
+from bda_pipeline.scoring.inference import verify_artifacts
+from bda_pipeline.common.integrity import digest
+from bda_pipeline.control.orchestration import MANIFEST
 
 
 def main():

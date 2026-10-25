@@ -167,7 +167,7 @@ Source: dashboard/index.html; planning/runbooks/ingestion-runbook.md; planning/a
 
 These are the five rolling fields in the current feature contract. Complete sender outgoing history is needed. Incoming/outgoing balance and bank-change proposal features should not be presented as current model inputs.
 
-Source: src/bda_pipeline/analytics.py; planning/archive/reviews/local-model-validation.md
+Source: src/bda_pipeline/features/behaviour.py; planning/archive/reviews/local-model-validation.md
 
 ## 16. Rule baseline
 
@@ -178,7 +178,7 @@ Source: src/bda_pipeline/analytics.py; planning/archive/reviews/local-model-vali
 
 Rules are a benchmark, not universal AML facts. Initial behaviour weights were hypotheses. Self-transfer and currency mismatch remain possible model features but do not add rule points.
 
-Source: dashboard/index.html; src/bda_pipeline/analytics.py
+Source: dashboard/index.html; src/bda_pipeline/baseline/rules.py
 
 ## 17. Frozen XGBoost model
 

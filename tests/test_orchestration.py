@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from bda_pipeline.orchestration import ROWS, definition_values, render_definition
+from bda_pipeline.control.orchestration import ROWS, definition_values, render_definition
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN = 'full-orchestrated-20261006'

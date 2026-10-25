@@ -116,7 +116,7 @@ def verify_curated(curated, raw, manifest):
     10. **Behaviour features** - for a deterministic ~1% sample of senders
         (chosen by hashing bank+account, *not* by label, so the sample is
         unbiased), the full history is collected and the rolling-window
-        features are recomputed with ``analytics.add_behaviour``; they must
+        features are recomputed with ``features.behaviour.add_behaviour``; they must
         match Glue's values exactly.
 
     Args:
@@ -226,7 +226,7 @@ def baseline_stage(inputs, output, assets):
 
     * ``proof.json`` - result of ``verify_curated`` (the control Lambda checks
       ``status == 'passed'`` before continuing);
-    * ``baseline/`` - from ``batch.export_verified_batch``: the rule-based BQ1
+    * ``baseline/`` - from ``control.export.export_verified_batch``: the rule-based BQ1
       risk scores (``bq1_scored.parquet``) and a dashboard snapshot;
     * ``manifest/dashboard.json`` - copy of that snapshot;
     * ``manifest/input.json`` - provenance for the optional SageMaker training
@@ -354,7 +354,7 @@ def export_stage(inputs, output, assets):
        counts, USD volumes, shares and HHI in pandas
        (``treasury_verification.expected_corridors``) and compare with the
        single Athena CSV (``compare_corridors``).
-    3. For each evaluation period in ``batch.PERIODS`` (validation, test,
+    3. For each evaluation period in ``baseline.batch.PERIODS`` (validation, test,
        tail): ranking metrics (precision/recall/lift at K=100, average
        precision) and the top-100 explained review queue for the dashboard.
     4. Add model, pipeline and provenance metadata to the snapshot.

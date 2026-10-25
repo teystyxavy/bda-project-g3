@@ -44,8 +44,8 @@ from pathlib import Path
 import boto3
 import pandas as pd
 from botocore.config import Config
-from bda_pipeline.acquisition import validate_fx
-from bda_pipeline.ingest_contract import ACCOUNT, BUCKET, REGION, valid_run
+from bda_pipeline.ingestion.acquisition import validate_fx
+from bda_pipeline.common.ingest_contract import ACCOUNT, BUCKET, REGION, valid_run
 
 
 def inspect(run_id, output, profile):

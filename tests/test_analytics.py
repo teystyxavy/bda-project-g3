@@ -1,6 +1,9 @@
 import pandas as pd
 import pytest
-from bda_pipeline.analytics import add_behaviour, score_baseline, ranking_metrics, concentration, corridor_totals
+from bda_pipeline.baseline.rules import score_baseline
+from bda_pipeline.common.metrics import ranking_metrics
+from bda_pipeline.features.behaviour import add_behaviour
+from bda_pipeline.treasury.corridors import concentration, corridor_totals
 
 
 def test_windows_exclude_peers_and_future_include_boundary_and_separate_banks():

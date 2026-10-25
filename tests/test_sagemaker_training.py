@@ -7,8 +7,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from bda_pipeline.model import SavedRanker, digest
-from bda_pipeline.sagemaker_training import (
+from bda_pipeline.common.integrity import digest
+from bda_pipeline.modeling.model import SavedRanker
+from bda_pipeline.modeling.sagemaker_training import (
     REPOSITORY, build_request, prepare_bundle, train_channels, validate_bundle,
 )
 from test_model import sample

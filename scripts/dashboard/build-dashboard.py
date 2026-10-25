@@ -30,7 +30,7 @@ Usage
 import argparse
 from pathlib import Path
 import shutil
-from bda_pipeline.dashboard import export_dashboard
+from bda_pipeline.dashboards.dashboard import export_dashboard
 
 
 def main():

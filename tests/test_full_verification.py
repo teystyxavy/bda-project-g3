@@ -4,7 +4,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from bda_pipeline.analytics import add_behaviour, corridor_totals
+from bda_pipeline.features.behaviour import add_behaviour
+from bda_pipeline.treasury.corridors import corridor_totals
 
 SPEC = importlib.util.spec_from_file_location("verify_full", Path(__file__).resolve().parents[1] / "scripts/validation/verify-aws-full.py")
 MODULE = importlib.util.module_from_spec(SPEC)

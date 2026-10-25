@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pandas as pd
 # Local behaviour-feature reference (trailing 1h/24h/7d counts per sender).
-from bda_pipeline.analytics import add_behaviour
+from bda_pipeline.features.behaviour import add_behaviour
 
 
 def verify(expected_path, curated_path):

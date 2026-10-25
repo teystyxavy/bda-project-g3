@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from bda_pipeline.transform import (
+from bda_pipeline.ingestion.transform import (
     build_curated_transactions,
     read_accounts,
     read_transactions,

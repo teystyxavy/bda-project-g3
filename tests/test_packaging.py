@@ -1,4 +1,5 @@
 """Every AWS package ships the modules its entry points and imports need."""
+import ast
 import hashlib
 import importlib.util
 import json
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from bda_pipeline.common.packaging import (PACKAGE_ROOT, check_closure, module_closure, module_file,
+from bda_pipeline.common.packaging import (PACKAGE_ROOT, check_closure, is_moved_stub, module_closure, module_file,
                                            package_sources, required_modules, write_package_zip)
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -215,3 +216,42 @@ def test_subpackages_only_import_earlier_pipeline_stages():
             if len(parts) > 1 and parts[1] in LAYERS and LAYERS.index(parts[1]) > own:
                 violations.append(f'{relative.as_posix()} -> {module}')
     assert not violations
+
+
+# Top-level module paths retired by the stage reorganisation.
+RETIRED = {'acquisition', 'analytics', 'batch', 'cloud_acquisition', 'cloud_scores', 'dashboard',
+           'dashboard_api', 'dashboard_exploration', 'dashboard_sessions', 'dashboard_status',
+           'dataset_options', 'fx', 'inference', 'ingest_compute', 'ingest_contract', 'ingest_control',
+           'model', 'model_dashboard', 'orchestration', 'release', 'sagemaker_training', 'stage_cache',
+           'streaming', 'transform', 'treasury_verification'}
+CODE_DIRS = ['src', 'scripts', 'tests', 'jobs', 'sagemaker', 'streaming', 'infra', 'cloud-ingestion']
+
+
+def retired_references(path):
+    """Imports and dotted string targets (e.g. monkeypatch paths) that use a retired module path."""
+    tree = ast.parse(path.read_text())
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            names = node.module.split('.')
+            if names[0] == 'bda_pipeline' and (names[1:2] and names[1] in RETIRED
+                                               or len(names) == 1 and {a.name for a in node.names} & RETIRED):
+                found.append(f'{path.relative_to(ROOT)}:{node.lineno}')
+        elif isinstance(node, ast.Import):
+            found += [f'{path.relative_to(ROOT)}:{node.lineno}' for a in node.names
+                      if a.name.split('.')[:1] == ['bda_pipeline'] and a.name.split('.')[1:2] and a.name.split('.')[1] in RETIRED]
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            match = re.fullmatch(r'bda_pipeline\.(\w+)(\.\w+)*', node.value)
+            if match and match.group(1) in RETIRED:
+                found.append(f'{path.relative_to(ROOT)}:{node.lineno}')
+    return found
+
+
+def test_no_code_uses_retired_module_paths():
+    found = []
+    for directory in CODE_DIRS:
+        for path in sorted((ROOT / directory).rglob('*.py')):
+            if '__pycache__' in path.parts or path.parent == PACKAGE_ROOT and is_moved_stub(path):
+                continue
+            found += retired_references(path)
+    assert not found

@@ -46,7 +46,7 @@ from botocore.config import Config
 
 # Shared constants (AWS account, region, private data bucket) and the run-ID
 # validator, so this script cannot drift from the deployed naming contract.
-from bda_pipeline.ingest_contract import ACCOUNT, BUCKET, REGION, valid_run
+from bda_pipeline.common.ingest_contract import ACCOUNT, BUCKET, REGION, valid_run
 
 
 def benchmark(run_id, profile, output, previous=None):

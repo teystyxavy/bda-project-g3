@@ -6,7 +6,7 @@ A fast local iteration tool for BQ1. ``run-local-analysis.py`` spends most of
 its time reading all ~5 million transactions and computing sender behaviour
 features. Once a cohort with those features is saved as Parquet, this script
 re-runs only the rule-based baseline evaluation
-(``bda_pipeline.analytics.evaluate_baseline``) on it, so rule changes can be
+(``bda_pipeline.baseline.rules.evaluate_baseline``) on it, so rule changes can be
 tested in seconds.
 
 Evaluation design (chronological, like real use)
@@ -32,7 +32,7 @@ import argparse
 import json
 from pathlib import Path
 import pandas as pd
-from bda_pipeline.analytics import evaluate_baseline
+from bda_pipeline.baseline.rules import evaluate_baseline
 
 
 def main():

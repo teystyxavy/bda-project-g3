@@ -6,7 +6,7 @@ Part of the *orchestration* stack (``infra/orchestration``): a Step Functions
 state machine that runs the full-data frozen-model Glue scoring job and the
 Athena corridor SQL (BQ2) over the curated Parquet. Before anything is
 deployed, this script renders the Amazon States Language (ASL) definition with
-``bda_pipeline.orchestration.render_definition`` (which fills the template with
+``bda_pipeline.control.orchestration.render_definition`` (which fills the template with
 the run's S3 paths, Glue job and SQL) so a reviewer can read exactly what the
 state machine will do.
 
@@ -29,7 +29,7 @@ import argparse
 import json
 from pathlib import Path
 
-from bda_pipeline.orchestration import ROWS, render_definition
+from bda_pipeline.control.orchestration import ROWS, render_definition
 
 
 def main():

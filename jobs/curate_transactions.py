@@ -107,7 +107,7 @@ def normalized_bank(column):
 
     The transactions file and the accounts file do not always zero-pad bank
     IDs the same way, so both sides are normalised before joining or
-    grouping. Same rule as ``bank_key`` in ``bda_pipeline/analytics.py``.
+    grouping. Same rule as ``bank_key`` in ``bda_pipeline/features/behaviour.py``.
     """
     stripped = functions.regexp_replace(column, "^0+", "")
     return functions.when(stripped == "", "0").otherwise(stripped)
@@ -172,7 +172,7 @@ def add_behaviour(frame):
     * ``distinct_counterparties_24h`` / ``_7d``: distinct receiving
       (bank, account) pairs in the last 24 hours / 7 days.
 
-    Matches ``analytics.add_behaviour`` (pandas) and ``streaming.transition``
+    Matches ``features.behaviour.add_behaviour`` (pandas) and ``streaming.transition``
     so batch, local and streaming features are identical.
     """
     result = frame.withColumn("_sender_bank", normalized_bank(functions.col("from_bank")))

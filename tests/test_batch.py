@@ -4,9 +4,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from bda_pipeline.analytics import evaluate_baseline
-from bda_pipeline.batch import AmlSummary, export_verified_batch
-from bda_pipeline.dashboard import aml_view
+from bda_pipeline.baseline.rules import evaluate_baseline
+from bda_pipeline.control.export import AmlSummary, export_verified_batch
+from bda_pipeline.dashboards.dashboard import aml_view
 
 
 def fixture():

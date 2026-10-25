@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip('pyspark')
 pytest.importorskip('xgboost')
 from pyspark.sql import SparkSession
-from bda_pipeline.inference import score_frame, worker_ranker
+from bda_pipeline.scoring.inference import score_frame, worker_ranker
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = Path(os.environ.get('CLOUD_SCORING_PACKAGE', ROOT / 'output/cloud-scoring-verified-20261005'))

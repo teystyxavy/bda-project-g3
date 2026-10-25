@@ -1,13 +1,13 @@
 import numpy as np
 import pytest
 
-from bda_pipeline.inference import SCORING_COLUMNS, resolve_model_directory, score_frame, verify_artifacts
+from bda_pipeline.scoring.inference import SCORING_COLUMNS, resolve_model_directory, score_frame, verify_artifacts
 
 
 def test_label_free_scoring_and_fail_closed_inputs():
     import pandas as pd
-    from bda_pipeline.batch import FEATURES
-    from bda_pipeline.model import CATEGORICAL
+    from bda_pipeline.features.behaviour import FEATURES
+    from bda_pipeline.modeling.model import CATEGORICAL
     frame = pd.DataFrame(dict(transaction_id=['HI-Small:0'], source_row_index=[0],
         timestamp=pd.to_datetime(['2022-09-01']), from_bank=['001'], from_account=['000A'],
         to_bank=['1'], to_account=['000B'], amount_usd_asof=[1.], amount_usd=[2.],
@@ -51,7 +51,7 @@ def test_default_directory_uses_localized_manifest_instead_of_cwd(tmp_path, monk
 
 def test_manifest_diagnostics_distinguish_symlink_and_changed_bytes(tmp_path):
     import json
-    from bda_pipeline.model import digest
+    from bda_pipeline.common.integrity import digest
     names = ['comparison.json', 'features.json', 'selection.json', 'hist-depth5.ubj']
     for name in names:
         (tmp_path / name).write_bytes(b'original')
@@ -66,7 +66,7 @@ def test_manifest_diagnostics_distinguish_symlink_and_changed_bytes(tmp_path):
 
 def test_symlink_rejection_is_explicit(tmp_path):
     import json
-    from bda_pipeline.model import digest
+    from bda_pipeline.common.integrity import digest
     names = ['comparison.json', 'features.json', 'selection.json', 'hist-depth5.ubj']
     for name in names:
         (tmp_path / name).write_bytes(b'original')

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import boto3
 from botocore.config import Config
-from bda_pipeline.release import ASSETS, _inspect, SENSITIVE_TEXT
+from bda_pipeline.control.release import ASSETS, _inspect, SENSITIVE_TEXT
 
 ACCOUNT = '588738581042'
 BUCKET = 'is459-g3-dashboard-588738581042-ap-southeast-1'

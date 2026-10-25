@@ -82,7 +82,7 @@ def test_non_usd_fx_uses_separate_days_and_preserves_composite_keys(spark):
 
 
 def test_exact_behaviour_matches_local_boundaries_peers_and_banks(spark):
-    from bda_pipeline.analytics import add_behaviour
+    from bda_pipeline.features.behaviour import add_behaviour
 
     times = ["2022-09-01 00:00", "2022-09-01 00:00", "2022-09-01 00:01",
              "2022-09-01 01:00", "2022-09-02 00:00", "2022-09-02 00:01",
@@ -119,7 +119,7 @@ def test_source_ids_preserve_duplicate_records(spark, tmp_path):
 
 def test_queue_randomized_parity_and_label_independence(spark):
     import numpy as np
-    from bda_pipeline.analytics import add_behaviour
+    from bda_pipeline.features.behaviour import add_behaviour
 
     rng = np.random.default_rng(459)
     count = 1800

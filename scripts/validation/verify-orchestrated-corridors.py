@@ -35,9 +35,9 @@ from pathlib import Path
 import pandas as pd
 import pyarrow.parquet as pq
 
-from bda_pipeline.model import digest
+from bda_pipeline.common.integrity import digest
 # Shared BQ2 reconciliation helpers (also used by the export stage).
-from bda_pipeline.treasury_verification import KEYS, compare_corridors, expected_corridors, same_query
+from bda_pipeline.treasury.treasury_verification import KEYS, compare_corridors, expected_corridors, same_query
 
 
 def main():

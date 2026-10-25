@@ -8,7 +8,7 @@ import boto3
 import pytest
 from botocore.exceptions import EndpointConnectionError
 
-from bda_pipeline import dashboard_api as api
+from bda_pipeline.dashboards import dashboard_api as api
 
 MACHINE = 'arn:aws:states:ap-southeast-1:588738581042:stateMachine:is459-g3-cloud-ingest'
 BATCH = MACHINE.replace('cloud-ingest', 'ingest')

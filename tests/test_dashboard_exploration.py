@@ -3,7 +3,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 
-from bda_pipeline.dashboard_exploration import scorer_projection, account_histories, treasury_exploration
+from bda_pipeline.dashboards.dashboard_exploration import scorer_projection, account_histories, treasury_exploration
 
 
 def test_capacity_metrics_use_complete_population_and_ties():
