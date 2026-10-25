@@ -35,7 +35,7 @@ so this module does not depend on the Lambda module (avoids a circular import).
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-from .ingest_contract import BUCKET, paths, sha, valid_run, validate_manifest
+from ..common.ingest_contract import BUCKET, paths, sha, valid_run, validate_manifest
 
 
 def stage_key(stage, manifest, config):

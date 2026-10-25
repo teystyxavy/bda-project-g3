@@ -314,7 +314,7 @@ def response(status, body):
 
 def handler(event, context):
     try:
-        from bda_pipeline.dashboard_sessions import authenticate, bootstrap, exchange, revoke, SessionError
+        from bda_pipeline.dashboards.dashboard_sessions import authenticate, bootstrap, exchange, revoke, SessionError
     except ImportError:
         from dashboard_sessions import authenticate, bootstrap, exchange, revoke, SessionError
     try:

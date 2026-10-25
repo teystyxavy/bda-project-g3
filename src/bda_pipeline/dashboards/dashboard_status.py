@@ -16,7 +16,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 try:
-    from bda_pipeline.dashboard_api import describe, history, iso, stage_progress
+    from bda_pipeline.dashboards.dashboard_api import describe, history, iso, stage_progress
 except ImportError:  # The Lambda package places both modules at its root.
     from dashboard_api import describe, history, iso, stage_progress
 

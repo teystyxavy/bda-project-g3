@@ -37,9 +37,9 @@ from pathlib import Path
 import numpy as np
 import pyarrow.dataset as ds
 
-from .analytics import ranking_metrics
+from ..analytics import ranking_metrics
 from .dashboard import records
-from .model import SavedRanker, digest, rank, read_split
+from ..modeling.model import SavedRanker, digest, rank, read_split
 
 
 def export_model_dashboard(scored, baseline_path, model_dir, output, assets, cloud_verification=None):
@@ -84,7 +84,7 @@ def export_model_dashboard(scored, baseline_path, model_dir, output, assets, clo
     cloud_scores, cloud_report = None, None
     if cloud_verification is not None:
         # Imported lazily so the local-only path does not need this module.
-        from .cloud_scores import load_verified_scores
+        from ..scoring.cloud_scores import load_verified_scores
         cloud_scores, cloud_report = load_verified_scores(cloud_verification, expected,
                             ranker.selection['selected']['sha256'], snapshot['full_rows'])
     views, queues = {}, {}

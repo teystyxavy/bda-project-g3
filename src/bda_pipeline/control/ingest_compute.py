@@ -43,16 +43,16 @@ import numpy as np
 import pandas as pd
 import pyarrow.dataset as ds
 
-from .acquisition import validate_fx
-from .analytics import add_behaviour, ranking_metrics
-from .batch import COLUMNS, FEATURES, PERIODS, export_verified_batch
-from .cloud_scores import checked_indices, feature_fingerprints
-from .dashboard import records
-from .inference import SCORING_COLUMNS, verify_artifacts
-from .model import INPUT_COLUMNS, SavedRanker, digest, rank
+from ..ingestion.acquisition import validate_fx
+from ..analytics import add_behaviour, ranking_metrics
+from ..batch import COLUMNS, FEATURES, PERIODS, export_verified_batch
+from ..scoring.cloud_scores import checked_indices, feature_fingerprints
+from ..dashboards.dashboard import records
+from ..scoring.inference import SCORING_COLUMNS, verify_artifacts
+from ..modeling.model import INPUT_COLUMNS, SavedRanker, digest, rank
 from .release import prepare_release
-from .transform import TRANSACTION_COLUMNS, IDENTIFIER_DTYPES
-from .treasury_verification import expected_corridors, compare_corridors
+from ..ingestion.transform import TRANSACTION_COLUMNS, IDENTIFIER_DTYPES
+from ..treasury.treasury_verification import expected_corridors, compare_corridors
 
 
 def raw_fingerprints(frame):
@@ -490,7 +490,7 @@ def export_stage(inputs, output, assets):
     snapshot['buildStatus'] = 'complete'
     snapshot['generated_at'] = snapshot['pipeline']['refresh_time']
     # Imported lazily, only at this point of the export stage.
-    from .dashboard_exploration import enrich_snapshot
+    from ..dashboards.dashboard_exploration import enrich_snapshot
     enrich_snapshot(snapshot, dataset, scores, ranker)
     site = output / 'dashboard'
     site.mkdir()

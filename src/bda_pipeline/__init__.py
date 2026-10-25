@@ -26,8 +26,8 @@ Nothing here touches AWS or the network at import time.
 # Re-export the most commonly used local helpers so callers can write
 # ``from bda_pipeline import build_curated_transactions`` instead of reaching
 # into the individual submodules.
-from .fx import build_daily_rates, discover_requirements
-from .transform import build_curated_transactions, read_accounts, read_transactions
+from .ingestion.fx import build_daily_rates, discover_requirements
+from .ingestion.transform import build_curated_transactions, read_accounts, read_transactions
 
 # ``__all__`` defines the public surface of ``from bda_pipeline import *``.
 __all__ = [

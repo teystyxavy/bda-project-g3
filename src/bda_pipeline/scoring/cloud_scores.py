@@ -40,7 +40,7 @@ import pandas as pd
 import pyarrow.dataset as ds
 
 from .inference import IDENTIFIERS, SCORING_COLUMNS, verify_artifacts
-from .model import SavedRanker, digest
+from ..modeling.model import SavedRanker, digest
 
 
 def feature_fingerprints(frame):

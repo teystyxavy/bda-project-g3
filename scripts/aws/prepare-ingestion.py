@@ -52,9 +52,9 @@ from bda_pipeline.ingest_contract import ACCOUNT, REGION, BUCKET, sha
 from bda_pipeline.inference import verify_artifacts
 
 # Entry module of the control Lambda (Terraform handler
-# ``bda_pipeline.ingest_control.lambda_handler``); its imports are followed
+# ``bda_pipeline.control.ingest_control.lambda_handler``); its imports are followed
 # to choose the files that ship.
-CONTROL_ENTRY = 'bda_pipeline.ingest_control'
+CONTROL_ENTRY = 'bda_pipeline.control.ingest_control'
 
 
 def digest(path):

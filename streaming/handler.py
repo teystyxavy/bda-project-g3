@@ -9,7 +9,7 @@ from ``streaming/Dockerfile``; Terraform in ``infra/streaming``). Flow::
     results) and S3 (encrypted audit JSON)
 
 The cloud-independent logic (validation, rolling features, idempotency,
-batch failure handling) is in ``bda_pipeline/streaming.py``. This file only
+batch failure handling) is in ``bda_pipeline/scoring/streaming.py``. This file only
 adds the AWS pieces:
 
 * ``DynamoStore``: the ``MemoryStore`` interface implemented on DynamoDB
@@ -27,8 +27,8 @@ import json
 from functools import lru_cache
 import os
 
-from bda_pipeline.streaming import canonical, fingerprint, handle_records
-from bda_pipeline.inference import score_frame, worker_ranker
+from bda_pipeline.scoring.streaming import canonical, fingerprint, handle_records
+from bda_pipeline.scoring.inference import score_frame, worker_ranker
 
 
 class DynamoStore:

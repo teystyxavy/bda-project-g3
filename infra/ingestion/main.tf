@@ -207,7 +207,7 @@ resource "aws_iam_role_policy" "processing" {
   ] })
 }
 # Role of the control Lambda (the pipeline's "brain"; code in
-# src/bda_pipeline/ingest_control.py).
+# src/bda_pipeline/control/ingest_control.py).
 resource "aws_iam_role" "control" {
   name               = "is459-g3-ingest-control"
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" }, Action = "sts:AssumeRole" }] })
@@ -269,7 +269,7 @@ resource "aws_lambda_function" "control" {
   function_name                  = "is459-g3-ingest-control"
   role                           = aws_iam_role.control.arn
   runtime                        = "python3.12"
-  handler                        = "bda_pipeline.ingest_control.lambda_handler"
+  handler                        = "bda_pipeline.control.ingest_control.lambda_handler"
   s3_bucket                      = local.bucket
   s3_key                         = aws_s3_object.deployment_artifact["control.zip"].key
   source_code_hash               = filebase64sha256("${var.artifact_directory}/control.zip")

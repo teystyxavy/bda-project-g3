@@ -46,7 +46,7 @@ from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 
 from .acquisition import acquire_dataset, prepare_inputs, digest
-from .ingest_contract import BUCKET, REGION, CONFIG_KEY, canonical, sha, valid_run, validate_manifest, paths
+from ..common.ingest_contract import BUCKET, REGION, CONFIG_KEY, canonical, sha, valid_run, validate_manifest, paths
 
 # S3 transfer settings: 16 MB multipart chunks with only 2 parallel threads,
 # to keep memory use predictable inside the Lambda while uploading ~0.5 GB CSVs.

@@ -125,7 +125,7 @@ def test_cloud_build_context_imports_acquisition_with_shared_selection(tmp_path)
     spec.loader.exec_module(cli)
     context = tmp_path / 'context'
     cli.prepare(context)
-    result = subprocess.run([sys.executable, '-c', 'from bda_pipeline.cloud_acquisition import acquire'],
+    result = subprocess.run([sys.executable, '-c', 'from bda_pipeline.ingestion.cloud_acquisition import acquire'],
                             cwd=tmp_path, env={**os.environ, 'PYTHONPATH': str(context)},
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr

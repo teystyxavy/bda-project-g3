@@ -36,7 +36,7 @@ import json
 import re
 from datetime import datetime
 
-from .batch import FEATURES
+from ..batch import FEATURES
 from .inference import SCORING_COLUMNS
 
 # Raw fields an event must carry: the model's scoring columns minus the five

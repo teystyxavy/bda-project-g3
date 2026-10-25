@@ -4,7 +4,7 @@
 # What it is: lets a pipeline run start with NO data on anyone's laptop.
 # A Step Functions workflow (is459-g3-cloud-ingest, definition in
 # workflow.asl.json) invokes a container Lambda (is459-g3-acquire, code in
-# src/bda_pipeline/cloud_acquisition.py, image from cloud-ingestion/Dockerfile)
+# src/bda_pipeline/ingestion/cloud_acquisition.py, image from cloud-ingestion/Dockerfile)
 # that downloads the IBM AML "HI-Small" transactions/accounts files from
 # Kaggle, prepares the FX rates and inputs, and uploads them to
 # s3://<bucket>/pipeline/runs/<run_id>/raw/. The workflow then starts the main

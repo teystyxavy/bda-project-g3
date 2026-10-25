@@ -25,7 +25,7 @@ COPY bda_pipeline ${LAMBDA_TASK_ROOT}/bda_pipeline
 # Frozen model files + model-manifest.json; handler.py loads them from
 # /var/task/artifacts and checks them against MANIFEST_SHA256 at startup.
 COPY artifacts ${LAMBDA_TASK_ROOT}/artifacts
-# The Lambda handler module (AWS adapter around bda_pipeline.streaming).
+# The Lambda handler module (AWS adapter around bda_pipeline.scoring.streaming).
 COPY handler.py ${LAMBDA_TASK_ROOT}/handler.py
 # Lambda calls handler.py -> handler(event, context) for each record batch.
 CMD ["handler.handler"]

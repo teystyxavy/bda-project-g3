@@ -55,7 +55,7 @@ import json
 import os
 from urllib.parse import urlsplit
 
-from .ingest_contract import (
+from ..common.ingest_contract import (
     ACCOUNT, REGION, BUCKET, SITE_BUCKET, MACHINE, DATABASE, canonical, sha,
     valid_run, validate_manifest, paths, processing_request, corridor_query,
 )

@@ -15,7 +15,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 from bda_pipeline.common.packaging import module_file
 
-MODULES = ['bda_pipeline.dashboard_status', 'bda_pipeline.dashboard_api']
+MODULES = ['bda_pipeline.dashboards.dashboard_status', 'bda_pipeline.dashboards.dashboard_api']
 
 
 def flat_name(module):

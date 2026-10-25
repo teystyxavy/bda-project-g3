@@ -22,7 +22,7 @@ makes the process exit non-zero, which marks the job (and the workflow
 step) as failed.
 """
 import sys
-from bda_pipeline.ingest_compute import baseline_stage, export_stage
+from bda_pipeline.control.ingest_compute import baseline_stage, export_stage
 
 
 def main():

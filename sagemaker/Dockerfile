@@ -3,11 +3,11 @@
 # =============================================================================
 # What it builds: the custom container used by the ingestion workflow for
 #   * SageMaker Training: retrains a candidate XGBoost ranker
-#     (default ENTRYPOINT below -> train.py -> bda_pipeline.sagemaker_training);
+#     (default ENTRYPOINT below -> train.py -> bda_pipeline.modeling.sagemaker_training);
 #   * SageMaker Processing: baseline verification/scoring and the final
 #     dashboard export/release. The Processing job overrides the entrypoint
 #     with ["python", "/app/pipeline_worker.py"] plus "baseline" or "export"
-#     (see bda_pipeline/ingest_contract.py).
+#     (see bda_pipeline/common/ingest_contract.py).
 # SageMaker copies input data from S3 into /opt/ml/... and uploads outputs
 # afterwards, so the code inside needs no AWS credentials and the jobs can run
 # network-isolated. Nothing is downloaded at runtime: every dependency is

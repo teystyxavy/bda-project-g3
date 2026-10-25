@@ -17,7 +17,7 @@ Glue ``--extra-files`` and the ``bda_pipeline`` package via
 ``--extra-py-files``; Python wheels are installed offline (no PyPI access).
 
 The output is later checked row by row by
-``bda_pipeline/cloud_scores.verify_full_scores`` (locally) or
+``bda_pipeline/scoring/cloud_scores.verify_full_scores`` (locally) or
 ``ingest_compute.verify_scores`` (SageMaker Processing).
 
 Arguments: ``--INPUT`` (curated Parquet URI), ``--OUTPUT`` (fresh scored
@@ -35,7 +35,7 @@ from pyspark import SparkFiles, StorageLevel
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import DoubleType, LongType, StringType, StructField, StructType, TimestampType, TimestampNTZType
 
-from bda_pipeline.inference import SCORING_COLUMNS, resolve_model_directory, score_frame, verify_artifacts, worker_ranker
+from bda_pipeline.scoring.inference import SCORING_COLUMNS, resolve_model_directory, score_frame, verify_artifacts, worker_ranker
 
 
 def score(spark, input_path, output_path, model_dir, manifest_sha256, expected_rows):

@@ -51,8 +51,8 @@ import numpy as np
 import pandas as pd
 import pyarrow.dataset as ds
 
-from .analytics import ranking_metrics
-from .batch import FEATURES, QUEUE_COLUMNS
+from ..analytics import ranking_metrics
+from ..batch import FEATURES, QUEUE_COLUMNS
 
 # String columns that are one-hot encoded for the model.
 CATEGORICAL = ['payment_format', 'payment_currency', 'receiving_currency']

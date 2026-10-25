@@ -13,10 +13,10 @@ import numpy as np
 import pandas as pd
 import pyarrow.dataset as ds
 
-from .analytics import ranking_metrics
-from .batch import PERIODS, QUEUE_COLUMNS
+from ..analytics import ranking_metrics
+from ..batch import PERIODS, QUEUE_COLUMNS
 from .dashboard import records
-from .model import INPUT_COLUMNS, rank
+from ..modeling.model import INPUT_COLUMNS, rank
 
 CAPACITIES = [25, 50, 100, 250]
 QUEUE_FIELDS = [*QUEUE_COLUMNS, 'model_score', 'model_evidence',

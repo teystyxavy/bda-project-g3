@@ -5,7 +5,7 @@
 # infra/cloud-ingestion). It is the first step of the pipeline: it downloads
 # the Kaggle IBM AML "HI-Small" transactions/accounts files and the FX rates,
 # checks them and writes them to the S3 raw area for the Glue jobs
-# (code: bda_pipeline/cloud_acquisition.py -> handler).
+# (code: bda_pipeline/ingestion/cloud_acquisition.py -> handler).
 # A container image is used because the dependencies are larger than a zip
 # Lambda package allows.
 #
@@ -23,5 +23,5 @@ RUN python -m pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
 COPY bda_pipeline ${LAMBDA_TASK_ROOT}/bda_pipeline
 # No .pyc files; keep kagglehub quiet so logs only show warnings/errors.
 ENV PYTHONDONTWRITEBYTECODE=1 KAGGLEHUB_VERBOSITY=warning
-# Lambda invokes bda_pipeline/cloud_acquisition.py -> handler(event, context).
-CMD ["bda_pipeline.cloud_acquisition.handler"]
+# Lambda invokes bda_pipeline/ingestion/cloud_acquisition.py -> handler(event, context).
+CMD ["bda_pipeline.ingestion.cloud_acquisition.handler"]

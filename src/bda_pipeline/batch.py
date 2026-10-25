@@ -51,7 +51,7 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
 from .analytics import concentration, corridor_totals, score_baseline
-from .dashboard import ranked, records, treasury_view
+from .dashboards.dashboard import ranked, records, treasury_view
 
 # Causal behaviour features computed by the curate job for each sender account:
 # number of outgoing transactions in the previous 1h / 24h / 7 days and the

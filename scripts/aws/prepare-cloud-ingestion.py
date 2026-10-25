@@ -38,9 +38,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 from bda_pipeline.common.packaging import copy_package, module_closure
 
 # Entry module of the acquisition Lambda (image CMD
-# ``bda_pipeline.cloud_acquisition.handler``); its imports are followed to
+# ``bda_pipeline.ingestion.cloud_acquisition.handler``); its imports are followed to
 # choose the files that ship.
-ACQUISITION_ENTRY = 'bda_pipeline.cloud_acquisition'
+ACQUISITION_ENTRY = 'bda_pipeline.ingestion.cloud_acquisition'
 
 
 def prepare(output):

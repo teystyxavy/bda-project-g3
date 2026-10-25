@@ -11,7 +11,7 @@ copying the S3 input channels into ``/opt/ml/input/data/<channel>/``:
   its baseline dashboard snapshot;
 * ``manifest``: the reviewed ``input.json`` with expected hashes.
 
-The actual work is ``bda_pipeline.sagemaker_training.train_channels``, which
+The actual work is ``bda_pipeline.modeling.sagemaker_training.train_channels``, which
 re-verifies the inputs, trains/compares the XGBoost candidate ranker and
 writes:
 
@@ -27,7 +27,7 @@ import json
 import sys
 from pathlib import Path
 
-from bda_pipeline.sagemaker_training import train_channels
+from bda_pipeline.modeling.sagemaker_training import train_channels
 
 
 def main():

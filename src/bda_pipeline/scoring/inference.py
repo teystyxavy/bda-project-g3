@@ -38,9 +38,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .model import CATEGORICAL, SavedRanker, digest
-from .batch import FEATURES
-from .common.packaging import package_sources, write_package_zip
+from ..modeling.model import CATEGORICAL, SavedRanker, digest
+from ..batch import FEATURES
+from ..common.packaging import package_sources, write_package_zip
 
 # Columns that must be non-empty strings (identity of the payment and parties).
 IDENTIFIERS = ['transaction_id', 'from_bank', 'from_account', 'to_bank', 'to_account']
