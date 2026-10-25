@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-25",
+  "status": "validated-locally-not-deployed",
+  "branch": "infra/src-code-reorg",
+  "source_commit": "a237bac475d0ccd086db70eb469a80d45725813b",
+  "change": "src/bda_pipeline regrouped into stage subpackages (common, ingestion, features, baseline, treasury, modeling, scoring, dashboards, control); analytics.py and batch.py split; packaging scripts made layout-independent. No logic changes.",
+  "environment": {
+    "python": "3.12.15 (uv venv)",
+    "xgboost": "3.4.1",
+    "pyspark": "3.5.4 (local, Java 8)",
+    "docker": "not available"
+  },
+  "tests": {
+    "command": "python -m pytest tests --ignore=tests/spark -q",
+    "before": {"passed": 216, "skipped": 3},
+    "after": {"passed": 236, "skipped": 3},
+    "added": "tests/test_packaging.py: package contents, entry points vs Terraform/Dockerfile, isolated imports of every built package, stage dependency direction, retired-path guard"
+  },
+  "behaviour_equivalence": {
+    "method": "scripts/validation/snapshot-packages.py on the synthetic tests/test_ingestion.py fixture; baseline model re-scored with the reorganised code",
+    "retrained_model_identical": true,
+    "expected_scores_identical": true,
+    "explained_queue_identical": true,
+    "split_definitions_verbatim": 14,
+    "non_import_code_changes_in_moved_modules": 0
+  },
+  "spark_scoring_parity": {
+    "test": "tests/spark/test_scoring_parity.py",
+    "package": "synthetic cloud-scoring package built by prepare_inference",
+    "bda_pipeline_loaded_only_from_zip": true,
+    "result": "passed"
+  },
+  "package_code_sha256": {
+    "note": "These zips depend only on src/; the real prepare-ingestion.py build must produce the same hashes from this commit.",
+    "bda_pipeline.zip": "e465562b8909331f3c2e65505c39927d15d93a59ef35ee1137e66c68b149f8ac",
+    "control.zip": "b3a86a4fca6c3007c16ec4b0753152e61161f2bc2299d864ce92b59cbddd4d38"
+  },
+  "not_yet_verified": [
+    "tests/spark/test_glue_parity.py (needs the real-data fixture from scripts/validation/prepare-aws-smoke.py)",
+    "Spark scoring parity with the real frozen model package",
+    "Lambda, SageMaker and Glue container images under Docker",
+    "AWS deployment, 1,000-row end-to-end run and full-population run"
+  ],
+  "aws_changes_pending": [
+    "infra/ingestion/main.tf control Lambda handler: bda_pipeline.control.ingest_control.lambda_handler",
+    "cloud-ingestion/Dockerfile CMD: bda_pipeline.ingestion.cloud_acquisition.handler",
+    "new bda_pipeline.zip invalidates the scored stage cache once (curated cache unaffected)",
+    "SageMaker training image must be rebuilt and its digest passed to prepare-ingestion.py"
+  ]
+}

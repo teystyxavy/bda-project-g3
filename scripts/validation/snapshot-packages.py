@@ -2,10 +2,11 @@
 
 Purpose
 -------
-Used while reorganising ``src/bda_pipeline`` (see
-``planning/proposals/package-reorganisation-plan.md``) to prove that the
-packages AWS receives, and the scores the frozen model produces, do not change
-unexpectedly. No AWS calls, no real data, no network.
+Proves that a code change alters the packages AWS receives, and the scores a
+trained model produces, only where expected (first used for the stage
+reorganisation; see
+``planning/evidence/package-reorganisation-local-validation-20261025.json``).
+No AWS calls, no real data, no network.
 
 Steps:
 
