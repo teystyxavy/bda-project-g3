@@ -8,23 +8,34 @@ controls, unlike the public read-only status handler."""
 import argparse
 import hashlib
 import json
+import sys
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
+from bda_pipeline.common.packaging import module_file
+
+MODULES = ['bda_pipeline.dashboard_api', 'bda_pipeline.dashboard_sessions']
+
+
+def flat_name(module):
+    """``'bda_pipeline.x.dashboard_api'`` -> ``'dashboard_api.py'`` (zip root)."""
+    return module.rsplit('.', 1)[-1] + '.py'
 
 
 def prepare(output):
     output = Path(output)
     if output.exists():
         raise ValueError('Choose a fresh output directory')
-    root = Path(__file__).resolve().parents[2]
     output.mkdir(parents=True)
     archive = output / 'dashboard-api.zip'
+    # Written flat at the zip root: the Lambda handler is ``dashboard_api.handler``.
     with ZipFile(archive, 'w', compression=ZIP_DEFLATED) as package:
-        package.write(root / 'src/bda_pipeline/dashboard_api.py', 'dashboard_api.py')
-        package.write(root / 'src/bda_pipeline/dashboard_sessions.py', 'dashboard_sessions.py')
+        for module in MODULES:
+            package.write(module_file(module), flat_name(module))
     manifest = {'schema_version': 1, 'status': 'prepared-not-deployed',
                 'file': archive.name, 'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
-                'members': ['dashboard_api.py', 'dashboard_sessions.py']}
+                'members': [flat_name(module) for module in MODULES]}
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
     return manifest
 

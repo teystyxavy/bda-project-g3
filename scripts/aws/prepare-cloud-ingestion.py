@@ -10,8 +10,8 @@ dataset, credentials, Terraform state or unrelated workspace files can end up
 inside the image:
 
 * ``cloud-ingestion/Dockerfile`` and ``cloud-ingestion/requirements.txt``;
-* a cut-down ``bda_pipeline`` package with just the acquisition modules
-  (``cloud_acquisition``, ``acquisition``, ``dataset_options``,
+* a cut-down ``bda_pipeline`` package with just ``cloud_acquisition`` and the
+  modules it imports (``acquisition``, ``dataset_options``,
   ``ingest_contract``, ``fx``, ``transform``) and a minimal ``__init__.py``
   (so the heavy training dependencies are not needed in Lambda).
 
@@ -30,7 +30,17 @@ import argparse
 import hashlib
 import json
 import shutil
+import sys
 from pathlib import Path
+
+# Repo root; src/ is added to sys.path so the script runs without PYTHONPATH.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
+from bda_pipeline.common.packaging import copy_package, module_closure
+
+# Entry module of the acquisition Lambda (image CMD
+# ``bda_pipeline.cloud_acquisition.handler``); its imports are followed to
+# choose the files that ship.
+ACQUISITION_ENTRY = 'bda_pipeline.cloud_acquisition'
 
 
 def prepare(output):
@@ -52,13 +62,11 @@ def prepare(output):
     output.mkdir(parents=True)
     for name in ['Dockerfile', 'requirements.txt']:
         shutil.copyfile(root / 'cloud-ingestion' / name, output / name)
-    package = output / 'bda_pipeline'
-    package.mkdir()
-    # Replace the package __init__ with a one-line docstring so importing the
+    # The handler module plus everything it imports (subfolders kept). The
+    # package __init__ is replaced with a one-line docstring so importing the
     # package does not pull in training-only modules.
-    (package / '__init__.py').write_text('"""AWS acquisition package; no training dependencies."""\n')
-    for name in ['cloud_acquisition.py', 'acquisition.py', 'dataset_options.py', 'ingest_contract.py', 'fx.py', 'transform.py']:
-        shutil.copyfile(root / 'src/bda_pipeline' / name, package / name)
+    copy_package(output / 'bda_pipeline', module_closure([ACQUISITION_ENTRY]),
+                 overrides={'__init__.py': b'"""AWS acquisition package; no training dependencies."""\n'})
     # Integrity record: relative POSIX path -> SHA-256 for every file copied.
     files = {p.relative_to(output).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
              for p in sorted(output.rglob('*')) if p.is_file()}

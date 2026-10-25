@@ -26,6 +26,7 @@ Usage::
 """
 import argparse,json,shutil
 from pathlib import Path
+from bda_pipeline.common.packaging import copy_package,package_sources
 from bda_pipeline.inference import verify_artifacts
 from bda_pipeline.model import digest
 from bda_pipeline.orchestration import MANIFEST
@@ -53,7 +54,8 @@ def main():
     # by digest), Python requirements and the handler entry point.
     for name in ['Dockerfile','requirements.txt','handler.py']:shutil.copyfile(root/'streaming'/name,args.output/name)
     # Shared pipeline code, so the Lambda uses the same feature/score logic as batch.
-    shutil.copytree(root/'src/bda_pipeline',args.output/'bda_pipeline',ignore=shutil.ignore_patterns('__pycache__'))
+    # Subfolders included; caches and compatibility stubs excluded.
+    copy_package(args.output/'bda_pipeline',package_sources())
     shutil.copytree(args.artifacts,args.output/'artifacts')
     # Record a SHA-256 for every file in the context (sorted for a stable report).
     report={'status':'local-context-not-uploaded','manifest_sha256':MANIFEST,

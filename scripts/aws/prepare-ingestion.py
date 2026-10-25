@@ -11,7 +11,8 @@ variables. ``deploy-ingestion.ps1`` (first deployment) or
 
 Produces in ``--output``
 ------------------------
-* ``bda_pipeline.zip`` - all of ``src/bda_pipeline/*.py`` for the Glue jobs.
+* ``bda_pipeline.zip`` - every module under ``src/bda_pipeline`` (subfolders
+  included) for the Glue jobs.
 * ``control.zip`` - only the modules the control Lambda needs
   (``ingest_contract``, ``ingest_control``, ``stage_cache``, ``release``).
 * ``curate_transactions.py`` / ``score_transactions.py`` - Glue job scripts.
@@ -41,14 +42,19 @@ import json
 import re
 import shutil
 import sys
-import zipfile
 from pathlib import Path
 
 # Repo root; src/ is added to sys.path so the script runs without PYTHONPATH.
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'src'))
+from bda_pipeline.common.packaging import module_closure, package_sources, write_package_zip
 from bda_pipeline.ingest_contract import ACCOUNT, REGION, BUCKET, sha
 from bda_pipeline.inference import verify_artifacts
+
+# Entry module of the control Lambda (Terraform handler
+# ``bda_pipeline.ingest_control.lambda_handler``); its imports are followed
+# to choose the files that ship.
+CONTROL_ENTRY = 'bda_pipeline.ingest_control'
 
 
 def digest(path):
@@ -57,26 +63,23 @@ def digest(path):
     with Path(path).open('rb') as stream: return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def zip_sources(target, names, minimal=False):
-    """Write selected ``src/bda_pipeline`` modules into a reproducible zip.
+def zip_sources(target, files, minimal=False):
+    """Write ``src/bda_pipeline`` modules into a reproducible zip.
 
     Every entry gets the same fixed timestamp (2026-01-01) and is added in
     sorted order, so zipping identical sources always produces byte-identical
     zips - and therefore identical hashes and an unchanged deployment prefix.
+    The zip is refused if a shipped module imports one that is not included.
 
     Args:
         target: zip file path to create.
-        names: module file names (e.g. ``'ingest_control.py'``) to include under
-            ``bda_pipeline/`` inside the zip.
+        files: source paths under ``src/bda_pipeline`` (nested folders kept)
+            to include under ``bda_pipeline/`` inside the zip.
         minimal: if True, replace ``__init__.py`` with a one-line docstring so
             the Lambda package does not import modules it does not ship.
     """
-    with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
-        for name in sorted(names):
-            info = zipfile.ZipInfo('bda_pipeline/' + name, date_time=(2026, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
-            data = b'"""Ingestion control package."""\n' if minimal and name == '__init__.py' else (ROOT / 'src/bda_pipeline' / name).read_bytes()
-            archive.writestr(info, data)
+    overrides = {'__init__.py': b'"""Ingestion control package."""\n'} if minimal else None
+    write_package_zip(target, files, date_time=(2026, 1, 1, 0, 0, 0), overrides=overrides)
 
 
 def prepare(output, models, wheels, image_uri):
@@ -106,10 +109,10 @@ def prepare(output, models, wheels, image_uri):
     manifest = verify_artifacts(models, model_hash)
     output.mkdir(parents=True)
     # No dataset, state, credentials, or unrelated workspace files in these packages.
-    zip_sources(output / 'bda_pipeline.zip', [p.name for p in (ROOT / 'src/bda_pipeline').glob('*.py')])
-    # The control Lambda only needs the contract, controller, stage cache and
-    # release helpers - no pandas/XGBoost code.
-    zip_sources(output / 'control.zip', ['__init__.py', 'ingest_contract.py', 'ingest_control.py', 'stage_cache.py', 'release.py'], minimal=True)
+    zip_sources(output / 'bda_pipeline.zip', package_sources())
+    # The control Lambda only needs the controller and what it imports (the
+    # contract, stage cache and release helpers) - no pandas/XGBoost code.
+    zip_sources(output / 'control.zip', module_closure([CONTROL_ENTRY]), minimal=True)
     for name in ['curate_transactions.py', 'score_transactions.py']:
         shutil.copyfile(ROOT / 'jobs' / name, output / name)
     shutil.copyfile(wheels, output / 'runtime.gluewheels.zip')

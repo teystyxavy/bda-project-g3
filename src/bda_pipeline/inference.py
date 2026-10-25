@@ -32,7 +32,6 @@ compared with native results.
 """
 import json
 import shutil
-import zipfile
 from functools import lru_cache
 from pathlib import Path
 
@@ -41,6 +40,7 @@ import pandas as pd
 
 from .model import CATEGORICAL, SavedRanker, digest
 from .batch import FEATURES
+from .common.packaging import package_sources, write_package_zip
 
 # Columns that must be non-empty strings (identity of the payment and parties).
 IDENTIFIERS = ['transaction_id', 'from_bank', 'from_account', 'to_bank', 'to_account']
@@ -276,14 +276,12 @@ def prepare_inference(model_dir, scored, output, package_dir):
     for name in files:
         shutil.copyfile(model_dir / name, artifacts / name)
     (artifacts / 'model-manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
-    # Pure Python source only. Native dependencies are a separate Linux artifact.
-    # Files are added in sorted order with a fixed timestamp so the zip bytes
-    # (and therefore code_sha256) are identical every time it is rebuilt.
-    with zipfile.ZipFile(output / 'bda_pipeline.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(Path(package_dir).glob('*.py')):
-            info = zipfile.ZipInfo('bda_pipeline/' + path.name, date_time=(2022, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, path.read_bytes())
+    # Pure Python source only, subfolders included. Native dependencies are a
+    # separate Linux artifact. Files are added in sorted order with a fixed
+    # timestamp so the zip bytes (and therefore code_sha256) are identical
+    # every time it is rebuilt.
+    write_package_zip(output / 'bda_pipeline.zip', package_sources(package_dir),
+                      date_time=(2022, 1, 1, 0, 0, 0), root=package_dir)
     (output / 'fixture').mkdir()
     cohort.to_parquet(output / 'fixture/input.parquet', index=False)
     expected.to_parquet(output / 'fixture/expected.parquet', index=False)

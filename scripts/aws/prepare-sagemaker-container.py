@@ -11,7 +11,8 @@ Docker build context in a fresh folder from an explicit allowlist:
 * ``sagemaker/Dockerfile``, ``requirements.txt``, ``train.py`` (training entry
   point) and ``pipeline_worker.py`` (processing entry point, called as
   ``python /app/pipeline_worker.py <stage>``);
-* the whole ``src/bda_pipeline`` package (without ``__pycache__``/``.pyc``);
+* the whole ``src/bda_pipeline`` package, subfolders included (without
+  ``__pycache__`` or compatibility stubs);
 * the ``dashboard/`` static site files, which the export stage publishes.
 
 It writes ``build-context.json`` with each file's SHA-256 so the exact image
@@ -27,6 +28,7 @@ import json
 import shutil
 from pathlib import Path
 
+from bda_pipeline.common.packaging import copy_package, package_sources
 from bda_pipeline.model import digest
 
 
@@ -45,8 +47,8 @@ def main():
     args.output.mkdir(parents=True)
     for name in ['Dockerfile', 'requirements.txt', 'train.py', 'pipeline_worker.py']:
         shutil.copyfile(root / 'sagemaker' / name, args.output / name)
-    shutil.copytree(root / 'src/bda_pipeline', args.output / 'bda_pipeline',
-                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    # Every module, subfolders included; caches and compatibility stubs excluded.
+    copy_package(args.output / 'bda_pipeline', package_sources())
     shutil.copytree(root / 'dashboard', args.output / 'dashboard')
     # digest() is bda_pipeline.model's SHA-256 helper.
     files = {str(path.relative_to(args.output)): digest(path)
