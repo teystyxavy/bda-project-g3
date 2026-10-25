@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import re
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -255,3 +256,70 @@ def test_no_code_uses_retired_module_paths():
                 continue
             found += retired_references(path)
     assert not found
+
+
+# --- built packages import on their own -------------------------------------
+
+def isolated_import(entries, code, cwd):
+    """Run ``code`` with only ``entries`` and installed third-party libraries importable.
+
+    The repository root and ``src/`` (the editable install) are removed from
+    ``sys.path``, so a module missing from the package fails here the way it
+    would in Lambda, Glue or SageMaker.
+    """
+    script = ('import sys\n'
+              f'sys.path = [p for p in sys.path if p and p not in {[str(ROOT), str(ROOT / "src")]!r}]\n'
+              f'sys.path[:0] = {[str(entry) for entry in entries]!r}\n' + code)
+    result = subprocess.run([sys.executable, '-c', script], cwd=cwd, capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stderr
+
+
+def import_handler(handler, package):
+    """Import ``module.attribute`` and check the module came from ``package``."""
+    module, attribute = handler.rsplit('.', 1)
+    return (f'import importlib\nmodule = importlib.import_module({module!r})\n'
+            f'assert callable(getattr(module, {attribute!r}))\n'
+            f'assert module.__file__.startswith({str(package)!r}), module.__file__\n')
+
+
+def test_glue_zip_imports_the_scoring_job_modules_alone(ingestion, tmp_path):
+    archive = ingestion / 'bda_pipeline.zip'
+    modules = sorted(entry_modules(ROOT / 'jobs/score_transactions.py'))
+    isolated_import([archive], ''.join(f'import {m}\nassert {m}.__file__.startswith({str(archive)!r})\n'
+                                       for m in modules), tmp_path)
+
+
+def test_control_lambda_handler_imports_alone(ingestion, tmp_path):
+    archive = ingestion / 'control.zip'
+    handler = re.search(r'handler\s*=\s*"([\w.]+)"', (ROOT / 'infra/ingestion/main.tf').read_text()).group(1)
+    isolated_import([archive], import_handler(handler, archive), tmp_path)
+
+
+def test_acquisition_lambda_command_imports_alone(tmp_path):
+    context = tmp_path / 'context'
+    load_script('scripts/aws/prepare-cloud-ingestion.py').prepare(context)
+    handler = re.search(r'CMD \["([\w.]+)"\]', (ROOT / 'cloud-ingestion/Dockerfile').read_text()).group(1)
+    isolated_import([context], import_handler(handler, context), tmp_path)
+
+
+@pytest.mark.parametrize('script, archive, terraform', [
+    ('scripts/aws/prepare-dashboard-api.py', 'dashboard-api.zip', 'infra/dashboard-control/main.tf'),
+    ('scripts/aws/prepare-dashboard-status.py', 'dashboard-status.zip', 'infra/dashboard-status/main.tf')])
+def test_dashboard_lambda_handlers_import_alone(tmp_path, script, archive, terraform):
+    load_script(script).prepare(tmp_path / 'out')
+    handler = re.search(r'handler\s*=\s*"([\w.]+)"', (ROOT / terraform).read_text()).group(1)
+    package = tmp_path / 'out' / archive
+    isolated_import([package], import_handler(handler, package), tmp_path)
+
+
+def test_container_entry_points_import_alone(tmp_path, monkeypatch):
+    sagemaker = tmp_path / 'sagemaker'
+    run_main(load_script('scripts/aws/prepare-sagemaker-container.py'), ['--output', str(sagemaker)], monkeypatch)
+    isolated_import([sagemaker], 'import train, pipeline_worker\n'
+                    f'assert pipeline_worker.baseline_stage.__module__ == "bda_pipeline.control.ingest_compute"\n'
+                    f'import bda_pipeline\nassert bda_pipeline.__file__.startswith({str(sagemaker)!r})\n', tmp_path)
+    script = load_script('scripts/streaming/prepare-streaming-container.py')
+    monkeypatch.setattr(script, 'verify_artifacts', lambda *args: None)
+    streaming = tmp_path / 'streaming'
+    run_main(script, ['--artifacts', str(fake_model(tmp_path / 'model')), '--output', str(streaming)], monkeypatch)
+    isolated_import([streaming], import_handler('handler.handler', streaming), tmp_path)
