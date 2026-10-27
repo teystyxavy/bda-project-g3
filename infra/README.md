@@ -5,9 +5,10 @@ a committed provider lock file and mock tests under `tests/`.
 
 | Stack | Responsibility |
 |---|---|
+| `tfstate-bootstrap/` | Shared S3 state bucket + DynamoDB lock table that other stacks' `s3` backends point at; stays on local backend itself |
 | `terraform/` | Foundation: private data bucket, Glue/catalog, Athena, monitoring and budget |
 | `hosting/` | Private dashboard origin and public CloudFront distribution |
-| `dashboard-control/` | Protected ingestion UI API and invited operator sign-in; implemented locally, deployment pending |
+| `dashboard-control/` | Protected ingestion UI API and invited operator sign-in; deployed (Lambda, API Gateway, `is459-g3-dashboard-launch` DynamoDB table — confirmed live via `aws resourcegroupstaggingapi get-resources` 2026-10-27, correcting the earlier "deployment pending" note) |
 | `scoring/` | Frozen-model Glue inference |
 | `sagemaker/` | On-demand candidate training foundation |
 | `ingestion/` | Curate/score/analyse/verify/publish orchestration, stage cache and failure control |
