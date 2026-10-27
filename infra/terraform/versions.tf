@@ -2,12 +2,13 @@
 # infra/terraform/versions.tf -- Terraform/provider versions and AWS provider
 # =============================================================================
 # Pins Terraform 1.7.x-1.x and the AWS provider 6.x so every team member gets
-# the same behaviour. backend "local" keeps the state file on the operator's
-# machine (the deploy script passes its path at `terraform init`).
+# the same behaviour. backend "s3" keeps the state in the shared
+# is459-g3-tfstate-588738581042 bucket (DynamoDB-locked); values are supplied
+# at `terraform init` time via -backend-config, not hardcoded here.
 
 terraform {
   required_version = ">= 1.7, < 2.0"
-  backend "local" {}
+  backend "s3" {}
   required_providers {
     aws = {
       source  = "hashicorp/aws"
