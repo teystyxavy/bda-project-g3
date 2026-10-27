@@ -20,6 +20,8 @@ def fixture():
         'is_laundering': [int(i % 17 == 0) for i in range(n)],
         'txn_count_1h': [i % 14 for i in range(n)], 'txn_count_24h': 20, 'txn_count_7d': 30,
         'distinct_counterparties_24h': 5, 'distinct_counterparties_7d': 8,
+        'in_txn_count_1h': [i % 9 for i in range(n)], 'in_txn_count_24h': 12, 'in_txn_count_7d': 18,
+        'distinct_senders_24h': 3, 'distinct_senders_7d': 6,
     }).assign(txn_date=lambda f: f.timestamp.dt.strftime('%Y-%m-%d'))
 
 

@@ -392,7 +392,10 @@ class SavedRanker:
         aliases.update({f'log1p_{name}': label for name, label in zip(FEATURES,
                        ['Prior-hour transaction count (log)', 'Prior-day transaction count (log)',
                         'Prior-week transaction count (log)', 'Prior-day counterparties (log)',
-                        'Prior-week counterparties (log)'])})
+                        'Prior-week counterparties (log)',
+                        'Prior-hour incoming count (log)', 'Prior-day incoming count (log)',
+                        'Prior-week incoming count (log)', 'Prior-day distinct senders (log)',
+                        'Prior-week distinct senders (log)'])})
         # Each evidence string is "name: +x margin; name: +y margin; ...".
         # Split each part at the first ":" and swap the name for its alias.
         queue['model_evidence'] = queue.model_evidence.map(lambda evidence: '; '.join(

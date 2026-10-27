@@ -19,6 +19,8 @@ def sample():
         receiving_currency='US Dollar', amount_usd_asof=np.arange(size, dtype=float),
         txn_count_1h=1, txn_count_24h=2, txn_count_7d=3,
         distinct_counterparties_24h=1, distinct_counterparties_7d=1,
+        in_txn_count_1h=1, in_txn_count_24h=2, in_txn_count_7d=3,
+        distinct_senders_24h=1, distinct_senders_7d=1,
         is_laundering=[int(i % 7 == 0) for i in range(size)],
         risk_score=[50 if i % 2 == 0 else 0 for i in range(size)], risk_reasons='ACH'))
 

@@ -155,55 +155,64 @@ def read_transactions(spark, path):
     return spark.createDataFrame(lines.zipWithIndex().filter(lambda row: row[1] > 0).map(parse), schema)
 
 
-def add_behaviour(frame):
-    """Sort once, then maintain exact queues in a streaming partition scan.
+def _windowed_counts(frame, self_bank_col, self_account_col, party_bank_col, party_account_col, names):
+    """Shared per-entity sliding-window scan underlying both directions of
+    ``add_behaviour``.
 
-    Each row enters/leaves each queue once instead of rebuilding distinct sets
-    for overlapping range frames. State resets per normalized sender; a cached
+    Sort once, then maintain exact queues in a streaming partition scan. Each
+    row enters/leaves each queue once instead of rebuilding distinct sets for
+    overlapping range frames. State resets per normalized entity; a cached
     timestamp snapshot excludes all simultaneous peers without buffering them.
-    Input must contain complete sender histories. Memory follows active history,
-    not the entire partition. Labels and USD values do not enter the calculation.
+    Input must contain complete history for ``(self_bank_col, self_account_col)``.
+    Memory follows active history, not the entire partition. Labels and USD
+    values do not enter the calculation.
 
-    Adds five long columns per transaction, describing the SENDER's activity
-    in the window [t - w, t) before this transaction's time t:
+    Called once with sender as self / receiver as counterparty (the outgoing
+    features) and once with the roles reversed (the incoming features) --
+    same algorithm, different grouping key and counterparty columns.
 
-    * ``txn_count_1h`` / ``txn_count_24h`` / ``txn_count_7d``: outgoing
-      transactions in the last 1 hour / 24 hours / 7 days;
-    * ``distinct_counterparties_24h`` / ``_7d``: distinct receiving
-      (bank, account) pairs in the last 24 hours / 7 days.
+    Args:
+        frame: Frame carrying ``self_bank_col``, ``self_account_col``,
+            ``party_bank_col``, ``party_account_col``, ``source_row_index``
+            and ``timestamp``.
+        self_bank_col, self_account_col: Column names identifying the entity
+            whose history is scanned (the partitioning/sort key).
+        party_bank_col, party_account_col: Column names identifying the
+            counterparty recorded into each window.
+        names: The five output column names, in (count_1h, count_24h,
+            count_7d, distinct_24h, distinct_7d) order.
 
-    Matches ``analytics.add_behaviour`` (pandas) and ``streaming.transition``
-    so batch, local and streaming features are identical.
+    Returns:
+        A two-column-plus-five DataFrame: ``source_row_index`` and the five
+        named feature columns, one row per input row. Joined back onto the
+        original frame by the caller.
     """
-    result = frame.withColumn("_sender_bank", normalized_bank(functions.col("from_bank")))
-    result = result.withColumn("_party_bank", normalized_bank(functions.col("to_bank")))
     # Timestamp as whole seconds since the epoch, for simple window arithmetic.
-    result = result.withColumn("_epoch", functions.col("timestamp").cast("long"))
-    # repartition by sender puts every transaction of one sender in the same
-    # partition; sorting within the partition orders them by sender then
+    result = frame.withColumn("_epoch", functions.col("timestamp").cast("long"))
+    # repartition by the entity puts every transaction of one entity in the
+    # same partition; sorting within the partition orders them by entity then
     # time (source_row_index breaks ties), so one sequential scan suffices.
-    ordered = result.repartition("_sender_bank", "from_account").sortWithinPartitions(
-        "_sender_bank", "from_account", "_epoch", "source_row_index")
+    ordered = result.repartition(self_bank_col, self_account_col).sortWithinPartitions(
+        self_bank_col, self_account_col, "_epoch", "source_row_index")
     columns = ordered.columns
     # Positions of the needed fields in each Row tuple (faster than by name).
-    sender_bank, sender_account, party_bank, party_account, epoch = [
-        columns.index(name) for name in ["_sender_bank", "from_account", "_party_bank", "to_account", "_epoch"]]
-    # Only the original columns are emitted; the helper "_" columns are dropped.
-    width = len(frame.columns)
+    self_bank, self_account, party_bank, party_account, epoch, row_index = [
+        columns.index(name) for name in
+        [self_bank_col, self_account_col, party_bank_col, party_account_col, "_epoch", "source_row_index"]]
 
     def scan(records):
         """Generator run once per partition over the sorted rows."""
         from collections import Counter, deque
 
-        sender = None
+        entity = None
         now = None
         for row in records:
-            key = (row[sender_bank], row[sender_account])
-            if key != sender:
-                # New sender: start empty windows. One deque of
-                # (time, receiver) per window, plus a Counter of receivers
-                # per window for the distinct-count features.
-                sender, now = key, None
+            key = (row[self_bank], row[self_account])
+            if key != entity:
+                # New entity: start empty windows. One deque of
+                # (time, counterparty) per window, plus a Counter of
+                # counterparties per window for the distinct-count features.
+                entity, now = key, None
                 queues = [deque(), deque(), deque()]
                 counts = [Counter(), Counter(), Counter()]
             timestamp = row[epoch]
@@ -222,17 +231,42 @@ def add_behaviour(frame):
                             del counter[party]
                 # (count 1h, count 24h, count 7d, distinct 24h, distinct 7d)
                 snapshot = tuple(len(queue) for queue in queues) + (len(counts[1]), len(counts[2]))
-            yield tuple(row[:width]) + snapshot
+            yield (row[row_index],) + snapshot
             # Add the current transaction AFTER emitting its features.
             party = (row[party_bank], row[party_account])
             for queue, counter in zip(queues, counts):
                 queue.append((timestamp, party))
                 counter[party] += 1
 
-    names = ["txn_count_1h", "txn_count_24h", "txn_count_7d",
-             "distinct_counterparties_24h", "distinct_counterparties_7d"]
-    schema = StructType(list(frame.schema.fields) + [StructField(name, LongType(), False) for name in names])
+    schema = StructType([StructField("source_row_index", LongType(), False)] +
+                        [StructField(name, LongType(), False) for name in names])
     return frame.sparkSession.createDataFrame(ordered.rdd.mapPartitions(scan), schema)
+
+
+def add_behaviour(frame):
+    """Adds ten long columns: five outgoing (sender) + five incoming (receiver).
+
+    Matches ``analytics.add_behaviour`` (pandas) so batch and local features
+    are identical; see that function's docstring for the full feature
+    definitions and the naming rationale. The streaming demo
+    (``streaming.transition``) intentionally only computes the five outgoing
+    features -- see ``planning/proposals/improvement_1_spec.md`` Step 0 for
+    why receiver-side state is out of scope for the Kinesis/Lambda path.
+
+    Computes two independent window scans (``_windowed_counts``, once keyed
+    by sender/outgoing, once by receiver/incoming) and joins both back onto
+    ``frame`` by ``source_row_index``, which is unique and present on every
+    row, so both inner joins are row-count-preserving.
+    """
+    result = frame.withColumn("_sender_bank", normalized_bank(functions.col("from_bank")))
+    result = result.withColumn("_party_bank", normalized_bank(functions.col("to_bank")))
+    out_names = ["txn_count_1h", "txn_count_24h", "txn_count_7d",
+                 "distinct_counterparties_24h", "distinct_counterparties_7d"]
+    in_names = ["in_txn_count_1h", "in_txn_count_24h", "in_txn_count_7d",
+                "distinct_senders_24h", "distinct_senders_7d"]
+    out_features = _windowed_counts(result, "_sender_bank", "from_account", "_party_bank", "to_account", out_names)
+    in_features = _windowed_counts(result, "_party_bank", "to_account", "_sender_bank", "from_account", in_names)
+    return frame.join(out_features, "source_row_index", "inner").join(in_features, "source_row_index", "inner")
 
 
 def curate(transactions, accounts, rates):

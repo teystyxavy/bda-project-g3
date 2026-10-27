@@ -14,6 +14,38 @@ def test_windows_exclude_peers_and_future_include_boundary_and_separate_banks():
     assert f.distinct_counterparties_24h.tolist() == [0,0,2,2,0,0]
     assert f.txn_count_7d.tolist() == [0,0,2,3,0,4]
     pd.testing.assert_frame_equal(add_behaviour(d.iloc[:4]), f.iloc[:4])
+    # Receiver ('2','X') (rows 0,2,3,4,5) fans in from sender ('1','A') on
+    # rows 0,2,3,5 and from a second, different sender ('2','A') on row 4 --
+    # the same rows already exercise a fan-in case, just not asserted above.
+    # Receiver ('3','X') (row 1) has no prior incoming history at all.
+    assert f.in_txn_count_1h.tolist() == [0,0,1,1,2,0]
+    assert f.in_txn_count_24h.tolist() == [0,0,1,2,3,0]
+    assert f.in_txn_count_7d.tolist() == [0,0,1,2,3,4]
+    assert f.distinct_senders_24h.tolist() == [0,0,1,1,1,0]
+    # distinct_senders_7d rises to 2 only once ('2','A') pays on row 4; the
+    # wide 7-day window still sees both ('1','A') and ('2','A') by row 5.
+    assert f.distinct_senders_7d.tolist() == [0,0,1,1,1,2]
+
+
+def test_fan_in_counts_distinct_senders_not_the_current_rows_own_sender():
+    # Four senders pay the SAME receiver an hour apart; the third sender
+    # repeats as the fourth payer. distinct_senders_* must count the
+    # receiver's distinct PRIOR senders, not whichever sender is paying now
+    # (row 3 repeats sender ('1','A') but still sees 3 distinct prior senders).
+    d = pd.DataFrame(dict(source_row_index=range(4),
+        timestamp=pd.to_datetime(['2022-09-05 09:00','2022-09-05 10:00',
+                                  '2022-09-05 11:00','2022-09-05 12:00']),
+        from_bank=['1','2','3','1'], from_account=['A','B','C','A'],
+        to_bank=['9']*4, to_account=['R']*4))
+    f = add_behaviour(d)
+    assert f.in_txn_count_24h.tolist() == [0,1,2,3]
+    assert f.distinct_senders_24h.tolist() == [0,1,2,3]
+    assert f.distinct_senders_7d.tolist() == [0,1,2,3]
+    # The sender side still works correctly in the same combined frame: row 3
+    # reuses sender ('1','A'), whose own outgoing history has exactly row 0
+    # (1 prior transaction, 1 distinct counterparty -- the receiver).
+    assert f.txn_count_24h.tolist() == [0,0,0,1]
+    assert f.distinct_counterparties_24h.tolist() == [0,0,0,1]
 
 
 def test_ranking_labels_do_not_influence_scores_and_metrics_handle_ties():

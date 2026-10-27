@@ -12,10 +12,10 @@ This module holds the cloud-independent logic so it can be tested locally:
 
 * ``validate_event``  strict schema / value checks for one replayed event.
 * ``transition``      update one sender's rolling history and compute the
-                      same 5 behaviour features as the batch path
-                      (``analytics.add_behaviour``), i.e. counts over the
-                      half-open window [t - window, t), with transactions at
-                      exactly the same timestamp excluded.
+                      same 5 OUTGOING behaviour features as the batch path's
+                      sender side (``analytics.add_behaviour``), i.e. counts
+                      over the half-open window [t - window, t), with
+                      transactions at exactly the same timestamp excluded.
 * ``MemoryStore``     in-memory stand-in for DynamoDB used by local tests and
                       ``scripts/streaming/prepare-streaming-demo.py``.
 * ``process_event``   idempotent "score once" logic for one event.
@@ -29,6 +29,20 @@ Event shape (JSON, base64-encoded inside the Kinesis record)::
 
 Labels and precomputed rolling features are rejected: the stream must derive
 features itself, exactly as a live system would.
+
+Scope limitation (receiver-side features): ``batch.FEATURES`` also includes
+five INCOMING (receiver-side) features as of the improvement-1 feature
+expansion (see ``planning/proposals/improvement_1_spec.md`` Step 0). This
+module deliberately does NOT compute them: Kinesis partitions by sender
+specifically so one sender's events stay ordered on one shard, which is what
+``transition`` relies on, but a receiver's incoming transactions can arrive
+via senders on other shards, so a single Lambda invocation cannot maintain an
+accurate receiver-side window without a separate, differently-partitioned
+state store -- a real redesign, out of scope here. ``transition`` therefore
+only ever returns ``SENDER_FEATURES``; scoring with a frozen model trained on
+the full 10-feature set through this streaming path will fail (by design --
+see ``SavedRanker``'s schema checks) until that redesign lands. The streaming
+demo is already parked/disabled, so this does not affect anything live.
 """
 import copy
 import hashlib
@@ -39,9 +53,16 @@ from datetime import datetime
 from .batch import FEATURES
 from .inference import SCORING_COLUMNS
 
-# Raw fields an event must carry: the model's scoring columns minus the five
-# behaviour features (those are computed here from the sender's history).
+# Raw fields an event must carry: the model's scoring columns minus every
+# behaviour feature (both directions; computed features of any kind are
+# never accepted as input, even though this module only computes the
+# outgoing/sender half of them -- see the scope-limitation note above).
 INPUT_COLUMNS = [column for column in SCORING_COLUMNS if column not in FEATURES]
+# The subset of FEATURES this module actually computes. Listed explicitly
+# (not derived by slicing batch.FEATURES) so a future reordering of that list
+# cannot silently change which features transition() thinks it is producing.
+SENDER_FEATURES = ['txn_count_1h', 'txn_count_24h', 'txn_count_7d',
+                   'distinct_counterparties_24h', 'distinct_counterparties_7d']
 
 
 def canonical(value):
@@ -146,9 +167,10 @@ def transition(state, event, run_id):
     # earlier transactions at exactly the same second are excluded, which
     # matches the batch feature definition.
     windows=[[entry for entry in history if now-seconds <= entry[0] < now] for seconds in [3600,86400,604800]]
-    # Features in FEATURES order: counts for 1h/24h/7d, then the number of
-    # distinct receivers in the 24h and 7d windows.
-    features=dict(zip(FEATURES,[len(window) for window in windows]+[len({entry[1] for entry in windows[1]}),len({entry[1] for entry in windows[2]})]))
+    # Features in SENDER_FEATURES order: counts for 1h/24h/7d, then the number
+    # of distinct receivers in the 24h and 7d windows. Only the outgoing half
+    # of FEATURES -- see the module docstring's scope-limitation note.
+    features=dict(zip(SENDER_FEATURES,[len(window) for window in windows]+[len({entry[1] for entry in windows[1]}),len({entry[1] for entry in windows[2]})]))
     txn=event['transaction']
     # Add this transaction AFTER computing features (it must not count itself).
     history.append([now,account_key(txn['to_bank'],txn['to_account'])])

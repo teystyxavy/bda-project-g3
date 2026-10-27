@@ -122,13 +122,18 @@ resource "aws_glue_catalog_table" "full" {
     # Full-run columns = the shared curated columns, plus:
     #   transaction_id (string) -- stable id for de-duplication/joins;
     #   source_row_index -- original CSV row number (used to prove completeness);
-    #   behavioural features computed by the curate job (--behaviour true): how
-    #   many earlier transactions the same sending account made in the preceding
-    #   1h / 24h / 7d, and how many distinct counterparties it paid in the
-    #   preceding 24h / 7d (inputs to the XGBoost AML risk model for BQ1).
+    #   behavioural features computed by the curate job (--behaviour true):
+    #   how many earlier transactions the same sending account made in the
+    #   preceding 1h / 24h / 7d, and how many distinct counterparties it paid
+    #   in the preceding 24h / 7d (sender/outgoing), plus the mirrored
+    #   in_txn_count_* / distinct_senders_* receiver/incoming features
+    #   (inputs to the XGBoost AML risk model for BQ1).
     dynamic "columns" {
       for_each = merge(local.curated_columns, { transaction_id = "string" }, {
-        for name in ["source_row_index", "txn_count_1h", "txn_count_24h", "txn_count_7d", "distinct_counterparties_24h", "distinct_counterparties_7d"] : name => "bigint"
+        for name in ["source_row_index", "txn_count_1h", "txn_count_24h", "txn_count_7d",
+          "distinct_counterparties_24h", "distinct_counterparties_7d",
+          "in_txn_count_1h", "in_txn_count_24h", "in_txn_count_7d",
+        "distinct_senders_24h", "distinct_senders_7d"] : name => "bigint"
       })
       content {
         name = columns.key

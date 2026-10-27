@@ -382,6 +382,16 @@ each day's partition already give adequate pruning for BQ2's bank-pair queries.
   - `distinct_counterparties_24h` / `_7d` (count distinct normalized `(to_bank, to_account)`)
   - `is_new_account` = `to_account` not seen for this `from_account` in the prior
     30 days
+  - **Receiver-side mirror (added for model performance; see
+    `planning/proposals/improvement_1_spec.md`):** the same scan run a second
+    time, grouped by normalized `(to_bank, to_account)` instead, counting the
+    receiver's *incoming* history — `in_txn_count_1h` / `_24h` / `_7d` and
+    `distinct_senders_24h` / `_7d` (count distinct normalized
+    `(from_bank, from_account)`). Closes the fan-in/gather-scatter blind spot
+    the sender-only features had. **Batch-scoped only** — the streaming demo
+    (`bda_pipeline.streaming`) intentionally does not compute these, since
+    Kinesis partitions by sender and a single shard cannot see a receiver's
+    full incoming history; see that module's docstring.
 - The dataset spans **2022-09-01 to 2022-09-18** (verified on `HI-Small`), so 1h/24h/7d
   windows have incomplete history near the start; first-week values have a cold-start limitation.
 - Local BQ1 scoring uses `amount_usd_asof` with the previous calendar day's FX

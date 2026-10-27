@@ -53,12 +53,19 @@ import pyarrow.parquet as pq
 from .analytics import concentration, corridor_totals, score_baseline
 from .dashboard import ranked, records, treasury_view
 
-# Causal behaviour features computed by the curate job for each sender account:
-# number of outgoing transactions in the previous 1h / 24h / 7 days and the
-# number of distinct receiving accounts in the previous 24h / 7 days. They only
-# look backwards in time, so they never leak future information into scoring.
+# Causal behaviour features computed by the curate job for each account: the
+# first five describe the SENDER's outgoing activity (number of outgoing
+# transactions in the previous 1h/24h/7d and number of distinct receiving
+# accounts in the previous 24h/7d); the next five mirror this for the
+# RECEIVER's incoming activity. Unprefixed = outgoing/sender (not renamed --
+# see planning/proposals/improvement_1_spec.md for why); in_ = incoming/
+# receiver. They only look backwards in time, so they never leak future
+# information into scoring. Note: the streaming demo (bda_pipeline.streaming)
+# only computes the outgoing half -- see that module's docstring.
 FEATURES = ['txn_count_1h', 'txn_count_24h', 'txn_count_7d',
-            'distinct_counterparties_24h', 'distinct_counterparties_7d']
+            'distinct_counterparties_24h', 'distinct_counterparties_7d',
+            'in_txn_count_1h', 'in_txn_count_24h', 'in_txn_count_7d',
+            'distinct_senders_24h', 'distinct_senders_7d']
 # Columns read from the curated Parquet. Reading a fixed column list keeps the
 # batches small and fails fast (see the "missing" check below) if the Glue job
 # output schema ever drifts.

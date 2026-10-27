@@ -57,59 +57,43 @@ def bank_key(values):
     return values.astype('string').str.lstrip('0').replace('', '0')
 
 
-def add_behaviour(frame):
-    """Exact outgoing windows [t-window,t); same-timestamp peers are excluded.
+def _windowed_counts(result, self_bank, self_account, party_bank, party_account):
+    """Shared per-entity sliding-window scan underlying both directions of
+    ``add_behaviour``.
 
-    Input must contain complete outgoing history for each included sender.
-    History before the dataset starts is unavailable (cold start).
+    Groups rows by ``(self_bank, self_account)`` and, within each group in
+    time order, computes exact ``[t-window, t)`` counts/distincts of the
+    *other* side (``party_bank``, ``party_account``). Called once with sender
+    as self/receiver as party (the outgoing features) and once with the
+    roles reversed (the incoming features) -- same algorithm, different
+    grouping key and counterparty columns.
 
-    For every transaction, looks back over the *same sender's* earlier
-    outgoing transactions and counts:
-
-    * ``txn_count_1h`` / ``txn_count_24h`` / ``txn_count_7d`` - how many
-      payments the sender made in the previous 1 hour, 24 hours and 7 days
-      (velocity: bursts of activity are a classic laundering signal);
-    * ``distinct_counterparties_24h`` / ``distinct_counterparties_7d`` - how
-      many different receiving (bank, account) pairs the sender paid in the
-      previous 24 hours and 7 days (fan-out: spreading money across many
-      accounts).
-
-    "Previous" is strict: the window is [t - window, t), so the current
-    transaction and any other transactions with the *identical* timestamp are
-    not counted. This avoids leaking information from simultaneous rows whose
-    order in the file is arbitrary.
-
-    Algorithm: a sliding window per sender. Rows are visited in time order;
+    Algorithm: a sliding window per entity. Rows are visited in time order;
     each window keeps a deque of (timestamp, counterparty) entries plus a
     Counter of counterparties. Old entries are popped from the left as the
     window moves, so each row is pushed and popped at most once per window
-    (roughly linear time per sender instead of quadratic).
+    (roughly linear time per entity instead of quadratic).
 
     Args:
-        frame: Transactions with ``from_bank, from_account, to_bank,
-            to_account, timestamp, source_row_index``.
+        result: Frame with ``timestamp``, ``source_row_index`` and the four
+            named bank/account columns.
+        self_bank, self_account: Column names identifying the entity whose
+            history is scanned (grouping key).
+        party_bank, party_account: Column names identifying the counterparty
+            recorded into each window.
 
     Returns:
-        A copy of ``frame`` (index reset to 0..n-1) with the five int64
-        feature columns added.
+        ``(len(result), 5)`` int64 numpy array: counts for the 1h/24h/7d
+        windows, then distinct-counterparty counts for the 24h/7d windows.
     """
-    # reset_index so row labels are 0..n-1 and can be used to index `features`.
-    result = frame.copy().reset_index(drop=True)
-    # Zero-stripped bank IDs so "010" and "10" are grouped as the same bank.
-    result['_bank'] = bank_key(result.from_bank)
-    result['_to_bank'] = bank_key(result.to_bank)
-    columns = ['txn_count_1h', 'txn_count_24h', 'txn_count_7d',
-               'distinct_counterparties_24h', 'distinct_counterparties_7d']
-    # One row of 5 feature values per transaction, filled in below.
     features = np.zeros((len(result), 5), dtype=np.int64)
-    # A "sender" is a (bank, account) pair; windows are computed independently.
-    for _, group in result.groupby(['_bank', 'from_account'], sort=False):
+    for _, group in result.groupby([self_bank, self_account], sort=False):
         # source_row_index breaks timestamp ties deterministically.
         group = group.sort_values(['timestamp', 'source_row_index'])
         # Index 0/1/2 = the 1h / 24h / 7d windows respectively.
         queues = [deque(), deque(), deque()]
         counters = [Counter(), Counter(), Counter()]
-        records = list(zip(group.index, group.timestamp, group._to_bank, group.to_account))
+        records = list(zip(group.index, group.timestamp, group[party_bank], group[party_account]))
         pos = 0
         while pos < len(records):
             # Find the block [pos, end) of rows that share the same timestamp;
@@ -140,8 +124,68 @@ def add_behaviour(frame):
                     q.append((timestamp, (bank, account)))
                     counts[(bank, account)] += 1
             pos = end
-    result[columns] = features
-    return result.drop(columns=['_bank', '_to_bank'])
+    return features
+
+
+def add_behaviour(frame):
+    """Exact outgoing AND incoming windows [t-window,t); same-timestamp peers excluded.
+
+    Input must contain complete outgoing *and* incoming history for each
+    included account. History before the dataset starts is unavailable
+    (cold start).
+
+    For every transaction, looks back over the *sender's* earlier outgoing
+    transactions and separately over the *receiver's* earlier incoming
+    transactions, and counts, for each side:
+
+    * ``txn_count_1h`` / ``txn_count_24h`` / ``txn_count_7d`` (sender,
+      outgoing) and ``in_txn_count_1h`` / ``in_txn_count_24h`` /
+      ``in_txn_count_7d`` (receiver, incoming) - how many payments were
+      made/received in the previous 1 hour, 24 hours and 7 days (velocity:
+      bursts of activity are a classic laundering signal);
+    * ``distinct_counterparties_24h`` / ``distinct_counterparties_7d``
+      (sender) and ``distinct_senders_24h`` / ``distinct_senders_7d``
+      (receiver) - how many different counterparty (bank, account) pairs
+      were involved in the previous 24 hours and 7 days (fan-out for the
+      sender, fan-in for the receiver - spreading money across many accounts
+      vs. accumulating it from many accounts).
+
+    The unprefixed (sender/outgoing) names are not renamed even though the
+    receiver side now exists: they are referenced by literal string outside
+    this module (the rule baseline in ``score_baseline``, the same condition
+    repeated in ``batch.py``'s validation ablation, and the fan-out threshold
+    documented in the pipeline plan) and already exist as columns in
+    deployed, populated curated Parquet. See
+    ``planning/proposals/improvement_1_spec.md`` for the full rationale.
+
+    "Previous" is strict: the window is [t - window, t), so the current
+    transaction and any other transactions with the *identical* timestamp are
+    not counted. This avoids leaking information from simultaneous rows whose
+    order in the file is arbitrary.
+
+    Args:
+        frame: Transactions with ``from_bank, from_account, to_bank,
+            to_account, timestamp, source_row_index``.
+
+    Returns:
+        A copy of ``frame`` (index reset to 0..n-1) with ten int64 feature
+        columns added: the five outgoing/sender features, then the five
+        incoming/receiver features.
+    """
+    # reset_index so row labels are 0..n-1 and can be used to index `features`.
+    result = frame.copy().reset_index(drop=True)
+    # Zero-stripped bank IDs so "010" and "10" are grouped as the same bank.
+    result['_from_bank'] = bank_key(result.from_bank)
+    result['_to_bank'] = bank_key(result.to_bank)
+    out_columns = ['txn_count_1h', 'txn_count_24h', 'txn_count_7d',
+                   'distinct_counterparties_24h', 'distinct_counterparties_7d']
+    in_columns = ['in_txn_count_1h', 'in_txn_count_24h', 'in_txn_count_7d',
+                  'distinct_senders_24h', 'distinct_senders_7d']
+    # Sender groups the rows; receiver is the counterparty whose history is windowed.
+    result[out_columns] = _windowed_counts(result, '_from_bank', 'from_account', '_to_bank', 'to_account')
+    # Roles reversed: receiver groups the rows; sender is the counterparty.
+    result[in_columns] = _windowed_counts(result, '_to_bank', 'to_account', '_from_bank', 'from_account')
+    return result.drop(columns=['_from_bank', '_to_bank'])
 
 
 def score_baseline(frame, thresholds):

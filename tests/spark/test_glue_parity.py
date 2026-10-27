@@ -99,6 +99,11 @@ def test_exact_behaviour_matches_local_boundaries_peers_and_banks(spark):
     pd.testing.assert_frame_equal(actual[expected.columns], expected, check_dtype=False)
     assert actual.loc[2, "txn_count_1h"] == 2
     assert actual.loc[9, "txn_count_7d"] == 0
+    # Row 9 is a third, distinct sender ("99") paying the same receiver as
+    # rows 0-8, at the exact same timestamp as row 0 -- so both are excluded
+    # from each other (same-timestamp rule) but both count for row 2, the
+    # next transaction to that receiver: fan-in from two distinct senders.
+    assert actual.loc[2, "distinct_senders_7d"] == 2
 
 
 def test_source_ids_preserve_duplicate_records(spark, tmp_path):
@@ -138,7 +143,8 @@ def test_queue_randomized_parity_and_label_independence(spark):
     actual = MODULE.add_behaviour(source).orderBy("source_row_index").toPandas()
     pd.testing.assert_frame_equal(actual, expected, check_dtype=False)
     changed = MODULE.add_behaviour(source.withColumn("is_laundering", 1 - F.col("is_laundering")))
-    features = [c for c in actual if c.startswith(("txn_count_", "distinct_counterparties_"))]
+    features = [c for c in actual if c.startswith(("txn_count_", "distinct_counterparties_",
+                                                    "in_txn_count_", "distinct_senders_"))]
     pd.testing.assert_frame_equal(changed.orderBy("source_row_index").toPandas()[features], actual[features])
 
 
