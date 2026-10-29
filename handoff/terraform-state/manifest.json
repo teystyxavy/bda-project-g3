@@ -1,0 +1,36 @@
+{
+  "prepared_date": "2026-10-29",
+  "live_state_verified": false,
+  "files": [
+    {
+      "file": "eventbridge-trigger/terraform.tfstate",
+      "status": "last available local state",
+      "sha256": "a8bdb7a6eabb9def48b94abe29d6b39d10344bd8b214f7d19b1b26e514d3c63e",
+      "serial": 9,
+      "lineage": "3912718a-fa6d-bf4a-eb70-28c2745716ba",
+      "terraform_version": "1.9.8",
+      "resource_groups": 8,
+      "source_modified_utc": "2026-10-06T16:13:21.755764+00:00"
+    },
+    {
+      "file": "ingestion/backups/terraform.tfstate.1791328451.backup",
+      "status": "historical backup; not current state",
+      "sha256": "ce25e108ff298712252a3bb2f7c380433325ab3f30017819f83729d069463cef",
+      "serial": 62,
+      "lineage": "d49fc274-1c70-3ac1-e995-67e25a4b29dd",
+      "terraform_version": "1.9.8",
+      "resource_groups": 19,
+      "source_modified_utc": "2026-10-06T23:14:12.057875+00:00"
+    },
+    {
+      "file": "ingestion/backups/terraform.tfstate.1791382632.backup",
+      "status": "historical backup; not current state",
+      "sha256": "a43bf90a23061ba9216f196ebe99a78289d5c57584cc2253f2062abf9e030804",
+      "serial": 79,
+      "lineage": "d49fc274-1c70-3ac1-e995-67e25a4b29dd",
+      "terraform_version": "1.9.8",
+      "resource_groups": 19,
+      "source_modified_utc": "2026-10-07T14:17:12.822755+00:00"
+    }
+  ]
+}
