@@ -1,0 +1,61 @@
+{
+  "status": "public-assets-verified",
+  "pointer": {
+    "schema_version": 1,
+    "run_id": "medium-labels-20261030",
+    "snapshot": "releases/medium-labels-20261030/dashboard.json",
+    "sha256": "eb6be0e5ac488c8264263f5ae43e008b53b30f409d11a2f3321fb4fd67776f83",
+    "previous_run_id": "medium-full-20261030-v2",
+    "source_pipeline_run_id": "medium-full-20261030-v2"
+  },
+  "invalidation": "I47NH68DVAK82MI996QCDD9C6Q",
+  "files": [
+    {
+      "file": "index.html",
+      "key": "dashboard/index.html",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 21899,
+      "sha256": "3eb7184674892fe6c8e9b39cc5cf99a5dfdc71b8d257e62cafcdbbf351bc8188"
+    },
+    {
+      "file": "dashboard.css",
+      "key": "dashboard/dashboard.css",
+      "content_type": "text/css; charset=utf-8",
+      "bytes": 10635,
+      "sha256": "373d641558d8e2487ec314306737a01dbf7ec6dcebd8c114fced682b938fe29e"
+    },
+    {
+      "file": "dashboard.js",
+      "key": "dashboard/dashboard.js",
+      "content_type": "application/javascript; charset=utf-8",
+      "bytes": 64515,
+      "sha256": "475cd56c2ef596f5e063522a69ce73918f9ea3d5ac0b446fb8f7c9442612d721"
+    },
+    {
+      "file": "dashboard.json",
+      "key": "dashboard/dashboard.json",
+      "content_type": "application/json; charset=utf-8",
+      "bytes": 8198479,
+      "sha256": "eb6be0e5ac488c8264263f5ae43e008b53b30f409d11a2f3321fb4fd67776f83"
+    }
+  ],
+  "model_changed": false,
+  "paid_batch_started": false,
+  "cloudfront_invalidation_status": "Completed",
+  "verified_public_paths": [
+    "index.html",
+    "releases/medium-labels-20261030/index.html",
+    "dashboard.css",
+    "releases/medium-labels-20261030/dashboard.css",
+    "dashboard.js",
+    "releases/medium-labels-20261030/dashboard.js",
+    "dashboard.json",
+    "releases/medium-labels-20261030/dashboard.json"
+  ],
+  "dataset_snapshot_unchanged": true,
+  "tests": {
+    "dashboard_passed": 16
+  },
+  "later_period_label": "Later period \u00b7 Sep 11\u201328",
+  "later_period_rows": 11579238
+}

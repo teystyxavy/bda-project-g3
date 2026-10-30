@@ -278,3 +278,15 @@ test('IAM helper consumes its fragment once and enables controls without AWS cre
   assert.equal(h.storage.has('is459-ingestion-auth'),false);
   assert.equal(h.calls.some(call=>call.url.endsWith('/session/logout')),true);
 });
+
+
+test('later evaluation labels follow Medium and Small snapshot dates without sparse claims',async()=>{
+  const h=await harness();
+  h.el('split').options=['test','validation','tail'].map(value=>Object.assign(new Element(),{value}));
+  vm.runInContext("snapshot={pipeline:{end_date:'2022-09-28'}};updateEvaluationLabels()",h.context);
+  assert.equal(h.el('split').options[2].textContent,'Later period · Sep 11–28');
+  assert.match(h.el('evaluation-methods').textContent,/Later period: Sep 11–28/);
+  vm.runInContext("snapshot={treasury_daily:[{day:'2022-09-18'}]};updateEvaluationLabels()",h.context);
+  assert.equal(h.el('split').options[2].textContent,'Later period · Sep 11–18');
+  assert.equal(h.el('split').options[0].textContent,'Test · Sep 9–10');
+});
