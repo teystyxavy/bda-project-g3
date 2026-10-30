@@ -41,7 +41,7 @@ import hashlib
 import json
 import shutil
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -79,6 +79,12 @@ QUEUE_COLUMNS = ['transaction_id', 'timestamp', 'from_bank', 'from_account',
 # dataset, reported separately because it has very few transactions.
 PERIODS = {'validation': ('2022-09-07', '2022-09-09'),
            'test': ('2022-09-09', '2022-09-11'), 'tail': ('2022-09-11', '2022-09-19')}
+
+
+def evaluation_periods(end_date='2022-09-18'):
+    """Preserve frozen chronological cohorts and include the entire observed tail."""
+    end = (datetime.fromisoformat(end_date) + timedelta(days=1)).date().isoformat()
+    return {**PERIODS, 'tail': ('2022-09-11', max('2022-09-19', end))}
 
 
 class AmlSummary:
@@ -211,7 +217,7 @@ def fit_thresholds(dataset):
     return {name: float(np.quantile(np.concatenate(values), .99)) for name, values in amounts.items()}
 
 
-def export_verified_batch(curated, verification, output, assets, *, serving_only=False):
+def export_verified_batch(curated, verification, output, assets, *, serving_only=False, subset='HI-Small', end_date='2022-09-18'):
     """Score the full verified curated population and write BQ1/BQ2 outputs.
 
     Args:
@@ -249,9 +255,10 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
     if missing:
         raise ValueError(f'Missing scoring columns: {sorted(missing)}')
     thresholds = fit_thresholds(dataset)
+    periods = evaluation_periods(end_date)
     # One summary per evaluation period, plus one per rule variant for the
     # validation-only ablation ("which rule components actually help?").
-    summaries = {period: AmlSummary() for period in PERIODS}
+    summaries = {period: AmlSummary() for period in periods}
     variants = {name: AmlSummary() for name in ['Current baseline', 'ACH only', 'ACH + amount', 'ACH + behaviour']}
     # One boolean per source CSV row: proves every row is scored exactly once.
     seen = np.zeros(proof['rows'], dtype=bool)
@@ -271,7 +278,7 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
                 raise ValueError('Invalid or duplicate source IDs')
             # transaction_id is derived as "HI-Small:<row index>"; a mismatch
             # would mean rows were shuffled or IDs corrupted in curation.
-            if not frame.transaction_id.eq('HI-Small:' + frame.source_row_index.astype(str)).all():
+            if not frame.transaction_id.eq(subset + ':' + frame.source_row_index.astype(str)).all():
                 raise ValueError('Transaction ID mismatch')
             # Labels must be binary and every value used by scoring present.
             if not frame.is_laundering.isin([0, 1]).all() or frame[['amount_usd', 'amount_usd_asof', *FEATURES]].isna().any().any():
@@ -281,6 +288,9 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
             positives += int(frame.is_laundering.sum())
             # BQ2: partial corridor totals for this batch; summed at the end.
             aggregates.append(corridor_totals(frame))
+            if len(aggregates) >= 8:
+                keys = ['txn_date', 'from_bank', 'to_bank', 'payment_currency', 'receiving_currency']
+                aggregates = [pd.concat(aggregates, ignore_index=True).groupby(keys, observed=True)[['transaction_count', 'volume_usd']].sum().reset_index()]
             # BQ1: score = 50 (ACH) + 20 (above training P99) + 30 (velocity
             # or fan-out); flagged when score >= 60. See analytics.score_baseline.
             scored = score_baseline(frame, thresholds)
@@ -290,7 +300,7 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
             if writer is None:
                 writer = pq.ParquetWriter(output / 'bq1_scored.parquet', table.schema, compression='snappy')
             writer.write_table(table)
-            for period, (start, end) in PERIODS.items():
+            for period, (start, end) in periods.items():
                 summaries[period].add(scored.loc[scored.timestamp.ge(start) & scored.timestamp.lt(end)])
             # Ablation on the validation window only: rebuild each rule
             # component (same weights as score_baseline) and score with

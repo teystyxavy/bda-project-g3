@@ -50,7 +50,7 @@ def same_query(actual, reviewed):
     return normalize(actual) == normalize(reviewed)
 
 
-def expected_corridors(batches, expected_rows):
+def expected_corridors(batches, expected_rows, *, start='2022-09-01', end='2022-09-18'):
     """Compute the reference corridor table, mirroring the Athena SQL.
 
     Args:
@@ -81,7 +81,7 @@ def expected_corridors(batches, expected_rows):
         for column in required[:-1]:
             if not frame[column].map(lambda value: isinstance(value, str)).all():
                 raise ValueError('Reference identifiers/dates must be strings')
-        if not frame.txn_date.between('2022-09-01', '2022-09-18').all():
+        if not frame.txn_date.between(start, end).all():
             raise ValueError('Reference date outside reviewed scope')
         if not np.isfinite(frame.amount_usd).all() or frame.amount_usd.lt(0).any():
             raise ValueError('Invalid reference USD volume')
@@ -93,6 +93,8 @@ def expected_corridors(batches, expected_rows):
             grouped = frame.groupby(['txn_date', source, target], observed=True).amount_usd.agg(
                 transactions='size', volume_usd='sum').reset_index()
             partials.append(grouped.rename(columns={source: 'from_node', target: 'to_node'}).assign(corridor_type=kind))
+        if len(partials) >= 16:
+            partials = [pd.concat(partials, ignore_index=True).groupby(KEYS, observed=True)[['transactions', 'volume_usd']].sum().reset_index()]
     if rows != expected_rows or not partials:
         raise ValueError('Reference population mismatch')
     # A corridor can appear in several batches; sum the partial totals.

@@ -113,7 +113,7 @@ def normalized_bank(column):
     return functions.when(stripped == "", "0").otherwise(stripped)
 
 
-def read_transactions(spark, path):
+def read_transactions(spark, path, subset='HI-Small'):
     """Read the transactions CSV with stable row numbers.
 
     Args:
@@ -146,7 +146,7 @@ def read_transactions(spark, path):
         if len(fields) != len(TRANSACTION_COLUMNS):
             raise ValueError(f"Invalid CSV record at source row {index - 1}")
         # Line 0 is the header, so data row number = line number - 1.
-        return (*fields, index - 1, f"HI-Small:{index - 1}")
+        return (*fields, index - 1, f"{subset}:{index - 1}")
     schema = StructType([StructField(name, StringType()) for name in TRANSACTION_COLUMNS] + [
         StructField("source_row_index", LongType(), False),
         StructField("transaction_id", StringType(), False),
@@ -235,7 +235,7 @@ def add_behaviour(frame):
     return frame.sparkSession.createDataFrame(ordered.rdd.mapPartitions(scan), schema)
 
 
-def curate(transactions, accounts, rates):
+def curate(transactions, accounts, rates, start_date='2022-09-01', end_date='2022-09-18'):
     """Validate, enrich and USD-convert the transactions.
 
     Args:
@@ -270,7 +270,7 @@ def curate(transactions, accounts, rates):
     result = result.withColumn("txn_date", functions.to_date("timestamp"))
     checks = [(required, "Required transaction fields are empty"),
               (functions.col("timestamp").isNull(), "Invalid timestamp"),
-              (~functions.col("txn_date").between("2022-09-01", "2022-09-18"), "Date outside HI-Small range"),
+              (~functions.col("txn_date").between(start_date, end_date), "Date outside selected source range"),
               (~functions.col("is_laundering").isin("0", "1"), "Invalid label")]
     # Amounts must parse as finite, non-negative numbers.
     for name in ["amount_paid", "amount_received"]:
@@ -348,6 +348,10 @@ def main():
     for name in ["transactions", "accounts", "fx", "output"]:
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--expected_rows", type=int, required=True)
+    parser.add_argument("--subset", choices=["HI-Small", "HI-Medium"], default="HI-Small")
+    parser.add_argument("--start_date", default="2022-09-01")
+    parser.add_argument("--end_date", default="2022-09-18")
+    parser.add_argument("--shuffle_partitions", type=int, default=8)
     parser.add_argument("--behaviour", choices=["true", "false"], default="false")
     # parse_known_args: Glue adds its own system arguments (e.g. --JOB_NAME),
     # which are ignored here.
@@ -362,10 +366,12 @@ def main():
     # NULL is then caught by the explicit checks with a clear message.
     spark.conf.set("spark.sql.ansi.enabled", "false")
     # Small job on 2 workers: 8 shuffle partitions instead of Spark's default 200.
-    spark.conf.set("spark.sql.shuffle.partitions", "8")
+    if not 1 <= args.shuffle_partitions <= 128:
+        raise ValueError("Invalid shuffle partition bound")
+    spark.conf.set("spark.sql.shuffle.partitions", str(args.shuffle_partitions))
     started = perf_counter()
     # cache(): the transactions are used for the count and for curation.
-    transactions = read_transactions(spark, args.transactions).cache()
+    transactions = read_transactions(spark, args.transactions, args.subset).cache()
     raw_rows = transactions.count()
     # Reconciliation gate: the raw file must have exactly the expected rows.
     if raw_rows != args.expected_rows:
@@ -375,7 +381,7 @@ def main():
     # FAILFAST: a malformed CSV line raises immediately instead of being dropped.
     accounts = spark.read.options(header=True, mode="FAILFAST").csv(args.accounts)
     rates = spark.read.options(header=True, mode="FAILFAST").csv(args.fx)
-    result = curate(transactions, accounts, rates).cache()
+    result = curate(transactions, accounts, rates, args.start_date, args.end_date).cache()
     # Left joins must not add or lose rows (would mean duplicate keys).
     if result.count() != raw_rows:
         raise ValueError("Account/FX joins changed the row count")

@@ -140,8 +140,8 @@ async function start(snapshotSource=null) {
     if(snapshot.pipeline) {
       const p=snapshot.pipeline;
       element('status').textContent=`Run ${p.run_id} · ${integer(snapshot.full_rows)} transactions · ${p.start_date} to ${p.end_date} · Dataset version ${p.dataset_version??'unrecorded local copy'} · Refreshed ${p.refresh_time}`;
-      const scope=p.source_scope==='smoke-prefix' ? 'Demonstration sample' : 'Selected HI-Small population';
-      element('method-scope').textContent=`${scope}. Both views use the same verified transaction run. Optional training creates a candidate for separate review.`;
+      const scope=p.source_scope==='smoke-prefix' ? 'Demonstration sample' : `Selected ${p.subset || 'HI-Small'} population`;
+      element('method-scope').textContent=`${scope}. Both views use the same verified transaction run. ${snapshot.model?.evaluation_scope || 'Optional training creates a candidate for separate review.'}`;
       element('day').options[0].textContent='All transaction dates';
       document.querySelector('#treasury .heading p').textContent=`${integer(snapshot.full_rows)} transactions in this run. High volume and concentration do not imply suspicious activity.`;
       document.querySelectorAll('#treasury article p').forEach(node=>{

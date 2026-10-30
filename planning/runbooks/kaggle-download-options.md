@@ -73,7 +73,7 @@ Its destination flag is `--output`; the ingestion Python entry point uses
 consume more local disk space and transfer time. KaggleHub keeps a cached source
 copy as well as the copy placed in `dataset/`, so allow space for both.
 
-**Pipeline runs still support HI-Small only.** Omitting `-DownloadOnly` runs the
+**The default cloud-acquisition route supports HI-Small only. HI-Medium batch runs require `-Subset HI-Medium -LocalAcquisition`; see [the Medium runbook](hi-medium.md).** Omitting `-DownloadOnly` runs the
 existing AWS workflow. `-Refresh` refreshes Kaggle source acquisition; `-Rerun`
 bypasses processing caches. An unchanged refreshed source may still reuse a verified
 release unless `-Rerun` is also selected.
@@ -83,7 +83,7 @@ complete source CSV is acquired before preparing the row prefix. `-Train`,
 `-Rows`, `-Rerun`, `-PrepareOnly`, `-NoWait` and local FX/deployment inputs cannot
 be combined with `-DownloadOnly`.
 
-Extending AWS to Medium/Large requires additional implementation and measurements.
+Medium support is implemented with the bounded local-acquisition route. Large still requires additional implementation and measurements.
 The current acquisition Lambda has 4 GB temporary storage and a 15-minute timeout;
 both Glue jobs use two G.1X workers with a 10-minute timeout. Larger inputs may
 require a different acquisition approach and larger/longer processing jobs, plus

@@ -81,6 +81,26 @@ def test_non_usd_fx_uses_separate_days_and_preserves_composite_keys(spark):
     assert [row.currency_mismatch for row in actual] == [True, False]
 
 
+def test_medium_identity_and_final_date_are_explicit(spark, tmp_path):
+    import csv
+    source = tmp_path / 'medium.csv'
+    with source.open('w', newline='') as stream:
+        writer = csv.writer(stream)
+        writer.writerow(MODULE.RAW_HEADER)
+        writer.writerow(['2022/09/28 00:00', '020', '0007', '020', '0007',
+                         '10', 'US Dollar', '10', 'US Dollar', 'ACH', '0'])
+    transactions = MODULE.read_transactions(spark, str(source), 'HI-Medium')
+    assert transactions.first().transaction_id == 'HI-Medium:0'
+    accounts = spark.createDataFrame([('A', '20', '0007', 'E1', 'Alice')], list(MODULE.ACCOUNT_COLUMNS))
+    rates = spark.createDataFrame([('2022-09-27', 'US Dollar', '1'),
+                                  ('2022-09-28', 'US Dollar', '1')], ['txn_date', 'currency', 'usd_rate'])
+    with pytest.raises(ValueError, match='Date outside'):
+        MODULE.curate(transactions, accounts, rates)
+    row = MODULE.curate(transactions, accounts, rates, '2022-09-01', '2022-09-28').first()
+    assert row.transaction_id == 'HI-Medium:0' and str(row.txn_date) == '2022-09-28'
+    assert row.from_account == '0007' and row.amount_usd == 10
+
+
 def test_exact_behaviour_matches_local_boundaries_peers_and_banks(spark):
     from bda_pipeline.analytics import add_behaviour
 

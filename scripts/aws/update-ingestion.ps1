@@ -9,6 +9,7 @@
 #   -PreparedDirectory  new output of scripts/aws/prepare-ingestion.py
 #   -Image              local worker image whose digest deployment.json pins
 #   -Profile            AWS CLI profile;  -Execute  push image + apply.
+#   -ImageAlreadyPublished  verify an existing ECR digest instead of Docker push.
 #
 # Safety rules enforced before anything is changed:
 #   * prepared artifacts unchanged since preparation (hash check);
@@ -30,7 +31,8 @@ param(
     [Parameter(Mandatory)][string]$PreparedDirectory,
     [Parameter(Mandatory)][string]$Image,
     [string]$Profile = 'is459-g3-tools',
-    [switch]$Execute
+    [switch]$Execute,
+    [switch]$ImageAlreadyPublished
 )
 # Stop at the first error; 'finally' restores the caller's directory.
 $ErrorActionPreference = 'Stop'
@@ -66,6 +68,12 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $privateRoot 'state/terraform.tfstate'))) { throw 'Existing ingestion state is required; use the initial deployment procedure for a fresh account' }
     $env:TF_DATA_DIR = Join-Path $privateRoot 'runtime'
     $planPath = Join-Path $privateRoot 'optimisation.tfplan'
+    # A changed immutable prefix must not delete the predecessor's S3 objects.
+    # Back up private state and forget only allowlisted predecessor uploads;
+    # Terraform then plans fresh uploads while old releases remain recoverable.
+    $retentionPython = Join-Path $projectRoot 'output/ml-venv/Scripts/python.exe'
+    & $retentionPython scripts/aws/retain-deployment-artifacts.py --terraform $terraform --state (Join-Path $privateRoot 'state/terraform.tfstate') --prefix $config.artifact_prefix
+    if ($LASTEXITCODE -ne 0) { throw 'Could not safely retain predecessor deployment artifacts' }
     # Validate the configuration, then save a plan with the new tfvars.
     & $terraform '-chdir=infra/ingestion' validate
     if ($LASTEXITCODE -ne 0) { throw 'Terraform validation failed' }
@@ -92,18 +100,21 @@ try {
     if (-not $Execute) { Write-Output 'Validated update plan; no AWS changes or paid jobs started.'; return }
     # -Execute: log Docker in to ECR (stdin password, cleared afterwards), tag
     # as 'optimised-<12 digest chars>', push, and verify the remote digest.
-    $ecrPassword = & aws ecr get-login-password --profile $Profile --region ap-southeast-1
-    if ($LASTEXITCODE -ne 0) { throw 'ECR authentication failed' }
-    $ecrPassword | & docker @dockerArgs login --username AWS --password-stdin 588738581042.dkr.ecr.ap-southeast-1.amazonaws.com
-    $ecrPassword = $null
-    if ($LASTEXITCODE -ne 0) { throw 'Docker authentication failed' }
-    $tagName = 'optimised-' + $descriptor.digest.Substring(7, 12)
-    $tag = '588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training:' + $tagName
-    & docker @dockerArgs tag $Image $tag
-    if ($LASTEXITCODE -ne 0) { throw 'Image tagging failed' }
-    & docker @dockerArgs push $tag
-    if ($LASTEXITCODE -ne 0) { throw 'Image push failed' }
-    $remote = & aws ecr describe-images --profile $Profile --region ap-southeast-1 --repository-name is459-g3-training --image-ids "imageTag=$tagName" --query 'imageDetails[0].imageDigest' --output text
+    if (-not $ImageAlreadyPublished) {
+        $ecrPassword = & aws ecr get-login-password --profile $Profile --region ap-southeast-1
+        if ($LASTEXITCODE -ne 0) { throw 'ECR authentication failed' }
+        $ecrPassword | & docker @dockerArgs login --username AWS --password-stdin 588738581042.dkr.ecr.ap-southeast-1.amazonaws.com
+        $ecrPassword = $null
+        if ($LASTEXITCODE -ne 0) { throw 'Docker authentication failed' }
+        $tagName = 'optimised-' + $descriptor.digest.Substring(7, 12)
+        $tag = '588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training:' + $tagName
+        & docker @dockerArgs tag $Image $tag
+        if ($LASTEXITCODE -ne 0) { throw 'Image tagging failed' }
+        & docker @dockerArgs push $tag
+        if ($LASTEXITCODE -ne 0) { throw 'Image push failed' }
+    }
+    # API-uploaded images need no Docker credential store; digest verification remains mandatory.
+    $remote = & aws ecr describe-images --profile $Profile --region ap-southeast-1 --repository-name is459-g3-training --image-ids "imageDigest=$($descriptor.digest)" --query 'imageDetails[0].imageDigest' --output text
     if ($LASTEXITCODE -ne 0 -or $remote.Trim() -ne $descriptor.digest) { throw 'Remote worker digest differs' }
     # Run lock check #2: a run may have started while the image was pushing.
     $locks = & aws s3api list-objects-v2 --bucket is459-g3-588738581042-ap-southeast-1 --prefix pipeline/lock.json --max-keys 1 --profile $Profile --query KeyCount --output text

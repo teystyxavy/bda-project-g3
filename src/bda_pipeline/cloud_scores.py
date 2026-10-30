@@ -89,7 +89,7 @@ def feature_fingerprints(frame):
                     for row in normalized.itertuples(index=False, name=None)], dtype='S32')
 
 
-def checked_indices(frame, seen):
+def checked_indices(frame, seen, subset='HI-Small'):
     """Validate a batch's row identities and mark them as seen.
 
     Args:
@@ -113,7 +113,7 @@ def checked_indices(frame, seen):
         raise ValueError('Source index outside expected integer range')
     if len(np.unique(indices)) != len(indices) or seen[indices].any():
         raise ValueError('Duplicate source index')
-    if not frame.transaction_id.eq('HI-Small:' + frame.source_row_index.astype(str)).all():
+    if not frame.transaction_id.eq(subset + ':' + frame.source_row_index.astype(str)).all():
         raise ValueError('Transaction identity mismatch')
     seen[indices] = True
     return indices

@@ -1,7 +1,7 @@
 {
   "Comment": "Parallel verified full batch; 15-second bounded processing checks; no paid-job retries.",
   "StartAt": "Begin",
-  "TimeoutSeconds": 7200,
+  "TimeoutSeconds": 14400,
   "States": {
     "Begin": {
       "Type": "Task",
@@ -51,7 +51,10 @@
       "Resource": "arn:aws:states:::glue:startJobRun.sync",
       "Parameters": {
         "JobName": "is459-g3-ingest-curate",
-        "Arguments.$": "$.work.curate_arguments"
+        "Arguments.$": "$.work.curate_arguments",
+        "WorkerType": "G.1X",
+        "NumberOfWorkers.$": "$.work.glue_workers",
+        "Timeout.$": "$.work.glue_timeout"
       },
       "ResultPath": null,
       "Next": "PrepareBaseline",
@@ -178,7 +181,7 @@
                 },
                 {
                   "Variable": "$.poll.attempt",
-                  "NumericGreaterThanEquals": 179,
+                  "NumericGreaterThanEquals": 299,
                   "Next": "BaselineFailed"
                 }
               ],
@@ -195,7 +198,7 @@
             "BaselineFailed": {
               "Type": "Fail",
               "Error": "ProcessingFailedOrDeadline",
-              "Cause": "Processing did not succeed within 180 checks; preserve outputs and stop owned workers."
+              "Cause": "Processing did not succeed within 300 checks; preserve outputs and stop owned workers."
             },
             "PrepareBranches": {
               "Type": "Task",
@@ -318,7 +321,7 @@
                 },
                 {
                   "Variable": "$.poll.attempt",
-                  "NumericGreaterThanEquals": 179,
+                  "NumericGreaterThanEquals": 299,
                   "Next": "TrainFailed"
                 }
               ],
@@ -335,7 +338,7 @@
             "TrainFailed": {
               "Type": "Fail",
               "Error": "ProcessingFailedOrDeadline",
-              "Cause": "Processing did not succeed within 180 checks; preserve outputs and stop owned workers."
+              "Cause": "Processing did not succeed within 300 checks; preserve outputs and stop owned workers."
             }
           }
         },
@@ -358,7 +361,10 @@
               "Resource": "arn:aws:states:::glue:startJobRun.sync",
               "Parameters": {
                 "JobName": "is459-g3-ingest-score",
-                "Arguments.$": "$.work.score_arguments"
+                "Arguments.$": "$.work.score_arguments",
+                "WorkerType": "G.1X",
+                "NumberOfWorkers.$": "$.work.glue_workers",
+                "Timeout.$": "$.work.glue_timeout"
               },
               "ResultPath": null,
               "End": true
@@ -527,7 +533,7 @@
         },
         {
           "Variable": "$.poll.attempt",
-          "NumericGreaterThanEquals": 179,
+          "NumericGreaterThanEquals": 299,
           "Next": "ExportFailed"
         }
       ],

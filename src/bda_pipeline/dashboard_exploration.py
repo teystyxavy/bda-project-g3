@@ -14,7 +14,7 @@ import pandas as pd
 import pyarrow.dataset as ds
 
 from .analytics import ranking_metrics
-from .batch import PERIODS, QUEUE_COLUMNS
+from .batch import PERIODS, QUEUE_COLUMNS, evaluation_periods
 from .dashboard import records
 from .model import INPUT_COLUMNS, rank
 
@@ -23,7 +23,7 @@ QUEUE_FIELDS = [*QUEUE_COLUMNS, 'model_score', 'model_evidence',
                 'explanation_bias_margin', 'explanation_total_margin']
 
 
-def scorer_projection(frame, scores, capacity, model=True):
+def scorer_projection(frame, scores, capacity, model=True, subset='HI-Small'):
     ordering = rank(frame[['timestamp', 'source_row_index', 'is_laundering']], scores)
     metrics = ranking_metrics(ordering)
     labels = ordering.is_laundering.to_numpy()
@@ -58,49 +58,101 @@ def scorer_projection(frame, scores, capacity, model=True):
     curve = [{'recall': float(hits.iloc[i] / metrics['positives']),
               'precision': float(hits.iloc[i] / reviewed.iloc[i])} for i in positions] if metrics['positives'] else []
     return {'metrics_by_k': capacities, 'daily_by_k': selected_daily, 'histogram': histogram,
-            'pr_curve': curve, 'queue': frame.loc[queue_indices, 'transaction_id'].tolist()}
+            'pr_curve': curve, 'queue': (frame.loc[queue_indices, 'transaction_id'].tolist() if 'transaction_id' in frame else [f'{subset}:{i}' for i in frame.loc[queue_indices, 'source_row_index']])}
 
 
-def aml_exploration(dataset, scores, ranker):
+class RankedPopulation:
+    """Keep compact exact metric inputs and only bounded full-feature queue rows."""
+    def __init__(self, capacity, model, subset):
+        self.capacity, self.model, self.subset = capacity, model, subset
+        self.parts, self.queue = [], None
+
+    def add(self, frame, values):
+        if frame.empty:
+            return
+        compact = frame[['timestamp', 'source_row_index', 'is_laundering']].copy()
+        compact['risk_score'] = values
+        self.parts.append(compact)
+        ordering = rank(compact.reset_index(drop=True), values).head(self.capacity)
+        candidate = frame.iloc[ordering.index].copy()
+        candidate['_rank_score'] = ordering.risk_score.to_numpy()
+        queue = candidate if self.queue is None else pd.concat([self.queue, candidate], ignore_index=True)
+        self.queue = queue.sort_values(['_rank_score', 'timestamp', 'source_row_index'],
+                                      ascending=[False, True, True]).head(self.capacity).copy()
+
+    def finish(self):
+        if self.parts:
+            compact = pd.concat(self.parts, ignore_index=True)
+        else:
+            compact = pd.DataFrame({'timestamp': pd.Series(dtype='datetime64[ns]'),
+                'source_row_index': pd.Series(dtype='int64'), 'is_laundering': pd.Series(dtype='int64'),
+                'risk_score': pd.Series(dtype='float64')})
+        self.parts.clear()
+        return scorer_projection(compact, compact.risk_score.to_numpy(), self.capacity,
+                                 model=self.model, subset=self.subset)
+
+
+def stream_model_view(dataset, scores, ranker, start, end, subset='HI-Small'):
+    population = RankedPopulation(100, True, subset)
+    condition = (ds.field('timestamp') >= pd.Timestamp(start)) & (ds.field('timestamp') < pd.Timestamp(end))
+    for batch in dataset.to_batches(columns=INPUT_COLUMNS, filter=condition, batch_size=100_000):
+        frame = batch.to_pandas()
+        population.add(frame, scores[frame.source_row_index.to_numpy(dtype='int64')])
+    result = population.finish()
+    queue = population.queue
+    return {'metrics': result['metrics_by_k']['100'], 'queue':
+            records(ranker.queue(queue, queue._rank_score.to_numpy())) if queue is not None else []}
+
+
+def aml_exploration(dataset, scores, ranker, end_date='2022-09-18', subset='HI-Small'):
     views, pool, targets = {}, {}, {}
     optional = [c for c in ['amount_paid', 'receiving_currency'] if c in dataset.schema.names and c not in INPUT_COLUMNS]
-    for period, (start, end) in PERIODS.items():
-        frame = dataset.to_table(columns=INPUT_COLUMNS + optional,
-            filter=(ds.field('timestamp') >= pd.Timestamp(start)) & (ds.field('timestamp') < pd.Timestamp(end))).to_pandas()
-        frame = frame.reset_index(drop=True)
-        values = scores[frame.source_row_index.to_numpy(dtype='int64')]
-        frame['model_score'] = values
-        scopes = [('all', 'Whole evaluation period', None, None, frame)]
+    for period, (start, end) in evaluation_periods(end_date).items():
+        condition = (ds.field('timestamp') >= pd.Timestamp(start)) & (ds.field('timestamp') < pd.Timestamp(end))
+        banks, choices = defaultdict(float), {'payment_format': set(), 'payment_currency': set()}
+        # Determine offered filters from the entire period, reading only compact columns.
+        for batch in dataset.to_batches(columns=['payment_format', 'payment_currency', 'from_bank', 'amount_usd_asof'],
+                                        filter=condition, batch_size=100_000):
+            frame = batch.to_pandas()
+            for column in choices:
+                choices[column].update(frame[column].dropna().unique())
+            for bank, volume in frame.groupby('from_bank').amount_usd_asof.sum().items():
+                banks[bank] += float(volume)
+        scopes = [('all', 'Whole evaluation period', None, None)]
         for dimension, title in [('payment_format', 'Payment'), ('payment_currency', 'Currency'), ('from_bank', 'Sender bank')]:
-            if dimension == 'from_bank':
-                # Explicitly offered banks are selected from the complete period by volume.
-                options = frame.groupby(dimension).amount_usd_asof.sum().nlargest(5).index.tolist()
-            else:
-                options = sorted(frame[dimension].dropna().unique().tolist())
-            for value in options:
-                scopes.append((dimension + ':' + str(value), title + ': ' + str(value), dimension, str(value),
-                               frame.loc[frame[dimension].eq(value)]))
+            options = ([bank for bank, _ in sorted(banks.items(), key=lambda pair: (-pair[1], pair[0]))[:5]]
+                       if dimension == 'from_bank' else sorted(choices[dimension]))
+            scopes.extend((dimension + ':' + str(value), title + ': ' + str(value), dimension, str(value)) for value in options)
+        populations = {scope_id: {kind: RankedPopulation(250 if scope_id == 'all' else 100, kind == 'model', subset)
+                                 for kind in ['model', 'rules']} for scope_id, _, _, _ in scopes}
+        for batch in dataset.to_batches(columns=INPUT_COLUMNS + optional, filter=condition, batch_size=100_000):
+            frame = batch.to_pandas().reset_index(drop=True)
+            frame['model_score'] = scores[frame.source_row_index.to_numpy(dtype='int64')]
+            for scope_id, _, dimension, value in scopes:
+                current = frame if dimension is None else frame.loc[frame[dimension].eq(value)]
+                for kind, column in [('model', 'model_score'), ('rules', 'risk_score')]:
+                    populations[scope_id][kind].add(current, current[column].to_numpy())
         projected = []
-        for scope_id, label, dimension, value, subset in scopes:
-            capacity = 250 if scope_id == 'all' else 100
-            item = {'id': scope_id, 'label': label, 'dimension': dimension, 'value': value, 'capacity': capacity}
-            for kind, score_values in [('model', subset.model_score.to_numpy()), ('rules', subset.risk_score.to_numpy())]:
-                projection = scorer_projection(subset, score_values, capacity, model=kind == 'model')
-                item[kind] = projection
-                selected = subset.loc[subset.transaction_id.isin(projection['queue'])]
-                for row in records(selected[[c for c in QUEUE_COLUMNS + ['model_score'] + optional if c in selected]]):
-                    pool[row['transaction_id']] = row
-                if scope_id == 'all':
-                    for row in records(selected[['transaction_id', 'timestamp', 'source_row_index', 'from_bank', 'from_account']]):
-                        targets[row['transaction_id']] = row
+        for scope_id, label, dimension, value in scopes:
+            item = {'id': scope_id, 'label': label, 'dimension': dimension, 'value': value,
+                    'capacity': 250 if scope_id == 'all' else 100}
+            for kind, population in populations[scope_id].items():
+                item[kind] = population.finish()
+                selected = population.queue
+                if selected is not None:
+                    for row in records(selected[[c for c in QUEUE_COLUMNS + ['model_score'] + optional if c in selected]]):
+                        pool.setdefault(row['transaction_id'], {}).update(row)
+                    if scope_id == 'all':
+                        for row in records(selected[['transaction_id', 'timestamp', 'source_row_index', 'from_bank', 'from_account']]):
+                            targets[row['transaction_id']] = row
+            selected = populations['all']['model'].queue if scope_id == 'all' else None
+            if selected is not None:
+                for row in records(ranker.queue(selected, selected.model_score.to_numpy(), k=250)):
+                    pool[row['transaction_id']].update(row)
             projected.append(item)
-        if len(frame):
-            for row in records(ranker.queue(frame, values, k=250)):
-                pool[row['transaction_id']].update(row)
         views[period] = {'scopes': projected}
-        del frame, values, scopes
+        del populations
         gc.collect()
-    # Store fields once per identity; array encoding keeps the verified four-file package small.
     histories = account_histories(dataset, targets)
     return {'periods': views, 'record_fields': QUEUE_FIELDS + ['amount_paid', 'receiving_currency'],
             'records': {key: [row.get(field) for field in QUEUE_FIELDS + ['amount_paid', 'receiving_currency']]
@@ -141,6 +193,8 @@ def joint_corridors(dataset):
         frame = batch.to_pandas()
         frame['txn_date'] = frame.txn_date.astype(str)
         partials.append(frame.groupby(keys, observed=True).amount_usd.agg(volume_usd='sum', transaction_count='size').reset_index())
+        if len(partials) >= 8:
+            partials = [pd.concat(partials, ignore_index=True).groupby(keys, observed=True)[['volume_usd', 'transaction_count']].sum().reset_index()]
     return pd.concat(partials).groupby(keys, observed=True)[['volume_usd', 'transaction_count']].sum().reset_index()
 
 
@@ -211,7 +265,7 @@ def treasury_exploration(corridors):
 def enrich_snapshot(snapshot, dataset, scores, ranker, corridors=None):
     if len(scores) != snapshot['full_rows']:
         raise ValueError('Exploration score population mismatch')
-    snapshot['exploration'] = {'version': 1, 'aml': aml_exploration(dataset, scores, ranker),
+    snapshot['exploration'] = {'version': 1, 'aml': aml_exploration(dataset, scores, ranker, snapshot.get('pipeline', {}).get('end_date', '2022-09-18'), snapshot.get('pipeline', {}).get('subset', 'HI-Small')),
         'treasury': treasury_exploration(corridors if corridors is not None else joint_corridors(dataset)),
         'quality': {'status': 'verified-source', 'rows': snapshot['full_rows'],
                     'model_changed': False, 'labels_in_queue': False}}

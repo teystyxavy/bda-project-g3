@@ -252,7 +252,7 @@ instead of near-real-time. Either way, the batch backbone itself is never option
 
 - Set an **AWS Budget** with alerts at $150 / $200 / $230 against the $250 cap.
 - Demo end-to-end on **HI-Small** (475MB transactions, 5M rows) — the same
-  Glue/Athena code scales to Medium/Large by just repointing the S3 prefix; call
+  Glue/Athena architecture can scale to Medium/Large, but source contracts, IDs, dates, resource bounds and verification must also change; call
   this out in the report as a scaling discussion rather than actually burning
   budget running Large.
 - Keep the Kinesis producer running only for the live-demo window, not continuously.
@@ -675,3 +675,14 @@ EDA-measured number, and should be re-validated once the ETL actually computes
 those columns. Re-running the notebook against `LI-Small` to compare illicit
 ratios across variants (mentioned in §4's summary) is also still open but not
 blocking.
+
+
+### HI-Medium extension (29 October 2026)
+
+`feature/larger-dataset` adds a bounded local-acquisition route for HI-Medium,
+with subset-specific IDs/manifests, observed source dates, complete tail coverage,
+and streamed dashboard projections. The default HI-Small cloud-acquisition route
+is retained. Frozen-model scoring is a transfer evaluation; no Medium retraining
+or model promotion is enabled. See [the runbook](runbooks/hi-medium.md) for verified
+source counts, compute limits and the acceptance status. This implementation note
+does not by itself claim a successful full AWS run.
