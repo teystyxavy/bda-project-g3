@@ -1,43 +1,5 @@
-"""Glue 5.0 curation foundation; runnable with spark-submit for local parity tests.
-
-Where this sits in the pipeline
--------------------------------
-This is the AWS Glue PySpark job that turns the raw Kaggle files into the
-"curated" table every later step reads::
-
-    S3 raw  (transactions CSV, accounts CSV, fx CSV)
-      -> this job
-      -> S3 curated Parquet, partitioned by txn_date=YYYY-MM-DD
-
-It is deployed as ``is459-g3-ingest-curate`` (``infra/ingestion``, called by
-the Step Functions ingestion workflow with per-run S3 paths and
-``--behaviour true``) and as the original 1,000-row smoke job
-(``infra/terraform``). The same script can run locally with ``spark-submit``
-to check that local and cloud results match.
-
-What it does
-    1. Reads the transactions CSV line by line, giving each row a stable
-       ``source_row_index`` (0-based data row number) and
-       ``transaction_id = 'HI-Small:<index>'``.
-    2. Validates every field (fail-closed: any bad row stops the job).
-    3. Joins sender and receiver account metadata (bank name, entity).
-    4. Converts ``amount_paid`` to USD twice: with the same-day FX rate
-       (``amount_usd``, used for BQ2 treasury volume) and with the previous
-       day's rate (``amount_usd_asof``, used for BQ1 scoring, so scoring only
-       uses information available before the transaction day).
-    5. Optionally (``--behaviour true``) adds five rolling sender features.
-    6. Writes Parquet and re-reads it to confirm the row count.
-
-Usage (Glue passes these as job arguments)::
-
-    --transactions s3://.../transactions.csv --accounts s3://.../accounts.csv
-    --fx s3://.../fx.csv --output s3://.../curated/.../transactions/
-    --expected_rows 5078345 [--behaviour true]
-
-Failure behaviour: every check raises ``ValueError``; Glue then marks the run
-FAILED (the Glue jobs are configured with no retries) and the workflow stops
-before anything downstream uses partial data.
-"""
+"""Glue 5.0 PySpark job turning the raw Kaggle files (transactions, accounts, FX CSVs) into curated Parquet partitioned by txn_date; also runnable with spark-submit for local parity tests.
+Arguments: --transactions --accounts --fx --output --expected_rows [--behaviour true]; every check raises ValueError so Glue fails the run before downstream steps see partial data."""
 
 import argparse
 import csv
@@ -55,9 +17,7 @@ TRANSACTION_COLUMNS = [
     "amount_received", "receiving_currency", "amount_paid", "payment_currency",
     "payment_format", "is_laundering",
 ]
-# The exact header of the Kaggle HI-Small_Trans.csv file. Note the two
-# columns both called "Account" (sender, then receiver), which is why the
-# file is parsed by position rather than by header name.
+# Exact Kaggle header; two columns are both named "Account", so the file is parsed by position.
 RAW_HEADER = [
     "Timestamp", "From Bank", "Account", "To Bank", "Account", "Amount Received",
     "Receiving Currency", "Amount Paid", "Payment Currency", "Payment Format", "Is Laundering",
@@ -70,29 +30,14 @@ ACCOUNT_COLUMNS = {
 
 
 def reject(frame, condition, message):
-    """Raise ``ValueError(message)`` if any row of ``frame`` matches ``condition``.
-
-    ``limit(1).count()`` lets Spark stop as soon as one offending row is found
-    instead of counting them all.
-    """
+    """Raises ``ValueError(message)`` if any row of ``frame`` matches ``condition`` (stops at the first offending row)."""
     if frame.filter(condition).limit(1).count():
         raise ValueError(message)
 
 
 def reject_many(frame, checks):
-    """Evaluate related quality gates in one scan, keeping fail-closed nulls.
-
-    Args:
-        frame: Spark DataFrame to check.
-        checks: list of (condition, message) pairs; a condition is True for a
-            bad row.
-
-    All conditions are computed in a single aggregation (one pass over the
-    data instead of one per check). For each check, ``max(condition)`` is 1 if
-    any row fails. ``coalesce(condition, True)`` treats a NULL result (e.g. a
-    comparison against a missing value) as a failure, so unknown data never
-    passes silently. The first failing check's message is raised.
-    """
+    """Evaluates related quality gates in one scan; a NULL condition counts as a failure so unknown data never passes silently.
+    ``checks`` is a list of (condition, message) pairs, and the first failing message is raised."""
     failures = frame.agg(*[
         functions.max(functions.coalesce(condition, functions.lit(True)).cast("int")).alias(f"check_{i}")
         for i, (condition, _) in enumerate(checks)
@@ -103,32 +48,15 @@ def reject_many(frame, checks):
 
 
 def normalized_bank(column):
-    """Spark expression: bank code with leading zeros removed ('' -> '0').
-
-    The transactions file and the accounts file do not always zero-pad bank
-    IDs the same way, so both sides are normalised before joining or
-    grouping. Same rule as ``bank_key`` in ``bda_pipeline/analytics.py``.
-    """
+    """Spark expression: bank code with leading zeros removed ('' -> '0'), the same rule as ``bank_key`` in ``analytics.py``.
+    The transactions and accounts files pad bank IDs differently, so both sides are normalised before joining."""
     stripped = functions.regexp_replace(column, "^0+", "")
     return functions.when(stripped == "", "0").otherwise(stripped)
 
 
 def read_transactions(spark, path):
-    """Read the transactions CSV with stable row numbers.
-
-    Args:
-        spark: active SparkSession.
-        path: path/URI of ONE CSV file (not a folder).
-
-    Returns:
-        DataFrame with the 11 TRANSACTION_COLUMNS as strings, plus
-        ``source_row_index`` (long; 0 = first data row after the header) and
-        ``transaction_id`` (``'HI-Small:<source_row_index>'``).
-
-    Raises:
-        ValueError: if the path is not a single file, the header differs from
-        RAW_HEADER, or a line does not have exactly 11 CSV fields.
-    """
+    """Reads ONE transactions CSV into the 11 string columns plus a stable ``source_row_index`` and ``transaction_id`` ('HI-Small:<index>').
+    Raises ValueError if the path is not a single file, the header differs from RAW_HEADER or a line does not have 11 fields."""
     # A single immutable, one-record-per-line file is the source identity contract.
     # zipWithIndex preserves physical row order, unlike monotonically_increasing_id.
     jpath = spark._jvm.org.apache.hadoop.fs.Path(path)
@@ -141,7 +69,6 @@ def read_transactions(spark, path):
     def parse(record):
         """Split one (line, line_number) pair into fields + identity columns."""
         line, index = record
-        # Python's csv module handles quoting; strict=True rejects malformed quotes.
         fields = next(csv.reader([line], strict=True))
         if len(fields) != len(TRANSACTION_COLUMNS):
             raise ValueError(f"Invalid CSV record at source row {index - 1}")
@@ -156,46 +83,13 @@ def read_transactions(spark, path):
 
 
 def _windowed_counts(frame, self_bank_col, self_account_col, party_bank_col, party_account_col, names):
-    """Shared per-entity sliding-window scan underlying both directions of
-    ``add_behaviour``.
-
-    Sort once, then maintain exact queues in a streaming partition scan. Each
-    row enters/leaves each queue once instead of rebuilding distinct sets for
-    overlapping range frames. State resets per normalized entity; a cached
-    timestamp snapshot excludes all simultaneous peers without buffering them.
-    Input must contain complete history for ``(self_bank_col, self_account_col)``.
-    Memory follows active history, not the entire partition. Labels and USD
-    values do not enter the calculation.
-
-    Called once with sender as self / receiver as counterparty (the outgoing
-    features) and once with the roles reversed (the incoming features) --
-    same algorithm, different grouping key and counterparty columns.
-
-    Args:
-        frame: Frame carrying ``self_bank_col``, ``self_account_col``,
-            ``party_bank_col``, ``party_account_col``, ``source_row_index``
-            and ``timestamp``.
-        self_bank_col, self_account_col: Column names identifying the entity
-            whose history is scanned (the partitioning/sort key).
-        party_bank_col, party_account_col: Column names identifying the
-            counterparty recorded into each window.
-        names: The five output column names, in (count_1h, count_24h,
-            count_7d, distinct_24h, distinct_7d) order.
-
-    Returns:
-        A two-column-plus-five DataFrame: ``source_row_index`` and the five
-        named feature columns, one row per input row. Joined back onto the
-        original frame by the caller.
-    """
-    # Timestamp as whole seconds since the epoch, for simple window arithmetic.
+    """Sorts once, then scans each entity's history with exact window queues, excluding same-timestamp peers.
+    Returns ``source_row_index`` plus the five ``names`` columns; needs complete history per entity."""
     result = frame.withColumn("_epoch", functions.col("timestamp").cast("long"))
-    # repartition by the entity puts every transaction of one entity in the
-    # same partition; sorting within the partition orders them by entity then
-    # time (source_row_index breaks ties), so one sequential scan suffices.
+    # Co-locate each entity's rows, sorted by time (source_row_index breaks ties), for one sequential scan.
     ordered = result.repartition(self_bank_col, self_account_col).sortWithinPartitions(
         self_bank_col, self_account_col, "_epoch", "source_row_index")
     columns = ordered.columns
-    # Positions of the needed fields in each Row tuple (faster than by name).
     self_bank, self_account, party_bank, party_account, epoch, row_index = [
         columns.index(name) for name in
         [self_bank_col, self_account_col, party_bank_col, party_account_col, "_epoch", "source_row_index"]]
@@ -209,20 +103,15 @@ def _windowed_counts(frame, self_bank_col, self_account_col, party_bank_col, par
         for row in records:
             key = (row[self_bank], row[self_account])
             if key != entity:
-                # New entity: start empty windows. One deque of
-                # (time, counterparty) per window, plus a Counter of
-                # counterparties per window for the distinct-count features.
+                # New entity: reset the windows (a deque plus a counterparty Counter per window).
                 entity, now = key, None
                 queues = [deque(), deque(), deque()]
                 counts = [Counter(), Counter(), Counter()]
             timestamp = row[epoch]
             if timestamp != now:
-                # Only recompute when time moves forward. Rows that share the
-                # same timestamp reuse this snapshot, so they do not count
-                # each other (simultaneous peers are excluded).
+                # Recompute only when time moves forward; same-timestamp rows reuse the snapshot, so peers exclude each other.
                 now = timestamp
-                # Evict entries older than now - window (1h, 24h, 7d in
-                # seconds); entries exactly at now - window stay in.
+                # Evict entries older than now - window; entries exactly at the cutoff stay.
                 for queue, counter, seconds in zip(queues, counts, (3600, 86400, 604800)):
                     while queue and queue[0][0] < now - seconds:
                         _, party = queue.popleft()
@@ -244,20 +133,8 @@ def _windowed_counts(frame, self_bank_col, self_account_col, party_bank_col, par
 
 
 def add_behaviour(frame):
-    """Adds ten long columns: five outgoing (sender) + five incoming (receiver).
-
-    Matches ``analytics.add_behaviour`` (pandas) so batch and local features
-    are identical; see that function's docstring for the full feature
-    definitions and the naming rationale. The streaming demo
-    (``streaming.transition``) intentionally only computes the five outgoing
-    features -- see ``planning/proposals/improvement_1_spec.md`` Step 0 for
-    why receiver-side state is out of scope for the Kinesis/Lambda path.
-
-    Computes two independent window scans (``_windowed_counts``, once keyed
-    by sender/outgoing, once by receiver/incoming) and joins both back onto
-    ``frame`` by ``source_row_index``, which is unique and present on every
-    row, so both inner joins are row-count-preserving.
-    """
+    """Adds 5 outgoing (sender) and 5 incoming (receiver) long columns, matching ``analytics.add_behaviour``.
+    Runs ``_windowed_counts`` per direction and joins both back on ``source_row_index``."""
     result = frame.withColumn("_sender_bank", normalized_bank(functions.col("from_bank")))
     result = result.withColumn("_party_bank", normalized_bank(functions.col("to_bank")))
     out_names = ["txn_count_1h", "txn_count_24h", "txn_count_7d",
@@ -270,25 +147,8 @@ def add_behaviour(frame):
 
 
 def curate(transactions, accounts, rates):
-    """Validate, enrich and USD-convert the transactions.
-
-    Args:
-        transactions: output of ``read_transactions`` (string columns).
-        accounts: accounts CSV DataFrame (ACCOUNT_COLUMNS headers).
-        rates: FX CSV DataFrame with ``txn_date``, ``currency``, ``usd_rate``
-            (USD value of one unit of the currency on that day).
-
-    Returns:
-        DataFrame with typed timestamp/amounts/label, ``txn_date``,
-        ``from_*``/``to_*`` account metadata (bank_name, entity_id,
-        entity_name), ``amount_usd``, ``amount_usd_asof``, ``is_self_txn`` and
-        ``currency_mismatch``. Row count is unchanged (checked by ``main``).
-
-    Raises:
-        ValueError: on missing columns, empty fields, bad timestamps/dates/
-        labels/amounts, invalid or duplicate account keys or FX rates, an
-        account that cannot be matched, or a missing FX rate.
-    """
+    """Validates, enriches and USD-converts the transactions: joins sender/receiver account metadata, converts at the same-day and prior-day FX rates and adds self-transfer and currency-mismatch flags.
+    Raises ValueError on any invalid field, account or FX rate; the row count is unchanged (checked by ``main``)."""
     missing = set(ACCOUNT_COLUMNS) - set(accounts.columns)
     if missing:
         raise ValueError(f"Missing account columns: {sorted(missing)}")
@@ -313,7 +173,6 @@ def curate(transactions, accounts, rates):
                        (functions.abs(functions.col(name)) == float("inf")) | (functions.col(name) < 0), "Invalid amount"))
     reject_many(result, checks)
     result = result.withColumn("is_laundering", functions.col("is_laundering").cast("int"))
-    # --- Account metadata join ---
     metadata = accounts.select(*[functions.col(source).alias(target) for source, target in ACCOUNT_COLUMNS.items()])
     metadata = metadata.withColumn("bank_key", normalized_bank(functions.col("bank_id")))
     reject(metadata, functions.col("bank_key").isNull() | functions.col("account_number").isNull() |
@@ -321,9 +180,7 @@ def curate(transactions, accounts, rates):
     # (bank, account) must be unique, otherwise the join would duplicate rows.
     reject(metadata.groupBy("bank_key", "account_number").count(), functions.col("count") > 1,
            "Duplicate normalized composite account key")
-    # Join twice: once for the sender ("from") and once for the receiver
-    # ("to"). A left join keeps every transaction; the _matched flag is NULL
-    # when no account was found, which is checked afterwards.
+    # Join twice (sender, receiver); a left join keeps every transaction and a NULL _matched flag marks a missing account.
     for side in ["from", "to"]:
         bank_key = f"_{side}_bank_key"
         result = result.withColumn(bank_key, normalized_bank(functions.col(f"{side}_bank")))
@@ -335,7 +192,6 @@ def curate(transactions, accounts, rates):
         )
         result = result.join(side_metadata, [bank_key, f"{side}_account"], "left")
         result = result.drop(bank_key)
-    # --- FX conversion ---
     rates = rates.select(
         functions.to_date("txn_date").alias("rate_day"), "currency",
         functions.col("usd_rate").cast("double").alias("usd_rate"),
@@ -346,10 +202,8 @@ def curate(transactions, accounts, rates):
            functions.isnan("usd_rate") | (functions.col("usd_rate") <= 0) |
            (functions.col("usd_rate") == float("inf")), "Invalid FX rate")
     reject(rates.groupBy("rate_day", "currency").count(), functions.col("count") > 1, "Duplicate FX key")
-    # days_back 0 -> same-day rate (amount_usd, for treasury volume);
-    # days_back 1 -> previous day's rate (amount_usd_asof, for scoring, so the
-    # model never uses a rate that was not yet known when the payment happened).
-    # The rate table is small, so it is broadcast to every executor (no shuffle).
+    # days_back 0 = same-day rate (amount_usd, treasury); 1 = previous day's rate (amount_usd_asof, scoring, so no unknown rate is used).
+    # The small rate table is broadcast to every executor.
     for output_name, days_back in [("amount_usd", 0), ("amount_usd_asof", 1)]:
         result = result.join(functions.broadcast(rates),
                              (functions.date_sub(result.txn_date, days_back) == rates.rate_day) &
@@ -365,35 +219,28 @@ def curate(transactions, accounts, rates):
                        (functions.abs(functions.col(name)) == float("inf")), f"Missing FX or nonfinite {name}"))
     reject_many(result, checks)
     result = result.drop("_from_matched", "_to_matched")
-    # Two simple derived flags used as model features: paying yourself, and
-    # paying in one currency while the receiver gets another.
+    # Derived flags used as model features: self-payment and currency mismatch.
     return result.withColumn("is_self_txn", (functions.col("from_bank") == functions.col("to_bank")) &
                              (functions.col("from_account") == functions.col("to_account"))).withColumn(
         "currency_mismatch", functions.col("payment_currency") != functions.col("receiving_currency"))
 
 
 def main():
-    """Parse job arguments, run curation, write and verify the Parquet output.
-
-    Prints JSON timing lines per phase (visible in the Glue CloudWatch log)
-    and a final ``CURATION_VERIFIED`` line once the written row count matches.
-    """
+    """Parses job arguments, runs curation, writes the Parquet output and re-reads it to confirm the row count.
+    Prints JSON timing lines per phase and a final ``CURATION_VERIFIED`` line."""
     parser = argparse.ArgumentParser()
     for name in ["transactions", "accounts", "fx", "output"]:
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--expected_rows", type=int, required=True)
     parser.add_argument("--behaviour", choices=["true", "false"], default="false")
-    # parse_known_args: Glue adds its own system arguments (e.g. --JOB_NAME),
-    # which are ignored here.
+    # parse_known_args ignores Glue's own system arguments (e.g. --JOB_NAME).
     args, _ = parser.parse_known_args()
     if args.expected_rows <= 0:
         raise ValueError("expected_rows must be positive")
     spark = SparkSession.builder.appName("is459-curation").getOrCreate()
-    # UTC session time zone: timestamps and dates do not shift with the
-    # cluster's local zone.
+    # UTC session time zone so timestamps do not shift with the cluster's zone.
     spark.conf.set("spark.sql.session.timeZone", "UTC")
-    # Non-ANSI mode: a bad cast yields NULL instead of crashing mid-job; the
-    # NULL is then caught by the explicit checks with a clear message.
+    # Non-ANSI: a bad cast yields NULL, which the explicit checks then report clearly.
     spark.conf.set("spark.sql.ansi.enabled", "false")
     # Small job on 2 workers: 8 shuffle partitions instead of Spark's default 200.
     spark.conf.set("spark.sql.shuffle.partitions", "8")
@@ -401,7 +248,6 @@ def main():
     # cache(): the transactions are used for the count and for curation.
     transactions = read_transactions(spark, args.transactions).cache()
     raw_rows = transactions.count()
-    # Reconciliation gate: the raw file must have exactly the expected rows.
     if raw_rows != args.expected_rows:
         raise ValueError(f"Expected {args.expected_rows} raw rows, received {raw_rows}")
     loaded = perf_counter()
@@ -418,11 +264,8 @@ def main():
     print(json.dumps({"phase": "curation", "seconds": round(curated-loaded, 3)}), flush=True)
     if args.behaviour == "true":
         result = add_behaviour(result)
-    # errorifexists: never overwrite or mix with an earlier run's output.
-    # partitionBy writes one txn_date=YYYY-MM-DD folder per day, which lets
-    # Athena and later jobs read only the days they need.
+    # errorifexists never overwrites an earlier run; partitionBy writes one txn_date folder per day.
     result.write.mode("errorifexists").partitionBy("txn_date").parquet(args.output)
-    # Read back what was actually written and count it again.
     written = spark.read.parquet(args.output)
     if written.count() != raw_rows:
         raise ValueError("Written row count differs from input")

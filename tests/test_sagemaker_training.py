@@ -46,7 +46,7 @@ def test_contract_rejects_unbounded_or_unpinned_jobs():
     assert request['ResourceConfig']['InstanceCount'] == 1
     assert request['StoppingCondition']['MaxRuntimeInSeconds'] == 1200
     for arguments in [(JOB, REPOSITORY + ':latest', 320), ('other-job', IMAGE, 320),
-                      (JOB, IMAGE, 0), (JOB, IMAGE, 320, 121), (JOB, IMAGE, 320, 120, 1801)]:
+                      (JOB, IMAGE, 0), (JOB, IMAGE, 320, 501), (JOB, IMAGE, 320, 120, 1801)]:
         with pytest.raises(ValueError):
             build_request(*arguments)
 

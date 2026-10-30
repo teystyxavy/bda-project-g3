@@ -20,6 +20,7 @@ reviews retain the decisions and results from earlier milestones.
 | Remaining optimisation ideas | [Proposal](proposals/pipeline-optimisation-proposal.md) |
 | Kinesis scores flowing into the dashboard | [Proposed streaming dashboard connection](proposals/kinesis-dashboard-improvements.md) |
 | BQ1 model performance research and plan | [Model performance improvement proposal](proposals/model-performance-improvement-proposal.md) |
+| Dataset-subset literals duplicated across 18 files | [Dataset contract refactor proposal](proposals/dataset-contract-refactor-proposal.md) |
 | Earlier implementation reviews | [Historical archive](archive/README.md) |
 
 `evidence/` contains sanitized milestone summaries; complete private run outputs

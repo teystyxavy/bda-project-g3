@@ -99,10 +99,7 @@ def test_exact_behaviour_matches_local_boundaries_peers_and_banks(spark):
     pd.testing.assert_frame_equal(actual[expected.columns], expected, check_dtype=False)
     assert actual.loc[2, "txn_count_1h"] == 2
     assert actual.loc[9, "txn_count_7d"] == 0
-    # Row 9 is a third, distinct sender ("99") paying the same receiver as
-    # rows 0-8, at the exact same timestamp as row 0 -- so both are excluded
-    # from each other (same-timestamp rule) but both count for row 2, the
-    # next transaction to that receiver: fan-in from two distinct senders.
+    # Rows 0 and 9 share a timestamp (excluded from each other) but both count for row 2.
     assert actual.loc[2, "distinct_senders_7d"] == 2
 
 

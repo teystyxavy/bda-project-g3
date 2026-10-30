@@ -1,39 +1,5 @@
-"""Local batch analytics. Labels are used only by evaluation.
-
-This module holds the core analytical logic for both business questions, written
-in plain pandas so it can be unit-tested and reused by several entry points:
-
-BQ1 - AML risk review queue
-    * ``add_behaviour`` computes per-sender velocity / fan-out features over
-      rolling 1-hour, 24-hour and 7-day windows.
-    * ``score_baseline`` applies the transparent, rule-based baseline score
-      (ACH + large amount + behaviour) and attaches human-readable reasons.
-    * ``ranking_metrics`` / ``evaluate_baseline`` measure how good a ranked
-      queue is (precision@K, recall@K, lift, average precision) using the
-      ``is_laundering`` label. The label is *never* used to compute a score;
-      it is only read here, for evaluation.
-
-BQ2 - Treasury corridor volume and concentration
-    * ``corridor_totals`` sums USD volume per day and directed bank pair /
-      currency pair ("corridor").
-    * ``concentration`` turns daily corridor volumes into an HHI and top-5 share.
-
-Who calls it:
-    * ``batch.py`` (``export_verified_batch``) scores the full curated dataset
-      in chunks with ``score_baseline``, ``corridor_totals`` and
-      ``concentration`` to build the dashboard export and ``bq1_scored.parquet``.
-    * ``model.py`` and the dashboard builders use ``ranking_metrics`` so the
-      XGBoost model and the rule baseline are compared with the same metric.
-    * ``ingest_compute.py`` and the validation scripts call ``add_behaviour``
-      to recompute the Glue-produced behaviour features as a cross-check.
-    * ``scripts/local/run-local-analysis.py`` / ``evaluate-local-risk.py`` run
-      everything on a laptop.
-
-Chronological splits used throughout the project (timestamps, end exclusive):
-train 2022-09-01..09-07, validation 09-07..09-09, test 09-09..09-11, and a
-sparse late "tail" 09-11..09-19 that has few transactions and is reported
-separately.
-"""
+"""Local batch analytics for BQ1 (AML risk review queue) and BQ2 (treasury corridor volume and concentration).
+Labels are used only by evaluation; splits are chronological: train 09-01..09-07, validation 09-07..09-09, test 09-09..09-11, tail 09-11..09-19."""
 from collections import Counter, deque
 
 import numpy as np
@@ -41,54 +7,14 @@ import pandas as pd
 
 
 def bank_key(values):
-    """Normalise bank IDs for comparison by stripping leading zeroes.
-
-    The raw transaction file writes some bank IDs zero-padded (``"010"``)
-    while other sources write ``"10"``; both must be treated as the same bank.
-    An all-zero ID would become an empty string, so it is mapped back to
-    ``"0"``.
-
-    Args:
-        values: A pandas Series of bank identifiers (any dtype).
-
-    Returns:
-        A pandas ``string`` Series of normalised bank IDs.
-    """
     return values.astype('string').str.lstrip('0').replace('', '0')
 
 
 def _windowed_counts(result, self_bank, self_account, party_bank, party_account):
-    """Shared per-entity sliding-window scan underlying both directions of
-    ``add_behaviour``.
-
-    Groups rows by ``(self_bank, self_account)`` and, within each group in
-    time order, computes exact ``[t-window, t)`` counts/distincts of the
-    *other* side (``party_bank``, ``party_account``). Called once with sender
-    as self/receiver as party (the outgoing features) and once with the
-    roles reversed (the incoming features) -- same algorithm, different
-    grouping key and counterparty columns.
-
-    Algorithm: a sliding window per entity. Rows are visited in time order;
-    each window keeps a deque of (timestamp, counterparty) entries plus a
-    Counter of counterparties. Old entries are popped from the left as the
-    window moves, so each row is pushed and popped at most once per window
-    (roughly linear time per entity instead of quadratic).
-
-    Args:
-        result: Frame with ``timestamp``, ``source_row_index`` and the four
-            named bank/account columns.
-        self_bank, self_account: Column names identifying the entity whose
-            history is scanned (grouping key).
-        party_bank, party_account: Column names identifying the counterparty
-            recorded into each window.
-
-    Returns:
-        ``(len(result), 5)`` int64 numpy array: counts for the 1h/24h/7d
-        windows, then distinct-counterparty counts for the 24h/7d windows.
-    """
+    """Sliding-window counts and distinct counterparties per entity for 1h/24h/7d, as an (n, 5) array.
+    Called keyed by sender (outgoing) and by receiver (incoming)."""
     features = np.zeros((len(result), 5), dtype=np.int64)
     for _, group in result.groupby([self_bank, self_account], sort=False):
-        # source_row_index breaks timestamp ties deterministically.
         group = group.sort_values(['timestamp', 'source_row_index'])
         # Index 0/1/2 = the 1h / 24h / 7d windows respectively.
         queues = [deque(), deque(), deque()]
@@ -96,15 +22,12 @@ def _windowed_counts(result, self_bank, self_account, party_bank, party_account)
         records = list(zip(group.index, group.timestamp, group[party_bank], group[party_account]))
         pos = 0
         while pos < len(records):
-            # Find the block [pos, end) of rows that share the same timestamp;
-            # they are processed together so none of them sees the others.
+            # Process rows sharing a timestamp together so none of them sees the others.
             end = pos + 1
             now = records[pos][1]
             while end < len(records) and records[end][1] == now:
                 end += 1
-            # Slide each window: drop entries older than now - window
-            # (168 hours = 7 days). Entries exactly at the cutoff are kept,
-            # which makes the lower bound inclusive.
+            # Drop entries older than now - window; the cutoff itself is kept.
             for q, counts, hours in zip(queues, counters, [1, 24, 168]):
                 cutoff = now - pd.Timedelta(hours=hours)
                 while q and q[0][0] < cutoff:
@@ -113,12 +36,9 @@ def _windowed_counts(result, self_bank, self_account, party_bank, party_account)
                     # Remove zero entries so len(counts) = distinct parties.
                     if counts[party] == 0:
                         del counts[party]
-            # Record features for every row in the same-timestamp block BEFORE
-            # adding the block to the windows (strict "earlier only" rule).
-            # Counts = deque lengths; distinct = keys in the 24h and 7d Counters.
+            # Record features BEFORE adding the block (strict earlier-only); distinct = keys of the 24h/7d Counters.
             for idx, _, _, _ in records[pos:end]:
                 features[idx] = [len(q) for q in queues] + [len(counters[1]), len(counters[2])]
-            # Now add the block so later rows can see it.
             for _, timestamp, bank, account in records[pos:end]:
                 for q, counts in zip(queues, counters):
                     q.append((timestamp, (bank, account)))
@@ -128,50 +48,8 @@ def _windowed_counts(result, self_bank, self_account, party_bank, party_account)
 
 
 def add_behaviour(frame):
-    """Exact outgoing AND incoming windows [t-window,t); same-timestamp peers excluded.
-
-    Input must contain complete outgoing *and* incoming history for each
-    included account. History before the dataset starts is unavailable
-    (cold start).
-
-    For every transaction, looks back over the *sender's* earlier outgoing
-    transactions and separately over the *receiver's* earlier incoming
-    transactions, and counts, for each side:
-
-    * ``txn_count_1h`` / ``txn_count_24h`` / ``txn_count_7d`` (sender,
-      outgoing) and ``in_txn_count_1h`` / ``in_txn_count_24h`` /
-      ``in_txn_count_7d`` (receiver, incoming) - how many payments were
-      made/received in the previous 1 hour, 24 hours and 7 days (velocity:
-      bursts of activity are a classic laundering signal);
-    * ``distinct_counterparties_24h`` / ``distinct_counterparties_7d``
-      (sender) and ``distinct_senders_24h`` / ``distinct_senders_7d``
-      (receiver) - how many different counterparty (bank, account) pairs
-      were involved in the previous 24 hours and 7 days (fan-out for the
-      sender, fan-in for the receiver - spreading money across many accounts
-      vs. accumulating it from many accounts).
-
-    The unprefixed (sender/outgoing) names are not renamed even though the
-    receiver side now exists: they are referenced by literal string outside
-    this module (the rule baseline in ``score_baseline``, the same condition
-    repeated in ``batch.py``'s validation ablation, and the fan-out threshold
-    documented in the pipeline plan) and already exist as columns in
-    deployed, populated curated Parquet. See
-    ``planning/proposals/improvement_1_spec.md`` for the full rationale.
-
-    "Previous" is strict: the window is [t - window, t), so the current
-    transaction and any other transactions with the *identical* timestamp are
-    not counted. This avoids leaking information from simultaneous rows whose
-    order in the file is arbitrary.
-
-    Args:
-        frame: Transactions with ``from_bank, from_account, to_bank,
-            to_account, timestamp, source_row_index``.
-
-    Returns:
-        A copy of ``frame`` (index reset to 0..n-1) with ten int64 feature
-        columns added: the five outgoing/sender features, then the five
-        incoming/receiver features.
-    """
+    """Adds 5 outgoing (sender) and 5 incoming (receiver) behaviour features over [t-window, t).
+    Same-timestamp peers are excluded; input needs complete history per account."""
     # reset_index so row labels are 0..n-1 and can be used to index `features`.
     result = frame.copy().reset_index(drop=True)
     # Zero-stripped bank IDs so "010" and "10" are grouped as the same bank.
@@ -181,90 +59,32 @@ def add_behaviour(frame):
                    'distinct_counterparties_24h', 'distinct_counterparties_7d']
     in_columns = ['in_txn_count_1h', 'in_txn_count_24h', 'in_txn_count_7d',
                   'distinct_senders_24h', 'distinct_senders_7d']
-    # Sender groups the rows; receiver is the counterparty whose history is windowed.
     result[out_columns] = _windowed_counts(result, '_from_bank', 'from_account', '_to_bank', 'to_account')
-    # Roles reversed: receiver groups the rows; sender is the counterparty.
     result[in_columns] = _windowed_counts(result, '_to_bank', 'to_account', '_from_bank', 'from_account')
     return result.drop(columns=['_from_bank', '_to_bank'])
 
 
 def score_baseline(frame, thresholds):
-    """Apply the transparent rule-based AML risk score (the BQ1 baseline).
-
-    Points are added for three independent signals:
-
-    * +50 if the payment format is ACH (the heaviest single rule; on its own
-      it is not enough to be flagged);
-    * +20 if the prior-day USD amount (``amount_usd_asof``) is above the
-      99th percentile for that payment format, as measured on the training
-      period only (``thresholds``);
-    * +30 for high velocity or fan-out: more than 10 payments in the previous
-      hour, or more than 15 distinct counterparties in the previous 24 hours.
-
-    The score is therefore one of 0, 20, 30, 50, 70, 80 or 100. A row is
-    ``flagged`` when the score is at least 60, which in practice means
-    "ACH plus at least one other signal".
-
-    Args:
-        frame: Curated transactions with behaviour features and
-            ``amount_usd_asof``.
-        thresholds: ``{payment_format: P99 amount}`` fitted on training data.
-            Formats missing from the dict get an infinite threshold, i.e. can
-            never trigger the amount rule.
-
-    Returns:
-        A copy of ``frame`` with ``risk_score``, ``risk_reasons`` (e.g.
-        ``"ACH; high velocity or fan-out"``) and ``flagged``, sorted into
-        review-queue order: highest score first, then oldest first, then file
-        order - a fully deterministic ranking.
-    """
+    """Rule-based AML risk score: +50 ACH, +20 amount above the training P99, +30 high velocity or fan-out; flagged at >= 60.
+    Returns a copy in deterministic review-queue order (score descending, oldest first, then file order)."""
     result = frame.copy()
     ach = result.payment_format.eq('ACH')
-    # Look up each row's format-specific P99 threshold and compare.
+    # Per-format P99 threshold; formats without one can never trigger.
     large = result.amount_usd_asof.gt(result.payment_format.map(thresholds).fillna(float('inf')))
     behaviour = result.txn_count_1h.gt(10) | result.distinct_counterparties_24h.gt(15)
     result['risk_score'] = ach.astype(int)*50 + large.astype(int)*20 + behaviour.astype(int)*30
-    # Build an explanation string listing only the rules that fired.
     result['risk_reasons'] = [
         '; '.join(reason for flag, reason in zip(flags, ['ACH', 'above training P99', 'high velocity or fan-out']) if flag)
         for flags in zip(ach, large, behaviour)
     ]
     result['flagged'] = result.risk_score.ge(60)
-    # kind='stable' guarantees identical ordering across runs and machines.
     return result.sort_values(['risk_score', 'timestamp', 'source_row_index'],
                               ascending=[False, True, True], kind='stable')
 
 
 def ranking_metrics(ranked, k=100):
-    """Average precision (stepwise PR area), plus deterministic top-K metrics.
-
-    "Top-K" mirrors the business setting: a compliance team can only review
-    about K=100 alerts, so what matters is how many true laundering cases land
-    at the top of the queue.
-
-    Args:
-        ranked: Rows already sorted into queue order, with ``risk_score`` and
-            the 0/1 ``is_laundering`` label.
-        k: Queue size to evaluate (default 100).
-
-    Returns:
-        dict with:
-        ``rows`` and ``positives`` (laundering count);
-        ``k`` (K, capped at the number of rows);
-        ``precision_at_k`` = hits in top K / K;
-        ``recall_at_k`` = hits in top K / all positives;
-        ``lift_at_k`` = precision@K / overall positive rate (how many times
-        better than picking K rows at random);
-        ``average_precision`` - area under the precision-recall curve.
-        Metrics that would divide by zero are ``None``.
-
-    AP and ties: rows with equal ``risk_score`` cannot be meaningfully ordered
-    (the rule score has only a few distinct values), so AP treats each score
-    level as one step. For each level, from highest score down:
-    ``(positives at this level / total positives) * (cumulative precision
-    after including the whole level)``. This makes AP independent of the
-    arbitrary order inside a tie.
-    """
+    """Average precision (each risk_score level is one step, so ties do not matter) plus top-K precision, recall and lift.
+    Metrics that would divide by zero are None."""
     n = len(ranked)
     positives = int(ranked.is_laundering.sum())
     effective_k = min(k, n)
@@ -283,29 +103,11 @@ def ranking_metrics(ranked, k=100):
 
 
 def evaluate_baseline(cohort):
-    """Chronological bulk-data splits; report sparse late tail separately.
-
-    Fits the amount thresholds on the training period only (before
-    2022-09-07), scores the whole cohort, then reports ``ranking_metrics`` for
-    each later period. Splitting by time (not randomly) mimics real use: the
-    rules are set on the past and judged on the future.
-
-    Args:
-        cohort: Curated transactions with behaviour features,
-            ``amount_usd_asof`` and labels.
-
-    Returns:
-        ``(ranked, thresholds, metrics)``: the fully scored and sorted
-        cohort, the per-format P99 thresholds, and a dict of metrics keyed by
-        ``validation``, ``test`` and ``sparse_tail``.
-
-    Raises:
-        ValueError: if there are no rows in the training period.
-    """
+    """Fits per-format P99 amount thresholds before 2022-09-07, scores the cohort and reports metrics for each later period.
+    Returns (ranked, thresholds, metrics); raises ValueError if the training period is empty."""
     training = cohort.loc[cohort.timestamp < pd.Timestamp('2022-09-07')]
     if training.empty:
         raise ValueError('No training observations')
-    # 99th percentile of prior-day USD amount for each payment format.
     thresholds = training.groupby('payment_format').amount_usd_asof.quantile(.99).to_dict()
     ranked = score_baseline(cohort, thresholds)
     metrics = {}
@@ -319,22 +121,8 @@ def evaluate_baseline(cohort):
 
 
 def corridor_totals(frame):
-    """Aggregate USD volume per daily corridor (BQ2).
-
-    A corridor is a directed route: sending bank -> receiving bank, together
-    with the payment and receiving currencies. Bank IDs are zero-stripped first
-    so ``"010"`` and ``"10"`` fall into the same corridor. This is the pandas
-    equivalent of the Athena corridor SQL.
-
-    Args:
-        frame: Curated transactions with ``txn_date`` and ``amount_usd``.
-
-    Returns:
-        One row per (txn_date, from_bank, to_bank, payment_currency,
-        receiving_currency) with ``transaction_count`` and ``volume_usd``.
-        Because batches can be aggregated separately and summed later,
-        ``batch.py`` calls this chunk by chunk.
-    """
+    """Daily USD volume and transaction count per directed corridor (sending bank, receiving bank, currencies), with zero-stripped bank IDs.
+    Can be called per chunk and summed later."""
     frame = frame.assign(from_bank=bank_key(frame.from_bank), to_bank=bank_key(frame.to_bank))
     keys = ['txn_date', 'from_bank', 'to_bank', 'payment_currency', 'receiving_currency']
     # observed=True: if any key is categorical, skip empty combinations.
@@ -343,23 +131,7 @@ def corridor_totals(frame):
 
 
 def concentration(daily):
-    """Daily directed bank-pair HHI (0..1), with currencies summed first.
-
-    The Herfindahl-Hirschman Index measures how concentrated a market is:
-    ``HHI = sum(share_i ** 2)`` where ``share_i`` is bank pair i's fraction of
-    that day's total USD volume. HHI near 0 means volume is spread over many
-    bank pairs; HHI = 1 means one bank pair carries everything. ``top5_share``
-    is the combined share of the five largest bank pairs - an easier number to
-    explain to treasury.
-
-    Args:
-        daily: Output of ``corridor_totals`` (one row per corridor and day).
-
-    Returns:
-        DataFrame with ``txn_date, volume_usd, hhi, top5_share`` per day.
-        If a day's total volume is 0, ``hhi`` and ``top5_share`` are ``None``
-        (shares would be undefined).
-    """
+    """Daily directed bank-pair HHI (sum of squared volume shares) and top-5 share; both are None when a day's volume is 0."""
     # Collapse currency pairs so each directed bank pair is one "player".
     bank = daily.groupby(['txn_date', 'from_bank', 'to_bank']).volume_usd.sum().reset_index()
     rows = []
