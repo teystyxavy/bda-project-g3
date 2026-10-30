@@ -290,3 +290,25 @@ test('later evaluation labels follow Medium and Small snapshot dates without spa
   assert.equal(h.el('split').options[2].textContent,'Later period · Sep 11–18');
   assert.equal(h.el('split').options[0].textContent,'Test · Sep 9–10');
 });
+
+
+test('scoring coverage reconciles all Medium rows independently of the selected evaluation filter',async()=>{
+  const h=await harness();
+  vm.runInContext(`snapshot={aml_scope:'full',full_rows:31898238,pipeline:{subset:'HI-Medium',end_date:'2022-09-28'},model:{views:{validation:{metrics:{rows:3861625}},test:{metrics:{rows:3452878}},tail:{metrics:{rows:11579238}}}}};renderScoringCoverage()`,h.context);
+  assert.equal(h.el('scoring-coverage').hidden,false);
+  assert.equal(h.el('scoring-coverage-title').textContent,'All 31,898,238 transactions scored');
+  for(const count of ['31,898,238','18,893,741','13,004,497']) assert.match(h.el('scoring-coverage-kpis').innerHTML,new RegExp(count));
+  assert.match(h.el('scoring-coverage-explanation').textContent,/HI-Small and reused for HI-Medium without retraining/);
+  assert.match(h.el('scoring-coverage-periods').innerHTML,/Later period · Sep 11–28/);
+  assert.match(h.el('scoring-coverage-periods').innerHTML,/18,893,741 evaluated \+ 13,004,497 excluded/);
+  h.el('split').value='tail';vm.runInContext('renderScoringCoverage()',h.context);
+  assert.equal(h.el('scoring-coverage-title').textContent,'All 31,898,238 transactions scored');
+});
+
+test('scoring coverage hides unsupported or inconsistent populations',async()=>{
+  const h=await harness();
+  for(const data of [{aml_scope:'cohort',full_rows:1000},{aml_scope:'full',full_rows:1000,model:{views:{test:{metrics:{rows:2000}},validation:{metrics:{rows:0}},tail:{metrics:{rows:0}}}}}]) {
+    vm.runInContext('snapshot='+JSON.stringify(data)+';renderScoringCoverage()',h.context);
+    assert.equal(h.el('scoring-coverage').hidden,true);
+  }
+});

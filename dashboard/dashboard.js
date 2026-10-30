@@ -61,6 +61,31 @@ function updateEvaluationLabels() {
   element('evaluation-methods').textContent=`Training reference: Sep 1–6; validation: Sep 7–8; test: Sep 9–10; ${evaluationPeriodLabel('tail').replace(' · ', ': ')}. Evaluation views show separate chronological populations. Rolling history before Sep 1 is unavailable.`;
 }
 
+function renderScoringCoverage() {
+  const periods=['validation','test','tail'];
+  const counts=periods.map(period=>snapshot?.model?.views?.[period]?.metrics?.rows);
+  const total=snapshot?.full_rows;
+  const evaluated=counts.reduce((sum,count)=>sum+count,0);
+  const valid=snapshot?.aml_scope==='full' && Number.isSafeInteger(total) &&
+    counts.every(count=>Number.isSafeInteger(count) && count>=0) && evaluated<=total;
+  element('scoring-coverage').hidden=!valid;
+  if(!valid) return;
+  const reference=total-evaluated;
+  element('scoring-coverage-title').textContent=`All ${integer(total)} transactions scored`;
+  element('scoring-coverage-summary').textContent='The frozen AML model scored every transaction in this dataset. The evaluation dropdown shows separate later-date populations, so its counts are smaller than the full scoring population.';
+  cards('scoring-coverage-kpis',[
+    ['Transactions scored',integer(total),'All transaction dates in this run'],
+    ['Transactions in evaluation',integer(evaluated),'Sep 7 onward · across all three periods'],
+    ['Scored, excluded from evaluation',integer(reference),'Sep 1–6 · training-reference dates']]);
+  const medium=snapshot.pipeline?.subset==='HI-Medium';
+  element('scoring-coverage-explanation').textContent='Why exclude Sep 1–6? The original model used these dates for training; the dashboard preserves that training-reference window and reports later dates separately for evaluation. These earlier rows still received scores.'+
+    (medium?' The model was trained on HI-Small and reused for HI-Medium without retraining. This is transfer evaluation; the synthetic populations may overlap, so it is not independent evidence of generalisation.':' Training-reference scores are not included in the reported evaluation metrics.');
+  table('scoring-coverage-periods',['Date period','Transactions scored','Evaluation coverage'],[
+    ['Sep 1–6',integer(reference),'Excluded · training-reference dates'],
+    ...periods.map((period,index)=>[evaluationPeriodLabel(period),integer(counts[index]),'Included']),
+    ['Total',integer(total),`${integer(evaluated)} evaluated + ${integer(reference)} excluded`]]);
+}
+
 function isModelQueue() {return Boolean(snapshot.model) && element('scoring').value==='model';}
 function currentQueue() {return isModelQueue()?snapshot.model.views[element('split').value]:snapshot.aml[element('split').value];}
 
@@ -135,7 +160,7 @@ async function start(snapshotSource=null) {
     if(loadId!==snapshotLoad) return false;
     snapshot=JSON.parse(new TextDecoder().decode(bytes));
     if(snapshot.schema_version!==1) throw new Error('Unsupported snapshot version');
-    updateEvaluationLabels();
+    updateEvaluationLabels();renderScoringCoverage();
     const fullAml = snapshot.aml_scope === 'full';
     element('status').textContent=`Snapshot generated ${snapshot.generated_at.slice(0,10)} · AML ${fullAml ? 'full population' : 'cohort'} ${integer(snapshot.cohort_rows)} rows · Treasury ${integer(snapshot.full_rows)} rows`;
     if (fullAml) {

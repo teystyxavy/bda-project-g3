@@ -1,0 +1,77 @@
+{
+  "status": "public-assets-verified",
+  "pointer": {
+    "schema_version": 1,
+    "run_id": "medium-coverage-20261030",
+    "snapshot": "releases/medium-coverage-20261030/dashboard.json",
+    "sha256": "eb6be0e5ac488c8264263f5ae43e008b53b30f409d11a2f3321fb4fd67776f83",
+    "previous_run_id": "medium-labels-20261030",
+    "source_pipeline_run_id": "medium-full-20261030-v2"
+  },
+  "invalidation": "I4T5SSGQT4HW822NE3WX5XDRI7",
+  "files": [
+    {
+      "file": "index.html",
+      "key": "dashboard/index.html",
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 22311,
+      "sha256": "cde66b5341abcf9f0eaca089af1dad415ba2d7754a8d205c2ae45ad1252c9ab7"
+    },
+    {
+      "file": "dashboard.css",
+      "key": "dashboard/dashboard.css",
+      "content_type": "text/css; charset=utf-8",
+      "bytes": 10845,
+      "sha256": "d3d55b9bf70b3abccb788a0b1a2c91214f36f05b5e51ad65dff04b6b4b5d9190"
+    },
+    {
+      "file": "dashboard.js",
+      "key": "dashboard/dashboard.js",
+      "content_type": "application/javascript; charset=utf-8",
+      "bytes": 66747,
+      "sha256": "1ad91e207b788f1c9a845a137e49b9595781ad50049ed0549cbf6effdf1b8702"
+    },
+    {
+      "file": "dashboard.json",
+      "key": "dashboard/dashboard.json",
+      "content_type": "application/json; charset=utf-8",
+      "bytes": 8198479,
+      "sha256": "eb6be0e5ac488c8264263f5ae43e008b53b30f409d11a2f3321fb4fd67776f83"
+    }
+  ],
+  "model_changed": false,
+  "paid_batch_started": false,
+  "cloudfront_invalidation_status": "Completed",
+  "verified_public_paths": [
+    "index.html",
+    "releases/medium-coverage-20261030/index.html",
+    "dashboard.css",
+    "releases/medium-coverage-20261030/dashboard.css",
+    "dashboard.js",
+    "releases/medium-coverage-20261030/dashboard.js",
+    "dashboard.json",
+    "releases/medium-coverage-20261030/dashboard.json"
+  ],
+  "dataset_snapshot_unchanged": true,
+  "tests": {
+    "dashboard_passed": 18
+  },
+  "scoring_coverage": {
+    "scored_rows": 31898238,
+    "evaluated_rows": 18893741,
+    "excluded_training_reference_rows": 13004497,
+    "evaluation_counts": {
+      "validation": 3861625,
+      "test": 3452878,
+      "tail": 11579238
+    },
+    "aws_score_verification": {
+      "status": "passed",
+      "rows": 31898238,
+      "max_absolute_score_difference": 0.0,
+      "labels_excluded": true,
+      "model_sha256": "f0dc65ca43901f9f02c57c09605121d48570c64d49991eb952f2d2df6a7e4765"
+    }
+  },
+  "browser_visual_check": "not_performed"
+}
