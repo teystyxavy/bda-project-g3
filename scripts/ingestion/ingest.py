@@ -155,18 +155,19 @@ def prepare(args, config):
     from bda_pipeline.acquisition import acquire_dataset, prepare_inputs
     if args.train and args.rows:
         raise ValueError('Training needs the full subset and chronological splits; omit --rows')
-    record = acquire_dataset(args.dataset_directory, version=args.dataset_version, refresh=args.refresh)
+    subset = getattr(args, 'subset', 'HI-Small')
+    record = acquire_dataset(args.dataset_directory, subset=subset, version=args.dataset_version, refresh=args.refresh)
     run_id = valid_run(args.run_id or datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-') + secrets.token_hex(4))
     output = Path('output/ingest') / run_id
-    info = prepare_inputs(args.dataset_directory / 'HI-Small_Trans.csv',
-                          args.dataset_directory / 'HI-Small_accounts.csv', output,
+    info = prepare_inputs(args.dataset_directory / f'{subset}_Trans.csv',
+                          args.dataset_directory / f'{subset}_accounts.csv', output,
                           rows=args.rows, fx_file=args.fx_file)
     # "identity" = everything that determines the pipeline's *output*: row count,
     # file hashes, date range, dataset version, deployment hash and training mode.
     # Its SHA-256 (processing_sha256) is the cache key - two runs with the same
     # identity would produce the same results, so the second can reuse the first.
     identity = {**{key: info[key] for key in ['rows', 'files', 'start_date', 'end_date']},
-                'subset': 'HI-Small', 'dataset_version': record['dataset_version'],
+                'subset': subset, 'dataset_version': record['dataset_version'],
                 'deployment_sha256': sha(config), 'train': args.train}
     # The manifest adds run-specific metadata (run ID, timestamps, provenance,
     # currencies) that does NOT affect results and so is not part of the hash.
@@ -415,12 +416,17 @@ def main():
             # The downstream Glue/SageMaker jobs and model were built for HI-Small
             # only, so other subsets may be downloaded but not processed.
             if args.action != 'download':
-                if args.subset != 'HI-Small':
-                    raise ValueError('The pipeline supports HI-Small only; use -DownloadOnly (Python: download) for other subsets')
+                from bda_pipeline.ingest_contract import subset_limits
+                limits = subset_limits(args.subset)
+                if args.subset == 'HI-Medium':
+                    if args.train:
+                        raise ValueError('HI-Medium currently supports frozen-model scoring only')
+                    if args.action == 'run' and not args.local_acquisition:
+                        raise ValueError('HI-Medium requires -LocalAcquisition (Python: --local-acquisition)')
                 if args.files is not None or args.include_patterns:
                     raise ValueError('File selection and patterns require -DownloadOnly (Python: download); the pipeline needs transactions and accounts')
-                if args.rows is not None and not 0 < args.rows <= 5_100_000:
-                    raise ValueError('Rows must be between 1 and 5,100,000')
+                if args.rows is not None and not 0 < args.rows <= limits['rows']:
+                    raise ValueError(f"Rows must be between 1 and {limits['rows']:,}")
                 if args.train and args.rows is not None:
                     raise ValueError('Training requires the full subset; omit --rows')
                 if getattr(args, 'trigger', 'direct') == 'eventbridge' and not args.local_acquisition:

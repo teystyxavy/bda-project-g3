@@ -48,6 +48,44 @@ function trend(target, rows, field, formatter, selected) {
   table(`${target}-values`,['Date',field==='hhi'?'HHI':'USD volume'],rows.map(row=>[row.day,row[field]==null?'Unavailable':formatter(row[field])]));
 }
 
+function evaluationPeriodLabel(period) {
+  if(period==='test') return 'Test · Sep 9–10';
+  if(period==='validation') return 'Validation · Sep 7–8';
+  const end=snapshot?.pipeline?.end_date || snapshot?.treasury_daily?.at(-1)?.day || '2022-09-18';
+  const date=new Date(end+'T00:00:00Z');
+  const finish=date.getUTCMonth()===8 ? String(date.getUTCDate()) : date.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'});
+  return `Later period · Sep 11–${finish}`;
+}
+function updateEvaluationLabels() {
+  for(const option of element('split').options) option.textContent=evaluationPeriodLabel(option.value);
+  element('evaluation-methods').textContent=`Training reference: Sep 1–6; validation: Sep 7–8; test: Sep 9–10; ${evaluationPeriodLabel('tail').replace(' · ', ': ')}. Evaluation views show separate chronological populations. Rolling history before Sep 1 is unavailable.`;
+}
+
+function renderScoringCoverage() {
+  const periods=['validation','test','tail'];
+  const counts=periods.map(period=>snapshot?.model?.views?.[period]?.metrics?.rows);
+  const total=snapshot?.full_rows;
+  const evaluated=counts.reduce((sum,count)=>sum+count,0);
+  const valid=snapshot?.aml_scope==='full' && Number.isSafeInteger(total) &&
+    counts.every(count=>Number.isSafeInteger(count) && count>=0) && evaluated<=total;
+  element('scoring-coverage').hidden=!valid;
+  if(!valid) return;
+  const reference=total-evaluated;
+  element('scoring-coverage-title').textContent=`All ${integer(total)} transactions scored`;
+  element('scoring-coverage-summary').textContent='The frozen AML model scored every transaction in this dataset. The evaluation dropdown shows separate later-date populations, so its counts are smaller than the full scoring population.';
+  cards('scoring-coverage-kpis',[
+    ['Transactions scored',integer(total),'All transaction dates in this run'],
+    ['Transactions in evaluation',integer(evaluated),'Sep 7 onward · across all three periods'],
+    ['Scored, excluded from evaluation',integer(reference),'Sep 1–6 · training-reference dates']]);
+  const medium=snapshot.pipeline?.subset==='HI-Medium';
+  element('scoring-coverage-explanation').textContent='Why exclude Sep 1–6? The original model used these dates for training; the dashboard preserves that training-reference window and reports later dates separately for evaluation. These earlier rows still received scores.'+
+    (medium?' The model was trained on HI-Small and reused for HI-Medium without retraining. This is transfer evaluation; the synthetic populations may overlap, so it is not independent evidence of generalisation.':' Training-reference scores are not included in the reported evaluation metrics.');
+  table('scoring-coverage-periods',['Date period','Transactions scored','Evaluation coverage'],[
+    ['Sep 1–6',integer(reference),'Excluded · training-reference dates'],
+    ...periods.map((period,index)=>[evaluationPeriodLabel(period),integer(counts[index]),'Included']),
+    ['Total',integer(total),`${integer(evaluated)} evaluated + ${integer(reference)} excluded`]]);
+}
+
 function isModelQueue() {return Boolean(snapshot.model) && element('scoring').value==='model';}
 function currentQueue() {return isModelQueue()?snapshot.model.views[element('split').value]:snapshot.aml[element('split').value];}
 
@@ -55,7 +93,7 @@ function renderAmlLegacy() {
   const rules=snapshot.aml[element('split').value], current=currentQueue(), metrics=current.metrics, model=isModelQueue();
   cards('aml-kpis', [[snapshot.aml_scope==='full'?'Transactions':'Cohort transactions',integer(metrics.rows),'Selected period'],model?['Review capacity',integer(metrics.k),'Top-ranked queue · no model threshold']:['Rule-flagged transactions',integer(rules.flagged),'Rule score ≥60'],[`Precision@${metrics.k}`,percent(metrics.precision_at_k),'Label-positive fraction of top queue'],[`Recall@${metrics.k}`,percent(metrics.recall_at_k),`${integer(metrics.positives)} labelled positives in period`]]);
   const note=`Exploratory ${model?'frozen model':'rule baseline'} · average precision ${metrics.average_precision==null?'unavailable':metrics.average_precision.toFixed(4)} · lift@${metrics.k} ${metrics.lift_at_k==null?'unavailable':metrics.lift_at_k.toFixed(2)+'×'}.`;
-  element('aml-note').textContent=note+(element('split').value==='tail'?' Sparse tail: unusually few transactions and high positive-label prevalence. Do not compare directly with the main test period.':' Positive labels evaluate the queue; scores are not probabilities.');
+  element('aml-note').textContent=note+(element('split').value==='tail'?' Later-period evaluation; reported separately from the main test period.':' Positive labels evaluate the queue; scores are not probabilities.');
   if (snapshot.model) {
     table('comparison',['Scorer','Positive labels in top queue','Precision@100','Recall@100','Average precision'],
       [['Rule baseline',rules.metrics],['Frozen model · experimental',snapshot.model.views[element('split').value].metrics]].map(([name,m])=>[name,`${Math.round(m.precision_at_k*m.k)} / ${m.k}`,percent(m.precision_at_k),percent(m.recall_at_k),m.average_precision==null?'Unavailable':m.average_precision.toFixed(4)]));
@@ -122,6 +160,7 @@ async function start(snapshotSource=null) {
     if(loadId!==snapshotLoad) return false;
     snapshot=JSON.parse(new TextDecoder().decode(bytes));
     if(snapshot.schema_version!==1) throw new Error('Unsupported snapshot version');
+    updateEvaluationLabels();renderScoringCoverage();
     const fullAml = snapshot.aml_scope === 'full';
     element('status').textContent=`Snapshot generated ${snapshot.generated_at.slice(0,10)} · AML ${fullAml ? 'full population' : 'cohort'} ${integer(snapshot.cohort_rows)} rows · Treasury ${integer(snapshot.full_rows)} rows`;
     if (fullAml) {
@@ -140,8 +179,8 @@ async function start(snapshotSource=null) {
     if(snapshot.pipeline) {
       const p=snapshot.pipeline;
       element('status').textContent=`Run ${p.run_id} · ${integer(snapshot.full_rows)} transactions · ${p.start_date} to ${p.end_date} · Dataset version ${p.dataset_version??'unrecorded local copy'} · Refreshed ${p.refresh_time}`;
-      const scope=p.source_scope==='smoke-prefix' ? 'Demonstration sample' : 'Selected HI-Small population';
-      element('method-scope').textContent=`${scope}. Both views use the same verified transaction run. Optional training creates a candidate for separate review.`;
+      const scope=p.source_scope==='smoke-prefix' ? 'Demonstration sample' : `Selected ${p.subset || 'HI-Small'} population`;
+      element('method-scope').textContent=`${scope}. Both views use the same verified transaction run. ${snapshot.model?.evaluation_scope || 'Optional training creates a candidate for separate review.'}`;
       element('day').options[0].textContent='All transaction dates';
       document.querySelector('#treasury .heading p').textContent=`${integer(snapshot.full_rows)} transactions in this run. High volume and concentration do not imply suspicious activity.`;
       document.querySelectorAll('#treasury article p').forEach(node=>{
@@ -572,12 +611,12 @@ function renderAml() {
   element('review-capacity').querySelectorAll('option').forEach(option=>{option.disabled=Number(option.value)>population.capacity;});
   if(Number(selectedCapacity())>population.capacity) element('review-capacity').value='100';
   const k=selectedCapacity(), data=population[scorer], metrics=data.metrics_by_k[k];
-  cards('aml-kpis',[['Transactions in population',integer(metrics.rows),population.label],['Review capacity',integer(metrics.k),`Top ${k} · chronological tie policy`],
+  cards('aml-kpis',[['Transactions in population',integer(metrics.rows),`${population.label} · ${evaluationPeriodLabel(period)}`],['Review capacity',integer(metrics.k),`Top ${k} · chronological tie policy`],
     [`Precision@${metrics.k}`,percent(metrics.precision_at_k),`${integer(metrics.hits)} label-positive / ${integer(metrics.k)} reviewed`],
     [`Recall@${metrics.k}`,percent(metrics.recall_at_k),`${integer(metrics.positives)} labelled positives in population`]]);
   const pipeline=snapshot.pipeline||{};
-  element('aml-context').textContent=`${population.label} · ${period} · ${model?'Frozen model':'Rule baseline'} · Dataset ${pipeline.dataset_version??'unversioned'} · ${pipeline.source_scope==='smoke-prefix'?'Demo sample':'Full verified source'} · Model ${snapshot.model.provenance.model_sha256.slice(0,12)} · Data publication ${pipeline.refresh_time||snapshot.generated_at}. ${snapshot.exploration.aml.filter_policy}`;
-  element('aml-note').textContent=`Average precision ${metrics.average_precision==null?'Unavailable':metrics.average_precision.toFixed(4)} · lift@${metrics.k} ${metrics.lift_at_k==null?'Unavailable':metrics.lift_at_k.toFixed(2)+'×'}. Scores rank review priority; they are not probabilities.`+(period==='tail'?' Sparse, label-enriched tail; compare separately from the main test period.':' Retrospective evaluation; labels are absent from investigation records.');
+  element('aml-context').textContent=`${population.label} · ${evaluationPeriodLabel(period)} · ${model?'Frozen model':'Rule baseline'} · Dataset ${pipeline.dataset_version??'unversioned'} · ${pipeline.source_scope==='smoke-prefix'?'Demo sample':'Full verified source'} · Model ${snapshot.model.provenance.model_sha256.slice(0,12)} · Data publication ${pipeline.refresh_time||snapshot.generated_at}. ${snapshot.exploration.aml.filter_policy}`;
+  element('aml-note').textContent=`Average precision ${metrics.average_precision==null?'Unavailable':metrics.average_precision.toFixed(4)} · lift@${metrics.k} ${metrics.lift_at_k==null?'Unavailable':metrics.lift_at_k.toFixed(2)+'×'}. Scores rank review priority; they are not probabilities.`+(period==='tail'?' Later-period evaluation; compare separately from the main test period.':' Retrospective evaluation; labels are absent from investigation records.');
   element('investigation-panel').hidden=amlMode!=='investigation';
   element('model-comparison').hidden=amlMode!=='evaluation';
   element('evaluation-charts').hidden=amlMode!=='evaluation';

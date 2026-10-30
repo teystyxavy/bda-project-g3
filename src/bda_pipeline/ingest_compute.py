@@ -45,7 +45,7 @@ import pyarrow.dataset as ds
 
 from .acquisition import validate_fx
 from .analytics import add_behaviour, ranking_metrics
-from .batch import COLUMNS, FEATURES, PERIODS, export_verified_batch
+from .batch import COLUMNS, FEATURES, PERIODS, evaluation_periods, export_verified_batch
 from .cloud_scores import checked_indices, feature_fingerprints
 from .dashboard import records
 from .inference import SCORING_COLUMNS, verify_artifacts
@@ -167,7 +167,7 @@ def verify_curated(curated, raw, manifest):
     for batch in dataset.to_batches(batch_size=100_000):
         frame = batch.to_pandas()
         # Validates source_row_index (in range, unique, not seen before) and marks it seen.
-        indices = checked_indices(frame, seen)
+        indices = checked_indices(frame, seen, manifest.get('subset', 'HI-Small'))
         if not np.array_equal(raw_hashes[indices], raw_fingerprints(frame)):
             raise ValueError('Curated transaction differs from original source')
         if not frame.txn_date.astype(str).eq(frame.timestamp.dt.strftime('%Y-%m-%d')).all():
@@ -207,6 +207,7 @@ def verify_curated(curated, raw, manifest):
         np.testing.assert_array_equal(actual.to_numpy(), recalculated[FEATURES].to_numpy())
         checked_rows = len(reference)
     return {'status': 'passed', 'rows': n, 'positives': positives, 'amount_usd': amount_usd,
+            'subset': manifest.get('subset', 'HI-Small'), 'start_date': manifest['start_date'], 'end_date': manifest['end_date'],
             'raw_identity_comparison': 'Every source row: ordered SHA256 fingerprint',
             'fx_comparison': 'All same-day and prior-day valuations',
             'behaviour_reference_rows': checked_rows,
@@ -246,7 +247,7 @@ def baseline_stage(inputs, output, assets):
     proof_path = output / 'proof.json'
     proof_path.write_text(json.dumps(proof, allow_nan=False))
     # Scoring only proceeds if proof.json says 'passed' (checked inside export_verified_batch).
-    export_verified_batch(inputs / 'curated', proof_path, output / 'baseline', assets, serving_only=True)
+    export_verified_batch(inputs / 'curated', proof_path, output / 'baseline', assets, serving_only=True, subset=manifest.get('subset', 'HI-Small'), end_date=manifest['end_date'])
     # Label where the snapshot was produced, for the dashboard's provenance panel.
     snapshot = output / 'baseline/dashboard/dashboard.json'
     data = json.loads(snapshot.read_text())
@@ -301,7 +302,7 @@ def verify_scores(reference, scored, model_dir, manifest, output):
     fingerprints = np.empty(n, dtype='S32')
     for batch in ds.dataset(reference, format='parquet').to_batches(columns=SCORING_COLUMNS, batch_size=100_000):
         frame = batch.to_pandas()
-        indices = checked_indices(frame, seen)
+        indices = checked_indices(frame, seen, manifest.get('subset', 'HI-Small'))
         # An unseen category would only hit the '_unknown' column; refuse instead.
         for column, vocabulary in ranker.vocabulary.items():
             if not frame[column].isin(vocabulary).all():
@@ -316,7 +317,7 @@ def verify_scores(reference, scored, model_dir, manifest, output):
         frame = batch.to_pandas()
         if set(frame.columns) != set(SCORING_COLUMNS) | {'model_score', 'txn_date'}:
             raise ValueError('Unexpected scoring columns or evaluation labels')
-        indices = checked_indices(frame, seen)
+        indices = checked_indices(frame, seen, manifest.get('subset', 'HI-Small'))
         if not np.array_equal(fingerprints[indices], feature_fingerprints(frame)):
             raise ValueError('Scored feature mismatch')
         actual = frame.model_score.to_numpy(dtype='float64')
@@ -390,29 +391,16 @@ def export_stage(inputs, output, assets):
     batches = (batch.to_pandas().assign(txn_date=lambda frame: frame.txn_date.astype(str))
                for batch in dataset.to_batches(columns=['txn_date', 'from_bank', 'to_bank',
                     'payment_currency', 'receiving_currency', 'amount_usd'], batch_size=100_000))
-    corridor_proof = compare_corridors(expected_corridors(batches, manifest['rows']), actual, manifest['rows'])
+    corridor_proof = compare_corridors(expected_corridors(batches, manifest['rows'], start=manifest['start_date'], end=manifest['end_date']), actual, manifest['rows'])
     (output / 'evidence/scores.json').write_text(json.dumps(score_proof, allow_nan=False))
     (output / 'evidence/corridors.json').write_text(json.dumps(corridor_proof, allow_nan=False))
     # ---- 3. Per-period metrics and review queues ----
     ranker = SavedRanker(inputs / 'model')
     snapshot = json.loads((inputs / 'baseline/manifest/dashboard.json').read_text())
     views = {}
-    for name, (start, end) in PERIODS.items():
-        # Half-open interval [start, end) on the timestamp; pyarrow filters while reading.
-        condition = (ds.field('timestamp') >= pd.Timestamp(start)) & (ds.field('timestamp') < pd.Timestamp(end))
-        frame = dataset.to_table(columns=INPUT_COLUMNS, filter=condition).to_pandas()
-        if frame.empty:
-            # e.g. a smoke run with few rows: reuse the baseline metrics, empty queue.
-            views[name] = {'metrics': snapshot['aml'][name]['metrics'], 'queue': []}
-        else:
-            # Look up each row's verified score by its source_row_index.
-            values = scores[frame.source_row_index.to_numpy(dtype='int64')]
-            metrics_frame = frame[['timestamp', 'source_row_index', 'is_laundering']]
-            # Labels are only used here for evaluation metrics, never for scoring.
-            views[name] = {'metrics': ranking_metrics(rank(metrics_frame, values)), 'queue': records(ranker.queue(frame, values))}
-        # Free each period's frame before loading the next to limit peak memory.
-        del frame
-        gc.collect()
+    from .dashboard_exploration import stream_model_view
+    for name, (start, end) in evaluation_periods(manifest['end_date']).items():
+        views[name] = stream_model_view(dataset, scores, ranker, start, end, manifest['subset'])
     # ---- 4. Metadata for the dashboard ----
     snapshot['model'] = {'name': ranker.selection['selected']['name'], 'views': views,
         'inference_source': 'aws-glue', 'validation_gate_passed': ranker.selection['validation_gate_passed'],
@@ -423,6 +411,7 @@ def export_stage(inputs, output, assets):
                        'source_sha256': reference_hash, 'training_source_sha256': ranker.selection['source_sha256']}}
     snapshot['pipeline'] = {key: manifest[key] for key in ['run_id', 'dataset_version', 'subset', 'source_scope',
                              'start_date', 'end_date', 'processing_sha256', 'deployment_sha256', 'train']}
+    snapshot['model']['evaluation_scope'] = ('Transfer evaluation on HI-Medium with the frozen HI-Small model; synthetic populations may overlap, so this is not an independent generalisation claim.' if manifest['subset'] == 'HI-Medium' else 'HI-Small chronological evaluation')
     snapshot['pipeline']['fx_sha256'] = manifest['files']['fx.csv']['sha256']
     snapshot['pipeline']['refresh_time'] = datetime.now(timezone.utc).isoformat()
     # ---- 5. Optional: verify the candidate model from SageMaker training ----
@@ -466,7 +455,7 @@ def export_stage(inputs, output, assets):
             raise ValueError('Candidate provenance mismatch')
         # Recompute the candidate's and the rule baseline's metrics per period
         # and require them to equal what the training job reported.
-        for name, (start, end) in PERIODS.items():
+        for name, (start, end) in evaluation_periods(manifest['end_date']).items():
             frame = dataset.to_table(columns=INPUT_COLUMNS, filter=(ds.field('timestamp') >= pd.Timestamp(start)) & (ds.field('timestamp') < pd.Timestamp(end))).to_pandas()
             values = candidate_ranker.predict(frame)
             metrics_frame = frame[['timestamp', 'source_row_index', 'is_laundering']]

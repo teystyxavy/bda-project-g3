@@ -55,8 +55,21 @@ def normalized_bank(column):
 
 
 def read_transactions(spark, path):
-    """Reads ONE transactions CSV into the 11 string columns plus a stable ``source_row_index`` and ``transaction_id`` ('HI-Small:<index>').
-    Raises ValueError if the path is not a single file, the header differs from RAW_HEADER or a line does not have 11 fields."""
+    """Read the transactions CSV with stable row numbers.
+
+    Args:
+        spark: active SparkSession.
+        path: path/URI of ONE CSV file (not a folder).
+
+    Returns:
+        DataFrame with the 11 TRANSACTION_COLUMNS as strings, plus
+        ``source_row_index`` (long; 0 = first data row after the header) and
+        ``transaction_id`` (``'HI-Small:<source_row_index>'``).
+
+    Raises:
+        ValueError: if the path is not a single file, the header differs from
+        RAW_HEADER, or a line does not have exactly 11 CSV fields.
+    """
     # A single immutable, one-record-per-line file is the source identity contract.
     # zipWithIndex preserves physical row order, unlike monotonically_increasing_id.
     jpath = spark._jvm.org.apache.hadoop.fs.Path(path)
@@ -73,7 +86,7 @@ def read_transactions(spark, path):
         if len(fields) != len(TRANSACTION_COLUMNS):
             raise ValueError(f"Invalid CSV record at source row {index - 1}")
         # Line 0 is the header, so data row number = line number - 1.
-        return (*fields, index - 1, f"HI-Small:{index - 1}")
+        return (*fields, index - 1, f"{subset}:{index - 1}")
     schema = StructType([StructField(name, StringType()) for name in TRANSACTION_COLUMNS] + [
         StructField("source_row_index", LongType(), False),
         StructField("transaction_id", StringType(), False),
@@ -147,8 +160,25 @@ def add_behaviour(frame):
 
 
 def curate(transactions, accounts, rates):
-    """Validates, enriches and USD-converts the transactions: joins sender/receiver account metadata, converts at the same-day and prior-day FX rates and adds self-transfer and currency-mismatch flags.
-    Raises ValueError on any invalid field, account or FX rate; the row count is unchanged (checked by ``main``)."""
+    """Validate, enrich and USD-convert the transactions.
+
+    Args:
+        transactions: output of ``read_transactions`` (string columns).
+        accounts: accounts CSV DataFrame (ACCOUNT_COLUMNS headers).
+        rates: FX CSV DataFrame with ``txn_date``, ``currency``, ``usd_rate``
+            (USD value of one unit of the currency on that day).
+
+    Returns:
+        DataFrame with typed timestamp/amounts/label, ``txn_date``,
+        ``from_*``/``to_*`` account metadata (bank_name, entity_id,
+        entity_name), ``amount_usd``, ``amount_usd_asof``, ``is_self_txn`` and
+        ``currency_mismatch``. Row count is unchanged (checked by ``main``).
+
+    Raises:
+        ValueError: on missing columns, empty fields, bad timestamps/dates/
+        labels/amounts, invalid or duplicate account keys or FX rates, an
+        account that cannot be matched, or a missing FX rate.
+    """
     missing = set(ACCOUNT_COLUMNS) - set(accounts.columns)
     if missing:
         raise ValueError(f"Missing account columns: {sorted(missing)}")
@@ -164,7 +194,7 @@ def curate(transactions, accounts, rates):
     result = result.withColumn("txn_date", functions.to_date("timestamp"))
     checks = [(required, "Required transaction fields are empty"),
               (functions.col("timestamp").isNull(), "Invalid timestamp"),
-              (~functions.col("txn_date").between("2022-09-01", "2022-09-18"), "Date outside HI-Small range"),
+              (~functions.col("txn_date").between(start_date, end_date), "Date outside selected source range"),
               (~functions.col("is_laundering").isin("0", "1"), "Invalid label")]
     # Amounts must parse as finite, non-negative numbers.
     for name in ["amount_paid", "amount_received"]:
@@ -232,6 +262,10 @@ def main():
     for name in ["transactions", "accounts", "fx", "output"]:
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--expected_rows", type=int, required=True)
+    parser.add_argument("--subset", choices=["HI-Small", "HI-Medium"], default="HI-Small")
+    parser.add_argument("--start_date", default="2022-09-01")
+    parser.add_argument("--end_date", default="2022-09-18")
+    parser.add_argument("--shuffle_partitions", type=int, default=8)
     parser.add_argument("--behaviour", choices=["true", "false"], default="false")
     # parse_known_args ignores Glue's own system arguments (e.g. --JOB_NAME).
     args, _ = parser.parse_known_args()
@@ -243,10 +277,12 @@ def main():
     # Non-ANSI: a bad cast yields NULL, which the explicit checks then report clearly.
     spark.conf.set("spark.sql.ansi.enabled", "false")
     # Small job on 2 workers: 8 shuffle partitions instead of Spark's default 200.
-    spark.conf.set("spark.sql.shuffle.partitions", "8")
+    if not 1 <= args.shuffle_partitions <= 128:
+        raise ValueError("Invalid shuffle partition bound")
+    spark.conf.set("spark.sql.shuffle.partitions", str(args.shuffle_partitions))
     started = perf_counter()
     # cache(): the transactions are used for the count and for curation.
-    transactions = read_transactions(spark, args.transactions).cache()
+    transactions = read_transactions(spark, args.transactions, args.subset).cache()
     raw_rows = transactions.count()
     if raw_rows != args.expected_rows:
         raise ValueError(f"Expected {args.expected_rows} raw rows, received {raw_rows}")
@@ -255,7 +291,7 @@ def main():
     # FAILFAST: a malformed CSV line raises immediately instead of being dropped.
     accounts = spark.read.options(header=True, mode="FAILFAST").csv(args.accounts)
     rates = spark.read.options(header=True, mode="FAILFAST").csv(args.fx)
-    result = curate(transactions, accounts, rates).cache()
+    result = curate(transactions, accounts, rates, args.start_date, args.end_date).cache()
     # Left joins must not add or lose rows (would mean duplicate keys).
     if result.count() != raw_rows:
         raise ValueError("Account/FX joins changed the row count")

@@ -4,7 +4,7 @@ import hashlib
 import json
 import shutil
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -35,6 +35,12 @@ QUEUE_COLUMNS = ['transaction_id', 'timestamp', 'from_bank', 'from_account',
 # Half-open [start, end) evaluation periods; training is 2022-09-01..09-06 (see fit_thresholds).
 PERIODS = {'validation': ('2022-09-07', '2022-09-09'),
            'test': ('2022-09-09', '2022-09-11'), 'tail': ('2022-09-11', '2022-09-19')}
+
+
+def evaluation_periods(end_date='2022-09-18'):
+    """Preserve frozen chronological cohorts and include the entire observed tail."""
+    end = (datetime.fromisoformat(end_date) + timedelta(days=1)).date().isoformat()
+    return {**PERIODS, 'tail': ('2022-09-11', max('2022-09-19', end))}
 
 
 class AmlSummary:
@@ -102,9 +108,30 @@ def fit_thresholds(dataset):
     return {name: float(np.quantile(np.concatenate(values), .99)) for name, values in amounts.items()}
 
 
-def export_verified_batch(curated, verification, output, assets, *, serving_only=False):
-    """Scores the full verified population, writes the BQ1/BQ2 outputs to a fresh ``output`` directory and returns the run report.
-    Raises ValueError on any integrity or reconciliation failure rather than publishing a partial dashboard."""
+def export_verified_batch(curated, verification, output, assets, *, serving_only=False, subset='HI-Small', end_date='2022-09-18'):
+    """Score the full verified curated population and write BQ1/BQ2 outputs.
+
+    Args:
+        curated: path to the hive-partitioned curated Parquet directory.
+        verification: path to ``proof.json`` from ``verify_curated``. Scoring
+            refuses to run unless this proof says the curated data passed.
+        output: directory to create. It must not exist yet, so an old run's
+            files can never be mixed with a new run's files.
+        assets: directory holding the static dashboard HTML/CSS/JS.
+        serving_only: when True (the AWS path), write only what the dashboard
+            and later verification need; skip CSV reports and asset copies.
+
+    Returns:
+        The ``run_report.json`` content as a dict (row counts, P99
+        thresholds, per-period metrics, flagged counts, treasury totals and
+        provenance).
+
+    Raises:
+        ValueError: on any integrity failure (missing proof, missing columns,
+        duplicate/invalid row IDs, bad labels, missing values, row or USD
+        totals that do not reconcile with the proof). The job fails loudly
+        rather than publishing a partial or inconsistent dashboard.
+    """
     output = Path(output)
     if output.exists():
         raise ValueError('Use a fresh output directory')
@@ -118,8 +145,10 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
     if missing:
         raise ValueError(f'Missing scoring columns: {sorted(missing)}')
     thresholds = fit_thresholds(dataset)
-    # One summary per period, plus one per rule variant for the validation ablation.
-    summaries = {period: AmlSummary() for period in PERIODS}
+    periods = evaluation_periods(end_date)
+    # One summary per evaluation period, plus one per rule variant for the
+    # validation-only ablation ("which rule components actually help?").
+    summaries = {period: AmlSummary() for period in periods}
     variants = {name: AmlSummary() for name in ['Current baseline', 'ACH only', 'ACH + amount', 'ACH + behaviour']}
     # One boolean per source CSV row: proves every row is scored exactly once.
     seen = np.zeros(proof['rows'], dtype=bool)
@@ -134,8 +163,9 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
             indices = frame.source_row_index.to_numpy(dtype=np.int64)
             if ((indices < 0) | (indices >= len(seen))).any() or seen[indices].any() or len(np.unique(indices)) != len(indices):
                 raise ValueError('Invalid or duplicate source IDs')
-            # transaction_id is 'HI-Small:<row index>'; a mismatch means shuffled or corrupted rows.
-            if not frame.transaction_id.eq('HI-Small:' + frame.source_row_index.astype(str)).all():
+            # transaction_id is derived as "HI-Small:<row index>"; a mismatch
+            # would mean rows were shuffled or IDs corrupted in curation.
+            if not frame.transaction_id.eq(subset + ':' + frame.source_row_index.astype(str)).all():
                 raise ValueError('Transaction ID mismatch')
             if not frame.is_laundering.isin([0, 1]).all() or frame[['amount_usd', 'amount_usd_asof', *FEATURES]].isna().any().any():
                 raise ValueError('Invalid labels or missing scoring values')
@@ -144,14 +174,18 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
             positives += int(frame.is_laundering.sum())
             # BQ2: partial corridor totals for this batch; summed at the end.
             aggregates.append(corridor_totals(frame))
-            # BQ1: 50 (ACH) + 20 (above training P99) + 30 (velocity or fan-out); flagged at >= 60.
+            if len(aggregates) >= 8:
+                keys = ['txn_date', 'from_bank', 'to_bank', 'payment_currency', 'receiving_currency']
+                aggregates = [pd.concat(aggregates, ignore_index=True).groupby(keys, observed=True)[['transaction_count', 'volume_usd']].sum().reset_index()]
+            # BQ1: score = 50 (ACH) + 20 (above training P99) + 30 (velocity
+            # or fan-out); flagged when score >= 60. See analytics.score_baseline.
             scored = score_baseline(frame, thresholds)
             # Append to one Parquet file; the schema comes from the first batch.
             table = pa.Table.from_pandas(scored, preserve_index=False)
             if writer is None:
                 writer = pq.ParquetWriter(output / 'bq1_scored.parquet', table.schema, compression='snappy')
             writer.write_table(table)
-            for period, (start, end) in PERIODS.items():
+            for period, (start, end) in periods.items():
                 summaries[period].add(scored.loc[scored.timestamp.ge(start) & scored.timestamp.lt(end)])
             # Validation-only ablation (same weights as score_baseline); test data never chooses rules.
             validation = scored.loc[scored.timestamp.ge('2022-09-07') & scored.timestamp.lt('2022-09-09')]

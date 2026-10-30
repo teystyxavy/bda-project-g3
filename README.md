@@ -90,10 +90,19 @@ once. Runs without `-Trigger` are unchanged. See
 ```
 
 Local downloads support HI/LI with Small/Medium/Large, selected files, an output
-directory and a pinned Kaggle version. They start no AWS jobs. The AWS pipeline
+directory and a pinned Kaggle version. They start no AWS jobs. The default AWS acquisition pipeline
 continues to support HI-Small; `-Refresh` without `-DownloadOnly` refreshes its
 cloud source and runs the pipeline. See the
 [download options and cost implications](planning/runbooks/kaggle-download-options.md).
+
+
+HI-Medium batch support is implemented on `feature/larger-dataset`. It uses local
+acquisition and upload, then the same verified AWS batch stages. See the
+[HI-Medium runbook](planning/runbooks/hi-medium.md) for readiness, resource bounds
+and acceptance evidence. On 30 October 2026 the published Medium snapshot was
+verified to contain **31,898,238 transactions** across 28 days, with a matching
+SHA-256. Final private AWS evidence and measured compute costs await renewed
+sign-in; see the [verification record](planning/evidence/hi-medium-result-20261030.json).
 
 ## Verified results
 

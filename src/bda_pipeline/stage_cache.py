@@ -79,7 +79,7 @@ def inventory(s3, prefix):
 
     Only Parquet data files and the Spark ``_SUCCESS`` marker count; anything
     else (e.g. Glue's ``_$folder$`` placeholders) is ignored. Limits (at most
-    250 objects, each up to 4 GB) bound how much a cache copy can cost.
+    1,000 objects, each up to 4 GB) bound how much a cache copy can cost.
 
     Args:
         s3: boto3 S3 client.
@@ -101,7 +101,7 @@ def inventory(s3, prefix):
             # Key relative to the stage folder, e.g. 'txn_date=2022-09-01/part-0.parquet'.
             relative = item['Key'][len(prefix) + 1:]
             if relative != '_SUCCESS' and not relative.endswith('.parquet'): continue
-            if len(objects) >= 250 or not 0 <= item['Size'] <= 4_000_000_000:
+            if len(objects) >= 1000 or not 0 <= item['Size'] <= 4_000_000_000:
                 raise ValueError('Stage cache exceeds the bounded object contract')
             # The ETag lets a later copy prove the object has not changed since.
             objects.append({'file': relative, 'bytes': item['Size'], 'etag': item['ETag']})

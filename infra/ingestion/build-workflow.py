@@ -39,8 +39,8 @@ Design rules encoded here ("bounded", "no compute retries"):
   failure stops the run and keeps its outputs for inspection.
 * Only cheap, idempotent calls are retried: Lambda service errors and the
   read-only ``Describe*Job`` polls.
-* Polling is bounded: at most 180 checks, 15 s apart (about 45 minutes), and
-  the whole execution has a 2-hour timeout.
+* Polling is bounded: at most 300 checks, 15 s apart (about 75 minutes), and
+  the whole execution has a 4-hour timeout.
 
 Usage
 -----
@@ -152,17 +152,17 @@ def processing(name, request, next_state, *, branch=False, kind='Processing'):
                'ResultSelector': {'status.$': '$.' + kind + 'JobStatus'},
                'ResultPath': '$.job_status', 'Next': name + 'Complete', 'Retry': READ_RETRY},
         # Decide what to do with the status (rules are checked in order).
-        # Attempts 0..179 = 180 checks x 15 s, roughly a 45-minute deadline.
+        # Attempts 0..299 = 300 checks x 15 s, roughly a 75-minute deadline.
         name + 'Complete': {'Type': 'Choice', 'Choices': [
             {'Variable': '$.job_status.status', 'StringEquals': 'Completed', 'Next': next_state},
             {'Or': [{'Variable': '$.job_status.status', 'StringEquals': status} for status in ['Failed', 'Stopped']], 'Next': name + 'Failed'},
-            {'Variable': '$.poll.attempt', 'NumericGreaterThanEquals': 179, 'Next': name + 'Failed'}], 'Default': name + 'PollIncrement'},
+            {'Variable': '$.poll.attempt', 'NumericGreaterThanEquals': 299, 'Next': name + 'Failed'}], 'Default': name + 'PollIncrement'},
         # Still running (InProgress/Stopping): add 1 to the counter with the
         # States.MathAdd intrinsic function and loop back to Wait.
         name + 'PollIncrement': {'Type': 'Pass', 'Parameters': {'attempt.$': 'States.MathAdd($.poll.attempt, 1)'}, 'ResultPath': '$.poll', 'Next': name + 'Wait'},
         # Default failure: a Fail state. Used as-is inside Parallel branches,
         # where the error then reaches the Parallel state's Catch.
-        name + 'Failed': {'Type': 'Fail', 'Error': 'ProcessingFailedOrDeadline', 'Cause': 'Processing did not succeed within 180 checks; preserve outputs and stop owned workers.'},
+        name + 'Failed': {'Type': 'Fail', 'Error': 'ProcessingFailedOrDeadline', 'Cause': 'Processing did not succeed within 300 checks; preserve outputs and stop owned workers.'},
     }
     if not branch:
         # Top-level job: API errors on create/describe go to the failure path.
@@ -192,7 +192,7 @@ def workflow():
     # 'begin' prepared. ".sync" makes Step Functions wait until the Glue run
     # ends (and fail if the run fails). No Retry: a paid job is not re-run.
     score = {'Type': 'Task', 'Resource': 'arn:aws:states:::glue:startJobRun.sync',
-             'Parameters': {'JobName': 'is459-g3-ingest-score', 'Arguments.$': '$.work.score_arguments'}, 'ResultPath': None, 'End': True}
+             'Parameters': {'JobName': 'is459-g3-ingest-score', 'Arguments.$': '$.work.score_arguments', 'WorkerType': 'G.1X', 'NumberOfWorkers.$': '$.work.glue_workers', 'Timeout.$': '$.work.glue_timeout'}, 'ResultPath': None, 'End': True}
     # BQ2 corridors: run the corridor SQL built by 'begin' in the cost-capped
     # workgroup against the per-run ingest database. ClientRequestToken makes
     # the start idempotent (the same token cannot start a second query), and
@@ -219,7 +219,7 @@ def workflow():
         # Skip curation if an identical earlier run's curated output can be reused.
         'ReuseCurated': {'Type': 'Choice', 'Choices': [{'Variable': '$.work.curated_cache_hit', 'BooleanEquals': True, 'Next': 'PrepareBaseline'}], 'Default': 'Curate'},
         # Glue curate job: raw CSV + FX -> curated Parquet (waits via .sync).
-        'Curate': {'Type': 'Task', 'Resource': 'arn:aws:states:::glue:startJobRun.sync', 'Parameters': {'JobName': 'is459-g3-ingest-curate', 'Arguments.$': '$.work.curate_arguments'}, 'ResultPath': None, 'Next': 'PrepareBaseline', 'Catch': CATCH},
+        'Curate': {'Type': 'Task', 'Resource': 'arn:aws:states:::glue:startJobRun.sync', 'Parameters': {'JobName': 'is459-g3-ingest-curate', 'Arguments.$': '$.work.curate_arguments', 'WorkerType': 'G.1X', 'NumberOfWorkers.$': '$.work.glue_workers', 'Timeout.$': '$.work.glue_timeout'}, 'ResultPath': None, 'Next': 'PrepareBaseline', 'Catch': CATCH},
         # Confirm curated output (_SUCCESS marker), register the run's Athena
         # table and build the baseline Processing request.
         'PrepareBaseline': control('curated', '$.baseline_request', 'ScoreAndAnalyze'),
@@ -249,7 +249,7 @@ def workflow():
         # Step 3: end the execution as FAILED (outputs and lock are preserved).
         'Failed': {'Type': 'Fail', 'Error': 'IngestFailed', 'Cause': 'Run outputs preserved; inspect evidence and recover only after all workers stop.'},
     }
-    return {'Comment': 'Parallel verified full batch; 15-second bounded processing checks; no paid-job retries.', 'StartAt': 'Begin', 'TimeoutSeconds': 7200, 'States': states}
+    return {'Comment': 'Parallel verified full batch; 15-second bounded processing checks; no paid-job retries.', 'StartAt': 'Begin', 'TimeoutSeconds': 14400, 'States': states}
 
 
 if __name__ == '__main__':

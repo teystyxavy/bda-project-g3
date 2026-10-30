@@ -1,6 +1,18 @@
 # Dashboard exploration and read-only pipeline status
 
-The merged dashboard is deployed as UI release `insights-ui-20261007-v1`, using the
+The 30 October coverage update uses UI release `medium-coverage-20261030` and
+source pipeline run `medium-full-20261030-v2`. Its fixed coverage summary shows
+**31,898,238 scored = 18,893,741 evaluated + 13,004,497 excluded from evaluation**.
+The excluded rows are Sep 1–6, the original HI-Small model's training-reference
+dates. They still received scores. The model was reused for Medium without
+retraining; possible synthetic-population overlap limits generalisation claims.
+The summary stays visible above period/population filters and reconciles all
+four date windows in an expandable table. The selected-period metrics and queues
+continue to cover only the selected population. The publication preserves the
+verified snapshot and starts no new batch or training jobs. See
+[coverage publication evidence](../evidence/dashboard-scoring-coverage-20261030.json).
+
+The earlier 7 October UI release `insights-ui-20261007-v1` used the
 existing 5,078,345-row verified snapshot and frozen model. Status-stack deployment,
 worker update and public asset verification are recorded in
 [deployment evidence](../evidence/dashboard-status-exploration-result-20261007.json).

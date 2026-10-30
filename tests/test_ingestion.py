@@ -209,13 +209,14 @@ def test_duplicate_run_cannot_claim_and_failure_keeps_outputs():
     assert json.loads(s3.data[BUCKET, 'pipeline/lock.json'])['run_id'] == 'other-run'
 
 
-def test_source_to_release_and_tamper_rejected(tmp_path):
+@pytest.mark.parametrize('subset', ['HI-Small', 'HI-Medium'])
+def test_source_to_release_and_tamper_rejected(tmp_path, subset):
     inputs = tmp_path / 'input'
     rates = raw_fixture(tmp_path / 'dataset')
     info = prepare_inputs(tmp_path / 'dataset/HI-Small_Trans.csv', tmp_path / 'dataset/HI-Small_accounts.csv', inputs / 'raw', fx_file=tmp_path / 'dataset/fx.csv')
-    value = manifest() | info
+    value = manifest() | info | {'subset': subset}
     frame = build_curated_transactions(read_transactions(inputs / 'raw/transactions.csv'), read_accounts(inputs / 'raw/accounts.csv'), rates)
-    frame['transaction_id'] = 'HI-Small:' + frame.source_row_index.astype(str)
+    frame['transaction_id'] = subset + ':' + frame.source_row_index.astype(str)
     frame['amount_usd_asof'] = frame.amount_usd
     frame = add_behaviour(frame)
     (inputs / 'curated').mkdir()
@@ -250,6 +251,13 @@ def test_source_to_release_and_tamper_rejected(tmp_path):
     public = json.loads((tmp_path / 'export/release/site/dashboard.json').read_text())
     assert public['pipeline']['run_id'] == 'test-run'
     assert all('is_laundering' not in row for view in public['model']['views'].values() for row in view['queue'])
+    if subset == 'HI-Medium':
+        assert public['pipeline']['subset'] == subset
+        assert 'Transfer evaluation' in public['model']['evaluation_scope']
+        cloud.loc[0, 'model_score'] = 0.987654321
+        cloud.to_parquet(inputs / 'scored/data.parquet', index=False)
+        with pytest.raises(AssertionError): export_stage(inputs, tmp_path / 'bad-export', ROOT / 'dashboard')
+        return
     value['train'] = True
     (inputs / 'run/manifest.json').write_text(json.dumps(value))
     trained = tmp_path / 'trained'

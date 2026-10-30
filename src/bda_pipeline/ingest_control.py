@@ -77,7 +77,7 @@ def get_json(s3, key, bucket=BUCKET):
         The ETag is used for optimistic locking (``IfMatch``) on later writes.
 
     Raises:
-        ValueError: if the document is larger than 100,000 bytes (control
+        ValueError: if the document is larger than 1,000,000 bytes (control
         documents are tiny; anything bigger is unexpected).
     """
     # Prefix-scoped ListBucket permits reliable absence checks without broad listing.
@@ -90,8 +90,8 @@ def get_json(s3, key, bucket=BUCKET):
         # Deleted between the listing and the read.
         return None, None
     with item['Body'] as stream:
-        data = stream.read(100_001)
-    if len(data) > 100_000: raise ValueError('Control document too large')
+        data = stream.read(1_000_001)
+    if len(data) > 1_000_000: raise ValueError('Control document too large')
     return json.loads(data), item['ETag']
 
 
@@ -305,7 +305,7 @@ def handle(event, config, clients):
             stopped = stop_owned_workers(clients, run_id)
             put_json(s3, f"{p['evidence']}/cancellation.json", {'run_id': run_id, 'stop_requested': stopped, 'lock_preserved': True})
         return {'status': 'failed-output-preserved', 'run_id': run_id}
-    # ---- processing_failed: SageMaker job failed or exceeded 180 polls ----
+    # ---- processing_failed: SageMaker job failed or exceeded 300 polls ----
     # Raising here sends the workflow into RecordFailure.
     if op == 'processing_failed':
         raise ValueError('Processing failed, stopped or exceeded the bounded completion deadline')
@@ -338,15 +338,19 @@ def handle(event, config, clients):
         # Stored as $.work in the state machine; drives the cache Choice states,
         # the Glue job arguments and the Athena query.
         return {'train': manifest['train'], 'rows': manifest['rows'],
+            'glue_workers': 4 if manifest['subset'] == 'HI-Medium' else 2,
+            'glue_timeout': 30 if manifest['subset'] == 'HI-Medium' else 10,
             'curated_cache_hit': cached['curated']['hit'], 'scored_cache_hit': cached['scored']['hit'],
             'curate_arguments': {'--transactions': f"s3://{BUCKET}/{p['raw']}/transactions.csv",
                 '--accounts': f"s3://{BUCKET}/{p['raw']}/accounts.csv", '--fx': f"s3://{BUCKET}/{p['raw']}/fx.csv",
                 '--output': f"s3://{BUCKET}/{p['curated']}/", '--expected_rows': str(manifest['rows']),
-                '--behaviour': 'true', '--TempDir': f's3://{BUCKET}/tmp/ingest/{run_id}/curate/'},
+                '--behaviour': 'true', '--subset': manifest['subset'],
+                '--start_date': manifest['start_date'], '--end_date': manifest['end_date'],
+                '--shuffle_partitions': '32' if manifest['subset'] == 'HI-Medium' else '8', '--TempDir': f's3://{BUCKET}/tmp/ingest/{run_id}/curate/'},
             'score_arguments': {'--INPUT': f"s3://{BUCKET}/{p['curated']}/",
                 '--OUTPUT': f"s3://{BUCKET}/{p['scored']}/", '--EXPECTED_ROWS': str(manifest['rows']),
                 '--TempDir': f's3://{BUCKET}/tmp/ingest/{run_id}/score/'},
-            'query': corridor_query(run_id, manifest['start_date'], manifest['end_date']),
+            'query': corridor_query(run_id, manifest['start_date'], manifest['end_date'], manifest['subset']),
             # Athena idempotency token: the same run always maps to the same query execution.
             'query_token': sha({'run_id': run_id, 'query': 'corridors'})}
     # ---- publish (early path): already published -> make the call idempotent ----
@@ -392,7 +396,7 @@ def handle(event, config, clients):
             if existing['StorageDescriptor']['Location'] != location:
                 raise ValueError('Existing run table has a different source')
         # Becomes $.baseline_request; Step Functions passes it to CreateProcessingJob.
-        return processing_request(run_id, 'baseline', config)
+        return processing_request(run_id, 'baseline', config, subset=manifest['subset'])
     # ---- baseline: baseline job done -> optionally build a training job request ----
     if op == 'baseline':
         job = sm.describe_processing_job(ProcessingJobName=f'is459-g3-baseline-{run_id}')
@@ -434,7 +438,7 @@ def handle(event, config, clients):
             raise ValueError('Export requires independent baseline verification')
         work = event['work']
         # The SQL in the state must be exactly the reviewed query for this run.
-        if (work['query'] != corridor_query(run_id, manifest['start_date'], manifest['end_date'])
+        if (work['query'] != corridor_query(run_id, manifest['start_date'], manifest['end_date'], manifest['subset'])
                 or work['query_token'] != sha({'run_id': run_id, 'query': 'corridors'})):
             raise ValueError('Unexpected query request')
         # Same ClientRequestToken as the Corridors state used, so Athena
@@ -459,7 +463,7 @@ def handle(event, config, clients):
                 raise ValueError('Unexpected candidate training output')
             extra['candidate'] = expected
         # Becomes $.export_request for the Export processing job.
-        return processing_request(run_id, 'export', config, extra)
+        return processing_request(run_id, 'export', config, extra, subset=manifest['subset'])
     # ---- publish: verify the release, then make it live on the dashboard ----
     if op == 'publish':
         job = sm.describe_processing_job(ProcessingJobName=f'is459-g3-export-{run_id}')

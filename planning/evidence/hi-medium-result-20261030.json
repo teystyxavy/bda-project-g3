@@ -1,0 +1,113 @@
+{
+  "run_id": "medium-full-20261030-v2",
+  "pointer": {
+    "previous_run_id": "live-controls-20261007-v2",
+    "run_id": "medium-full-20261030-v2",
+    "schema_version": 1,
+    "sha256": "eb6be0e5ac488c8264263f5ae43e008b53b30f409d11a2f3321fb4fd67776f83",
+    "snapshot": "releases/medium-full-20261030-v2/dashboard.json"
+  },
+  "snapshot_sha256_verified": true,
+  "pipeline": {
+    "run_id": "medium-full-20261030-v2",
+    "dataset_version": 8,
+    "subset": "HI-Medium",
+    "source_scope": "selected-subset",
+    "start_date": "2022-09-01",
+    "end_date": "2022-09-28",
+    "processing_sha256": "d85a0d4685e5302d36a908c145bfeed989359dd757bb9de00f3db36af8b22e63",
+    "deployment_sha256": "3ce71ce2cbc953c6e719a7dd24259794a018df27f4f8cfb5ba75969edf67d636",
+    "train": false,
+    "fx_sha256": "5b658518becad4997ec5d19aa7f3d499f22d4a653fa1081f47615e3d0c6e1e6f",
+    "refresh_time": "2026-10-30T01:42:57.060449+00:00"
+  },
+  "full_rows": 31898238,
+  "cohort_rows": 31898238,
+  "model_evaluation_scope": "Transfer evaluation on HI-Medium with the frozen HI-Small model; synthetic populations may overlap, so this is not an independent generalisation claim.",
+  "rule_views": {
+    "validation": {
+      "rows": 3861625,
+      "positives": 4301,
+      "k": 100,
+      "precision_at_k": 0.01,
+      "recall_at_k": 0.00023250406882120437,
+      "lift_at_k": 8.978435247616833,
+      "average_precision": 0.0074595935608808145
+    },
+    "test": {
+      "rows": 3452878,
+      "positives": 4280,
+      "k": 100,
+      "precision_at_k": 0.0,
+      "recall_at_k": 0.0,
+      "lift_at_k": 0.0,
+      "average_precision": 0.007667431248738405
+    },
+    "tail": {
+      "rows": 11579238,
+      "positives": 17436,
+      "k": 100,
+      "precision_at_k": 0.0,
+      "recall_at_k": 0.0,
+      "lift_at_k": 0.0,
+      "average_precision": 0.010237485627704941
+    }
+  },
+  "model_views": {
+    "validation": {
+      "rows": 3861625,
+      "positives": 4301,
+      "k": 100,
+      "precision_at_k": 0.24,
+      "recall_at_k": 0.005580097651708905,
+      "lift_at_k": 215.482445942804,
+      "average_precision": 0.1251952273065017,
+      "hits": 24
+    },
+    "test": {
+      "rows": 3452878,
+      "positives": 4280,
+      "k": 100,
+      "precision_at_k": 0.39,
+      "recall_at_k": 0.00911214953271028,
+      "lift_at_k": 314.6314065420561,
+      "average_precision": 0.10881774616147691,
+      "hits": 39
+    },
+    "tail": {
+      "rows": 11579238,
+      "positives": 17436,
+      "k": 100,
+      "precision_at_k": 0.35,
+      "recall_at_k": 0.002007341133287451,
+      "lift_at_k": 232.43480729525118,
+      "average_precision": 0.1691425749150909,
+      "hits": 35
+    }
+  },
+  "treasury_days": 28,
+  "status": "published_snapshot_verified_final_aws_inspection_pending",
+  "branch": "feature/larger-dataset",
+  "checked_at": "2026-10-30",
+  "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+  "tests": {
+    "python_passed": 228,
+    "python_skipped": 3,
+    "official_glue_runtime_passed": 12,
+    "dashboard_passed": 15
+  },
+  "limitations": [
+    "Final Step Functions status, private score/corridor evidence and actual compute timing await renewed AWS sign-in.",
+    "No new HI-Medium training: evaluation uses frozen HI-Small model; synthetic populations may overlap.",
+    "CloudFront JSON and SHA-256 checked; browser visual inspection unavailable."
+  ],
+  "initial_attempt": {
+    "run_id": "medium-full-20261030",
+    "outcome": "Glue request rejected before job creation; corrected explicit WorkerType and NumberOfWorkers, reused uploaded inputs."
+  },
+  "cost": {
+    "status": "estimate_only_actual_timing_unavailable",
+    "runtime_allowance_usd": 2.912,
+    "description": "Two Glue jobs at 4 DPU x 30 minutes x $0.44/DPU-hour plus two ml.m5.2xlarge processing jobs x 60 minutes x $0.576/hour. Not an invoice cap; provisioning, EBS, storage, Athena, requests, logs and orchestration excluded."
+  }
+}

@@ -94,7 +94,7 @@ def test_parallel_verification_training_dependency_and_bounded_processing_checks
     for name, branch_states in [('Baseline', baseline), ('Train', baseline), ('Export', states)]:
         assert 'Retry' not in branch_states[name]
         assert branch_states[name + 'Wait']['Seconds'] == 15
-        assert branch_states[name + 'Complete']['Choices'][-1]['NumericGreaterThanEquals'] == 179
+        assert branch_states[name + 'Complete']['Choices'][-1]['NumericGreaterThanEquals'] == 299
     inputs = {item['InputName'] for item in processing_request('test-run', 'export', config(), {'athena': 'athena-results/x.csv'})['ProcessingInputs']}
     assert inputs == {'run', 'model', 'baseline', 'baseline_manifest', 'scored', 'athena'}
 

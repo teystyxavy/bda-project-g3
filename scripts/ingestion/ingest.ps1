@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Download selected IBM AML files locally, or run the HI-Small AWS pipeline.
+Download selected IBM AML files locally, or run the HI-Small/HI-Medium AWS batch pipeline.
 .DESCRIPTION
 PowerShell front door for the ingestion step of the IS459 Group 3 AML pipeline.
 It does no data work itself: it validates switch combinations, picks a Python
