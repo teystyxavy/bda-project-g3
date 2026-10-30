@@ -217,7 +217,7 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
     if dataset.count_rows() != snapshot['full_rows']:
         raise ValueError('Scored input row count mismatch')
     output.mkdir(parents=True)
-    training, validation = reasplit(dataset, 'train'), read_split(dataset, 'validation')
+    training, validation = read_split(dataset, 'train'), read_split(dataset, 'validation')
     vocabulary = fit_encoder(training)
     xtrain, xvalid = encode(training, vocabulary), encode(validation, vocabulary)
     positives = int(training.is_laundering.sum())
@@ -308,4 +308,3 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
     # allow_nan=False: fail rather than write invalid JSON if a metric is NaN.
     (output / 'comparison.json').write_text(json.dumps(report, indent=2, allow_nan=False), encoding='utf-8')
     return report
-d_
