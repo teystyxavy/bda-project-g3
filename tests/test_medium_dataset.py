@@ -79,8 +79,9 @@ def test_medium_preview_uses_local_route_without_network(monkeypatch, capsys):
 
 def test_medium_tail_includes_final_source_day():
     from bda_pipeline.batch import evaluation_periods
-    assert evaluation_periods('2022-09-28')['tail'] == ('2022-09-11', '2022-09-29')
-    assert evaluation_periods()['tail'] == ('2022-09-11', '2022-09-19')
+    from bda_pipeline.splits import LEGACY_SPLITS
+    assert evaluation_periods(LEGACY_SPLITS, '2022-09-28')['tail'] == ('2022-09-11', '2022-09-29')
+    assert evaluation_periods(LEGACY_SPLITS, '2022-09-18')['tail'] == ('2022-09-11', '2022-09-19')
 
 
 def test_streamed_ranking_matches_full_population_with_cross_batch_ties():

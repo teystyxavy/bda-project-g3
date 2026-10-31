@@ -40,6 +40,7 @@ import pyarrow.dataset as ds
 from .analytics import ranking_metrics
 from .dashboard import records
 from .model import SavedRanker, digest, rank, read_split
+from .splits import eval_names
 
 
 def export_model_dashboard(scored, baseline_path, model_dir, output, assets, cloud_verification=None):
@@ -90,8 +91,8 @@ def export_model_dashboard(scored, baseline_path, model_dir, output, assets, clo
     views, queues = {}, {}
     # Only the evaluation periods get queues; training rows are excluded so
     # the model is never shown ranking data it learned from.
-    for period in ['validation', 'test', 'tail']:
-        frame = read_split(dataset, period)
+    for period in eval_names(ranker.splits):
+        frame = read_split(dataset, period, ranker.splits)
         if cloud_scores is None:
             # Local path: score this period with the frozen model.
             scores = ranker.predict(frame)

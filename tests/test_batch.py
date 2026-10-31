@@ -7,6 +7,7 @@ import pytest
 from bda_pipeline.analytics import evaluate_baseline
 from bda_pipeline.batch import AmlSummary, export_verified_batch
 from bda_pipeline.dashboard import aml_view
+from bda_pipeline.splits import LEGACY_SPLITS
 
 
 def fixture():
@@ -44,7 +45,8 @@ def test_full_export_matches_baseline_and_does_not_expose_labels(tmp_path):
     verification = tmp_path / 'verified.json'
     verification.write_text(json.dumps(dict(status='passed', rows=len(frame), positives=int(frame.is_laundering.sum()), amount_usd=float(frame.amount_usd.sum()))))
     assets = Path(__file__).resolve().parents[1] / 'dashboard'
-    report = export_verified_batch(curated, verification, tmp_path / 'export', assets)
+    # evaluate_baseline uses the original fixed windows, so compare under the same ones.
+    report = export_verified_batch(curated, verification, tmp_path / 'export', assets, splits=LEGACY_SPLITS)
     expected, thresholds, metrics = evaluate_baseline(frame)
     actual = pd.read_parquet(tmp_path / 'export/bq1_scored.parquet').sort_values('source_row_index').reset_index(drop=True)
     expected = expected.sort_values('source_row_index').reset_index(drop=True)
@@ -58,4 +60,17 @@ def test_full_export_matches_baseline_and_does_not_expose_labels(tmp_path):
     assert all('is_laundering' not in row for view in snapshot['aml'].values() for row in view['queue'])
     assert snapshot['treasury']['all']['transactions'] == len(frame)
     with pytest.raises(ValueError, match='fresh'):
-        export_verified_batch(curated, verification, tmp_path / 'export', assets)
+        export_verified_batch(curated, verification, tmp_path / 'export', assets, splits=LEGACY_SPLITS)
+
+
+def test_export_derives_row_share_splits_from_the_data_by_default(tmp_path):
+    frame = fixture()
+    curated = tmp_path / 'input.parquet'
+    frame.to_parquet(curated, index=False)
+    verification = tmp_path / 'verified.json'
+    verification.write_text(json.dumps(dict(status='passed', rows=len(frame), positives=int(frame.is_laundering.sum()), amount_usd=float(frame.amount_usd.sum()))))
+    export_verified_batch(curated, verification, tmp_path / 'export', Path(__file__).resolve().parents[1] / 'dashboard')
+    snapshot = json.loads((tmp_path / 'export/dashboard/dashboard.json').read_text())
+    assert snapshot['splits'] == {'train': ['2022-09-01', '2022-09-09'], 'validation': ['2022-09-09', '2022-09-12'],
+                                  'test': ['2022-09-12', '2022-09-13']}
+    assert set(snapshot['aml']) == {'validation', 'test'}

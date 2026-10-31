@@ -292,6 +292,27 @@ test('later evaluation labels follow Medium and Small snapshot dates without spa
 });
 
 
+test('evaluation labels and options follow the snapshot splits and hide a missing tail',async()=>{
+  const h=await harness();
+  h.el('split').options=['test','validation','tail'].map(value=>Object.assign(new Element(),{value}));
+  h.el('split').value='tail';
+  vm.runInContext(`snapshot={splits:{train:['2022-09-01','2022-09-07'],validation:['2022-09-07','2022-09-09'],test:['2022-09-09','2022-09-19']},pipeline:{end_date:'2022-09-18'}};updateEvaluationLabels()`,h.context);
+  assert.deepEqual(h.el('split').options.slice(0,2).map(option=>option.textContent),['Test · Sep 9–18','Validation · Sep 7–8']);
+  assert.deepEqual(h.el('split').options.map(option=>option.hidden),[false,false,true]);
+  assert.equal(h.el('split').value,'test');
+  assert.match(h.el('evaluation-methods').textContent,/Training reference: Sep 1–6; validation: Sep 7–8; test: Sep 9–18\./);
+});
+
+test('split windows are formatted across months and stretched to the last day',async()=>{
+  const h=await harness();
+  const text=expression=>vm.runInContext(expression,h.context);
+  text(`snapshot={splits:{train:['2022-09-01','2022-09-20'],validation:['2022-09-20','2022-09-28'],test:['2022-09-28','2022-10-04']},pipeline:{end_date:'2022-10-06'}}`);
+  assert.equal(text(`windowText(['2022-09-28','2022-10-04'])`),'Sep 28–Oct 3');
+  assert.equal(text(`windowText(['2022-09-07','2022-09-08'])`),'Sep 7');
+  assert.equal(text(`evaluationPeriodLabel('test')`),'Test · Sep 28–Oct 6');
+  assert.equal(text(`evaluationPeriodLabel('validation')`),'Validation · Sep 20–27');
+});
+
 test('scoring coverage reconciles all Medium rows independently of the selected evaluation filter',async()=>{
   const h=await harness();
   vm.runInContext(`snapshot={aml_scope:'full',full_rows:31898238,pipeline:{subset:'HI-Medium',end_date:'2022-09-28'},model:{views:{validation:{metrics:{rows:3861625}},test:{metrics:{rows:3452878}},tail:{metrics:{rows:11579238}}}}};renderScoringCoverage()`,h.context);

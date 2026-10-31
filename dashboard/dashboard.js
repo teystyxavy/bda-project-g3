@@ -48,7 +48,30 @@ function trend(target, rows, field, formatter, selected) {
   table(`${target}-values`,['Date',field==='hhi'?'HHI':'USD volume'],rows.map(row=>[row.day,row[field]==null?'Unavailable':formatter(row[field])]));
 }
 
+function periodNames() {
+  return snapshot?.splits ? Object.keys(snapshot.splits).filter(name=>name!=='train') : ['validation','test','tail'];
+}
+function isoDay(milliseconds) {return new Date(milliseconds).toISOString().slice(0,10);}
+function monthDay(iso) {
+  return new Date(iso+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'});
+}
+// Text for a half-open [start, end) ISO window, e.g. Sep 9–18 or Sep 28–Oct 3.
+function windowText(window) {
+  const last=isoDay(Date.parse(window[1]+'T00:00:00Z')-86400000), first=monthDay(window[0]);
+  if(last===window[0]) return first;
+  return `${first}–${window[0].slice(5,7)===last.slice(5,7)?Number(last.slice(-2)):monthDay(last)}`;
+}
+// The last evaluation window runs to the run's final day, as in batch.evaluation_periods.
+function periodWindow(period) {
+  const window=[...snapshot.splits[period]], end=snapshot?.pipeline?.end_date || snapshot?.treasury_daily?.at(-1)?.day;
+  if(period===periodNames().at(-1) && end) {
+    const next=isoDay(Date.parse(end+'T00:00:00Z')+86400000);
+    if(next>window[1]) window[1]=next;
+  }
+  return window;
+}
 function evaluationPeriodLabel(period) {
+  if(snapshot?.splits?.[period]) return `${{validation:'Validation',test:'Test',tail:'Later period'}[period]||period} · ${windowText(periodWindow(period))}`;
   if(period==='test') return 'Test · Sep 9–10';
   if(period==='validation') return 'Validation · Sep 7–8';
   const end=snapshot?.pipeline?.end_date || snapshot?.treasury_daily?.at(-1)?.day || '2022-09-18';
@@ -57,12 +80,24 @@ function evaluationPeriodLabel(period) {
   return `Later period · Sep 11–${finish}`;
 }
 function updateEvaluationLabels() {
-  for(const option of element('split').options) option.textContent=evaluationPeriodLabel(option.value);
+  const names=periodNames();
+  for(const option of element('split').options) {
+    option.textContent=evaluationPeriodLabel(option.value);
+    option.hidden=!names.includes(option.value);
+  }
+  if(!names.includes(element('split').value)) element('split').value=names.includes('test')?'test':names[0];
+  if(snapshot?.splits) {
+    const train=windowText(snapshot.splits.train);
+    element('evaluation-methods').textContent=`Training reference: ${train}; ${names.map(name=>`${name}: ${windowText(periodWindow(name))}`).join('; ')}. Evaluation views show separate chronological populations. Rolling history before ${monthDay(snapshot.splits.train[0])} is unavailable.`;
+    element('model-methods').textContent=element('model-methods').textContent.replace(/trained on [^;]*;/,`trained on ${train};`);
+    element('validation-window').textContent=element('validation-window').textContent.replace(/^.*?only\./,`${windowText(periodWindow('validation'))} only.`);
+    return;
+  }
   element('evaluation-methods').textContent=`Training reference: Sep 1–6; validation: Sep 7–8; test: Sep 9–10; ${evaluationPeriodLabel('tail').replace(' · ', ': ')}. Evaluation views show separate chronological populations. Rolling history before Sep 1 is unavailable.`;
 }
 
 function renderScoringCoverage() {
-  const periods=['validation','test','tail'];
+  const periods=periodNames(), trainText=snapshot?.splits?windowText(snapshot.splits.train):'Sep 1–6';
   const counts=periods.map(period=>snapshot?.model?.views?.[period]?.metrics?.rows);
   const total=snapshot?.full_rows;
   const evaluated=counts.reduce((sum,count)=>sum+count,0);
@@ -75,13 +110,13 @@ function renderScoringCoverage() {
   element('scoring-coverage-summary').textContent='The frozen AML model scored every transaction in this dataset. The evaluation dropdown shows separate later-date populations, so its counts are smaller than the full scoring population.';
   cards('scoring-coverage-kpis',[
     ['Transactions scored',integer(total),'All transaction dates in this run'],
-    ['Transactions in evaluation',integer(evaluated),'Sep 7 onward · across all three periods'],
-    ['Scored, excluded from evaluation',integer(reference),'Sep 1–6 · training-reference dates']]);
-  const medium=snapshot.pipeline?.subset==='HI-Medium';
-  element('scoring-coverage-explanation').textContent='Why exclude Sep 1–6? The original model used these dates for training; the dashboard preserves that training-reference window and reports later dates separately for evaluation. These earlier rows still received scores.'+
+    ['Transactions in evaluation',integer(evaluated),snapshot.splits?`${monthDay(snapshot.splits[periods[0]][0])} onward · across all ${periods.length} periods`:'Sep 7 onward · across all three periods'],
+    ['Scored, excluded from evaluation',integer(reference),`${trainText} · training-reference dates`]]);
+  const medium=snapshot.pipeline?.subset!==undefined && snapshot.pipeline.subset!=='HI-Small' && !snapshot.pipeline.train;
+  element('scoring-coverage-explanation').textContent=`Why exclude ${trainText}?`+' The original model used these dates for training; the dashboard preserves that training-reference window and reports later dates separately for evaluation. These earlier rows still received scores.'+
     (medium?' The model was trained on HI-Small and reused for HI-Medium without retraining. This is transfer evaluation; the synthetic populations may overlap, so it is not independent evidence of generalisation.':' Training-reference scores are not included in the reported evaluation metrics.');
   table('scoring-coverage-periods',['Date period','Transactions scored','Evaluation coverage'],[
-    ['Sep 1–6',integer(reference),'Excluded · training-reference dates'],
+    [trainText,integer(reference),'Excluded · training-reference dates'],
     ...periods.map((period,index)=>[evaluationPeriodLabel(period),integer(counts[index]),'Included']),
     ['Total',integer(total),`${integer(evaluated)} evaluated + ${integer(reference)} excluded`]]);
 }

@@ -209,12 +209,12 @@ def test_duplicate_run_cannot_claim_and_failure_keeps_outputs():
     assert json.loads(s3.data[BUCKET, 'pipeline/lock.json'])['run_id'] == 'other-run'
 
 
-@pytest.mark.parametrize('subset', ['HI-Small', 'HI-Medium'])
-def test_source_to_release_and_tamper_rejected(tmp_path, subset):
+def staged_run(tmp_path, subset, **updates):
+    """Raw and curated inputs of the 320-row, four-day fixture, laid out as the baseline stage finds them."""
     inputs = tmp_path / 'input'
     rates = raw_fixture(tmp_path / 'dataset')
     info = prepare_inputs(tmp_path / 'dataset/HI-Small_Trans.csv', tmp_path / 'dataset/HI-Small_accounts.csv', inputs / 'raw', fx_file=tmp_path / 'dataset/fx.csv')
-    value = manifest() | info | {'subset': subset}
+    value = manifest() | info | {'subset': subset} | updates
     frame = build_curated_transactions(read_transactions(inputs / 'raw/transactions.csv'), read_accounts(inputs / 'raw/accounts.csv'), rates)
     frame['transaction_id'] = subset + ':' + frame.source_row_index.astype(str)
     frame['amount_usd_asof'] = frame.amount_usd
@@ -225,9 +225,11 @@ def test_source_to_release_and_tamper_rejected(tmp_path, subset):
     (inputs / 'model').mkdir()
     (inputs / 'model/deployment.json').write_text(json.dumps(config()))
     (inputs / 'run/manifest.json').write_text(json.dumps(value))
-    baseline = inputs / 'baseline'
-    proof = baseline_stage(inputs, baseline, ROOT / 'dashboard')
-    assert proof['rows'] == 320
+    return inputs, value
+
+
+def serve_inputs(tmp_path, inputs, baseline, value):
+    """Stands in for the deployed model, Glue scoring and the Athena corridor query; returns the reference file and Glue's scores."""
     reference = baseline / 'baseline/bq1_scored.parquet'
     model = tmp_path / 'model'
     compare_models(reference, baseline / 'manifest/dashboard.json', model, rounds=3, threads=1)
@@ -246,6 +248,16 @@ def test_source_to_release_and_tamper_rejected(tmp_path, subset):
     (inputs / 'athena').mkdir()
     expected = expected_corridors([scored.assign(txn_date=scored.txn_date.astype(str))], 320)
     expected.to_csv(inputs / 'athena/result.csv', index=False)
+    return reference, cloud
+
+
+@pytest.mark.parametrize('subset', ['HI-Small', 'HI-Medium'])
+def test_source_to_release_and_tamper_rejected(tmp_path, subset):
+    inputs, value = staged_run(tmp_path, subset)
+    baseline = inputs / 'baseline'
+    proof = baseline_stage(inputs, baseline, ROOT / 'dashboard')
+    assert proof['rows'] == 320
+    reference, cloud = serve_inputs(tmp_path, inputs, baseline, value)
     result = export_stage(inputs, tmp_path / 'export', ROOT / 'dashboard')
     assert result['verification']['scores']['rows'] == 320
     public = json.loads((tmp_path / 'export/release/site/dashboard.json').read_text())
@@ -268,6 +280,33 @@ def test_source_to_release_and_tamper_rejected(tmp_path, subset):
     result = export_stage(inputs, tmp_path / 'trained-export', ROOT / 'dashboard')
     assert result['verification']['training']['candidate_only']
     assert not result['verification']['training']['model_promoted']
+    cloud.loc[0, 'model_score'] = 0.987654321
+    cloud.to_parquet(inputs / 'scored/data.parquet', index=False)
+    with pytest.raises(AssertionError): export_stage(inputs, tmp_path / 'bad-export', ROOT / 'dashboard')
+
+
+def test_training_run_splits_by_row_share_and_verifies_the_candidate(tmp_path):
+    inputs, value = staged_run(tmp_path, 'HI-Small', train=True)
+    baseline = inputs / 'baseline'
+    baseline_stage(inputs, baseline, ROOT / 'dashboard')
+    splits = json.loads((baseline / 'manifest/dashboard.json').read_text())['splits']
+    # 80 rows on each of four days: train takes the first two days, validation the third and test the fourth.
+    assert splits == {'train': ['2022-09-01', '2022-09-09'], 'validation': ['2022-09-09', '2022-09-12'],
+                      'test': ['2022-09-12', '2022-09-13']}
+    reference, cloud = serve_inputs(tmp_path, inputs, baseline, value)
+    trained = tmp_path / 'trained'
+    train_channels(baseline / 'baseline', baseline / 'manifest', tmp_path / 'train-work', trained, tmp_path / 'train-report', rounds=3, threads=1, expected_rows=320)
+    report = json.loads((trained / 'comparison.json').read_text())
+    assert report['splits'] == splits and set(report['metrics']) == {'validation', 'test'}
+    (inputs / 'candidate').mkdir()
+    with tarfile.open(inputs / 'candidate/model.tar.gz', 'w:gz') as archive:
+        for path in trained.iterdir(): archive.add(path, arcname='./' + path.name)
+    result = export_stage(inputs, tmp_path / 'export', ROOT / 'dashboard')
+    assert result['verification']['training']['candidate_only']
+    assert not result['verification']['training']['model_promoted']
+    public = json.loads((tmp_path / 'export/release/site/dashboard.json').read_text())
+    assert public['splits'] == splits
+    assert set(public['aml']) == set(public['model']['views']) == {'validation', 'test'}
     cloud.loc[0, 'model_score'] = 0.987654321
     cloud.to_parquet(inputs / 'scored/data.parquet', index=False)
     with pytest.raises(AssertionError): export_stage(inputs, tmp_path / 'bad-export', ROOT / 'dashboard')

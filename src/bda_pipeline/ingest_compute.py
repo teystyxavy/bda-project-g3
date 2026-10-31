@@ -45,12 +45,13 @@ import pyarrow.dataset as ds
 
 from .acquisition import validate_fx
 from .analytics import add_behaviour, ranking_metrics
-from .batch import COLUMNS, FEATURES, PERIODS, evaluation_periods, export_verified_batch
+from .batch import COLUMNS, FEATURES, daily_row_counts, evaluation_periods, export_verified_batch
 from .cloud_scores import checked_indices, feature_fingerprints
 from .dashboard import records
 from .inference import SCORING_COLUMNS, verify_artifacts
 from .model import INPUT_COLUMNS, SavedRanker, digest, rank
 from .release import prepare_release
+from .splits import run_splits
 from .transform import TRANSACTION_COLUMNS, IDENTIFIER_DTYPES
 from .treasury_verification import expected_corridors, compare_corridors
 
@@ -247,8 +248,10 @@ def baseline_stage(inputs, output, assets):
     proof = verify_curated(inputs / 'curated', inputs / 'raw', manifest)
     proof_path = output / 'proof.json'
     proof_path.write_text(json.dumps(proof, allow_nan=False))
+    counts = daily_row_counts(ds.dataset(inputs / 'curated', format='parquet', partitioning='hive')) if manifest['train'] else None
     # Scoring only proceeds if proof.json says 'passed' (checked inside export_verified_batch).
-    export_verified_batch(inputs / 'curated', proof_path, output / 'baseline', assets, serving_only=True, subset=manifest.get('subset', 'HI-Small'), end_date=manifest['end_date'])
+    export_verified_batch(inputs / 'curated', proof_path, output / 'baseline', assets, serving_only=True, subset=manifest.get('subset', 'HI-Small'), end_date=manifest['end_date'],
+                         splits=run_splits(manifest, inputs / 'model', counts))
     # Label where the snapshot was produced, for the dashboard's provenance panel.
     snapshot = output / 'baseline/dashboard/dashboard.json'
     data = json.loads(snapshot.read_text())
@@ -353,8 +356,8 @@ def export_stage(inputs, output, assets):
        counts, USD volumes, shares and HHI in pandas
        (``treasury_verification.expected_corridors``) and compare with the
        single Athena CSV (``compare_corridors``).
-    3. For each evaluation period in ``batch.PERIODS`` (validation, test,
-       tail): ranking metrics (precision/recall/lift at K=100, average
+    3. For each evaluation period in ``snapshot['splits']`` (every window after
+       train): ranking metrics (precision/recall/lift at K=100, average
        precision) and the top-100 explained review queue for the dashboard.
     4. Add model, pipeline and provenance metadata to the snapshot.
     5. If training was requested: safely unpack the candidate archive, check
@@ -400,7 +403,7 @@ def export_stage(inputs, output, assets):
     snapshot = json.loads((inputs / 'baseline/manifest/dashboard.json').read_text())
     views = {}
     from .dashboard_exploration import stream_model_view
-    for name, (start, end) in evaluation_periods(manifest['end_date']).items():
+    for name, (start, end) in evaluation_periods(snapshot['splits'], manifest['end_date']).items():
         views[name] = stream_model_view(dataset, scores, ranker, start, end, manifest['subset'])
     # ---- 4. Metadata for the dashboard ----
     snapshot['model'] = {'name': ranker.selection['selected']['name'], 'views': views,
@@ -412,7 +415,11 @@ def export_stage(inputs, output, assets):
                        'source_sha256': reference_hash, 'training_source_sha256': ranker.selection['source_sha256']}}
     snapshot['pipeline'] = {key: manifest[key] for key in ['run_id', 'dataset_version', 'subset', 'source_scope',
                              'start_date', 'end_date', 'processing_sha256', 'deployment_sha256', 'train']}
-    snapshot['model']['evaluation_scope'] = ('Transfer evaluation on HI-Medium with the frozen HI-Small model; synthetic populations may overlap, so this is not an independent generalisation claim.' if manifest['subset'] == 'HI-Medium' else 'HI-Small chronological evaluation')
+    # Only a model frozen on a different subset is a transfer evaluation (HI-Small is the original model's own subset).
+    transfer = not manifest['train'] and manifest['subset'] != 'HI-Small'
+    snapshot['model']['evaluation_scope'] = (
+        f"Transfer evaluation on {manifest['subset']} with the frozen HI-Small model; synthetic populations may overlap, so this is not an independent generalisation claim."
+        if transfer else f"{manifest['subset']} chronological evaluation")
     snapshot['pipeline']['fx_sha256'] = manifest['files']['fx.csv']['sha256']
     snapshot['pipeline']['refresh_time'] = datetime.now(timezone.utc).isoformat()
     # ---- 5. Optional: verify the candidate model from SageMaker training ----
@@ -456,7 +463,7 @@ def export_stage(inputs, output, assets):
             raise ValueError('Candidate provenance mismatch')
         # Recompute the candidate's and the rule baseline's metrics per period
         # and require them to equal what the training job reported.
-        for name, (start, end) in evaluation_periods(manifest['end_date']).items():
+        for name, (start, end) in evaluation_periods(snapshot['splits'], manifest['end_date']).items():
             frame = dataset.to_table(columns=INPUT_COLUMNS, filter=(ds.field('timestamp') >= pd.Timestamp(start)) & (ds.field('timestamp') < pd.Timestamp(end))).to_pandas()
             values = candidate_ranker.predict(frame)
             metrics_frame = frame[['timestamp', 'source_row_index', 'is_laundering']]

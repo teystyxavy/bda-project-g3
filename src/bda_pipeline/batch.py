@@ -15,6 +15,7 @@ import pyarrow.parquet as pq
 
 from .analytics import concentration, corridor_totals, score_baseline
 from .dashboard import ranked, records, treasury_view
+from .splits import eval_names, row_share_splits, window_label
 
 # Causal behaviour features from the curate job: 5 for the sender's outgoing activity, then 5 for the
 # receiver's incoming activity. They only look backwards in time, so they never leak the future.
@@ -32,15 +33,25 @@ QUEUE_COLUMNS = ['transaction_id', 'timestamp', 'from_bank', 'from_account',
                  'to_bank', 'to_account', 'payment_format', 'payment_currency',
                  'amount_usd_asof', 'risk_score', 'risk_reasons', 'txn_count_1h',
                  'distinct_counterparties_24h']
-# Half-open [start, end) evaluation periods; training is 2022-09-01..09-06 (see fit_thresholds).
-PERIODS = {'validation': ('2022-09-07', '2022-09-09'),
-           'test': ('2022-09-09', '2022-09-11'), 'tail': ('2022-09-11', '2022-09-19')}
-
-
-def evaluation_periods(end_date='2022-09-18'):
-    """Preserve frozen chronological cohorts and include the entire observed tail."""
+def evaluation_periods(splits, end_date):
+    """Every non-train window of ``splits`` (half-open), with the last one stretched to include the run's last day."""
     end = (datetime.fromisoformat(end_date) + timedelta(days=1)).date().isoformat()
-    return {**PERIODS, 'tail': ('2022-09-11', max('2022-09-19', end))}
+    periods = {name: tuple(splits[name]) for name in eval_names(splits)}
+    last = list(periods)[-1]
+    periods[last] = (periods[last][0], max(periods[last][1], end))
+    return periods
+
+
+def daily_row_counts(dataset):
+    """Rows per ``txn_date``: from Parquet metadata for hive partitions, otherwise by counting the column."""
+    counts = Counter()
+    for fragment in dataset.get_fragments():
+        keys = ds.get_partition_keys(fragment.partition_expression)
+        if 'txn_date' in keys:
+            counts[str(keys['txn_date'])] += fragment.count_rows()
+        else:
+            counts.update(fragment.to_table(columns=['txn_date']).to_pandas().txn_date.astype(str).value_counts().to_dict())
+    return dict(counts)
 
 
 class AmlSummary:
@@ -94,13 +105,13 @@ class AmlSummary:
                     histogram=[dict(risk_score=s, transactions=self.scores[s]) for s in sorted(self.scores)])
 
 
-def fit_thresholds(dataset):
-    """Per-payment-format P99 of ``amount_usd_asof`` over the training window (2022-09-01 to 09-07), so later periods never leak in.
+def fit_thresholds(dataset, train_window):
+    """Per-payment-format P99 of ``amount_usd_asof`` over the half-open ``train_window``, so later periods never leak in.
     Uses one exact ``np.quantile`` per format; raises ValueError if there are no training rows."""
     amounts = {}
     for batch in dataset.to_batches(columns=['timestamp', 'payment_format', 'amount_usd_asof'], batch_size=100_000):
         frame = batch.to_pandas()
-        training = frame.loc[frame.timestamp.ge('2022-09-01') & frame.timestamp.lt('2022-09-07')]
+        training = frame.loc[frame.timestamp.ge(train_window[0]) & frame.timestamp.lt(train_window[1])]
         for name, group in training.groupby('payment_format'):
             amounts.setdefault(name, []).append(group.amount_usd_asof.to_numpy())
     if not amounts:
@@ -108,7 +119,7 @@ def fit_thresholds(dataset):
     return {name: float(np.quantile(np.concatenate(values), .99)) for name, values in amounts.items()}
 
 
-def export_verified_batch(curated, verification, output, assets, *, serving_only=False, subset='HI-Small', end_date='2022-09-18'):
+def export_verified_batch(curated, verification, output, assets, *, serving_only=False, subset='HI-Small', end_date='2022-09-18', splits=None):
     """Score the full verified curated population and write BQ1/BQ2 outputs.
 
     Args:
@@ -120,6 +131,8 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
         assets: directory holding the static dashboard HTML/CSS/JS.
         serving_only: when True (the AWS path), write only what the dashboard
             and later verification need; skip CSV reports and asset copies.
+        splits: chronological windows (see ``splits.py``); defaults to
+            ``row_share_splits`` over the daily row counts, and is recorded in the snapshot.
 
     Returns:
         The ``run_report.json`` content as a dict (row counts, P99
@@ -144,8 +157,10 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
     missing = set(COLUMNS) - set(dataset.schema.names)
     if missing:
         raise ValueError(f'Missing scoring columns: {sorted(missing)}')
-    thresholds = fit_thresholds(dataset)
-    periods = evaluation_periods(end_date)
+    splits = splits or row_share_splits(daily_row_counts(dataset))
+    thresholds = fit_thresholds(dataset, splits['train'])
+    periods = evaluation_periods(splits, end_date)
+    validation_window = periods['validation']
     # One summary per evaluation period, plus one per rule variant for the
     # validation-only ablation ("which rule components actually help?").
     summaries = {period: AmlSummary() for period in periods}
@@ -188,7 +203,7 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
             for period, (start, end) in periods.items():
                 summaries[period].add(scored.loc[scored.timestamp.ge(start) & scored.timestamp.lt(end)])
             # Validation-only ablation (same weights as score_baseline); test data never chooses rules.
-            validation = scored.loc[scored.timestamp.ge('2022-09-07') & scored.timestamp.lt('2022-09-09')]
+            validation = scored.loc[scored.timestamp.ge(validation_window[0]) & scored.timestamp.lt(validation_window[1])]
             ach = validation.payment_format.eq('ACH').astype(int)*50
             # Formats unseen in training can never trigger the amount rule.
             amount = validation.amount_usd_asof.gt(validation.payment_format.map(thresholds).fillna(float('inf'))).astype(int)*20
@@ -224,7 +239,7 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
     queue = summaries['validation'].queue
     breakdown = queue.groupby(['risk_score', 'risk_reasons']).agg(reviewed=('is_laundering', 'size'), positives=('is_laundering', 'sum')).reset_index() if queue is not None else pd.DataFrame(columns=['risk_score','risk_reasons','reviewed','positives'])
     breakdown['false_positives'] = breakdown.reviewed - breakdown.positives
-    diagnostics = dict(period='2022-09-07 to 2022-09-08',
+    diagnostics = dict(period=window_label(validation_window),
                        variants=[dict(variant=name, **summary.view()['metrics']) for name, summary in variants.items()],
                        top100_reasons=records(breakdown), decision='Exploratory validation comparison; no test-set retuning or automatic promotion.')
     # BQ2 views: one for the whole period plus one per day, and a daily trend list.
@@ -243,7 +258,8 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
     # schema_version=1 is the snapshot format the dashboard.js front end reads.
     snapshot = dict(schema_version=1, generated_at=datetime.now(timezone.utc).isoformat(), aml=aml,
                     treasury=treasury, treasury_daily=trends, diagnostics=diagnostics,
-                    cohort_rows=rows, full_rows=rows, aml_scope='full', sources=manifest, provenance=provenance)
+                    cohort_rows=rows, full_rows=rows, aml_scope='full', sources=manifest, provenance=provenance,
+                    splits=splits)
     dashboard = output / 'dashboard'
     dashboard.mkdir()
     # allow_nan=False: NaN is invalid JSON and would break the browser parser.
