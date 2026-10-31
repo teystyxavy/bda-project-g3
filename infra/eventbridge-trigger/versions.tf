@@ -1,13 +1,13 @@
 # =============================================================================
 # infra/eventbridge-trigger/versions.tf -- Terraform/provider pins
 # =============================================================================
-# Own Terraform root with local state (path supplied by
-# deploy-eventbridge-trigger.ps1). Provider locked to Group 3's account in
+# Own Terraform root with shared S3 state (key selected by
+# init-terraform.ps1). Provider locked to Group 3's account in
 # Singapore; resources tagged Component = EventBridgeTrigger.
 
 terraform {
   required_version = ">= 1.9, < 2.0"
-  backend "local" {}
+  backend "s3" {}
   required_providers { aws = { source = "hashicorp/aws", version = "~> 6.0" } }
 }
 provider "aws" {

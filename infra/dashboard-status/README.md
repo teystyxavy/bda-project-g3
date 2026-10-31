@@ -40,7 +40,7 @@ terraform -chdir=infra/dashboard-status test
 ## Deployment (requires explicit authorization)
 
 1. Plan and apply this stack with `lambda_zip_path` set to the absolute path of the
-   prepared zip, using the project's usual private local state.
+   prepared zip, using the [shared S3 backend](../tfstate-bootstrap/README.md).
 2. Export the `public_configuration` output to UTF-8 JSON and publish it to the
    existing hosting bucket, key `dashboard/status-config.json`, content type
    `application/json`, cache control `no-store,max-age=0`. It holds only the public

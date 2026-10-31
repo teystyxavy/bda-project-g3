@@ -1,12 +1,12 @@
 # =============================================================================
 # infra/orchestration/versions.tf -- Terraform/provider pins for orchestration
 # =============================================================================
-# Own Terraform root with local state. The provider refuses any account other
+# Own Terraform root with shared S3 state. The provider refuses any account other
 # than var.aws_account_id and tags resources Component = Orchestration.
 
 terraform {
   required_version = ">= 1.9, < 2.0"
-  backend "local" {}
+  backend "s3" {}
   required_providers {
     aws = { source = "hashicorp/aws", version = "~> 6.0" }
   }

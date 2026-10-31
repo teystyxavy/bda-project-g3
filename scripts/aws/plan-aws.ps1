@@ -15,7 +15,7 @@
 #   3. Check the signed-in account equals -AccountId.
 #   4. Create or update %LOCALAPPDATA%\IS459-G3\batch.tfvars.json (account,
 #      region, project name, alert e-mail, monthly budget).
-#   5. terraform init with a *local* state file in that same private folder
+#   5. terraform init against the shared, locked foundation state
 #      (state can contain resource details, so it is kept out of the repo),
 #      then terraform plan -out=batch.tfplan.
 #
@@ -92,10 +92,9 @@ if (Test-Path -LiteralPath $variablesPath) {
 $env:AWS_PROFILE = $ProfileName
 $env:AWS_REGION = $Region
 $env:PATH = "$(Split-Path -Parent $awsExecutable);$env:PATH"
-# init: -reconfigure picks up the local backend path; -input=false prevents
-# interactive prompts. The state file is kept in the private settings folder.
+# Connect to existing shared state; never fall back to an empty local backend.
 $terraformDirectory = Join-Path $projectRoot 'infra/terraform'
-& $terraformExecutable "-chdir=$terraformDirectory" init -input=false -reconfigure "-backend-config=path=$settingsDirectory/terraform.tfstate"
+& (Join-Path $PSScriptRoot 'init-terraform.ps1') -Stack foundation -Profile $ProfileName -Terraform $terraformExecutable
 if ($LASTEXITCODE -ne 0) { throw 'Terraform initialization failed.' }
 # plan with -detailed-exitcode: 0 = no changes, 2 = changes present (both
 # fine), 1 = error. The plan is saved so exactly what was reviewed is applied.

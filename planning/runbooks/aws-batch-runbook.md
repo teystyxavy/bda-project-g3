@@ -106,7 +106,7 @@ skip manually copying/editing the example variables file.
 To save approved inputs and generate a plan in one command, run
 `scripts/aws/plan-aws.ps1 -AccountId YOUR_ACCOUNT_ID -AlertEmail YOUR_EMAIL` from the
 repository root. It checks the connected account, retains existing budget/project
-settings, and saves variables/state/plan outside the repository. It never applies.
+settings, connects shared state, and saves private variables/plans outside the repository. It never applies.
 Pass `-MonthlyBudgetUsd 10` to explicitly select the current alert amount;
 otherwise an existing value is preserved. Fresh setups default to USD 10 per month.
 
@@ -115,10 +115,9 @@ is the current configurable default. Authenticate through your approved AWS
 profile, and check `aws sts get-caller-identity` before planning. Credentials
 belong in the AWS credential mechanism, never this repository.
 
-This checkout is under OneDrive. Store Terraform state, saved plans and private
-variable files outside this synced checkout. The local backend is suitable for
-one designated deployer only; coordinate team access before introducing shared
-state. Losing state makes resource ownership and cleanup harder.
+Authoritative state is in the [shared, locked S3 backend](../../infra/tfstate-bootstrap/README.md).
+Keep saved plans and private variables outside this OneDrive checkout. Use the
+shared input helper on another machine to recover deployed settings/artifacts.
 
 Example setup, after replacing all example values in your private vars file:
 
@@ -127,7 +126,7 @@ $stateDir = Join-Path $env:LOCALAPPDATA 'IS459-G3'
 New-Item -ItemType Directory -Force $stateDir
 Copy-Item infra/terraform/terraform.tfvars.example "$stateDir/batch.tfvars"
 notepad "$stateDir/batch.tfvars"
-terraform -chdir=infra/terraform init -reconfigure "-backend-config=path=$stateDir/terraform.tfstate"
+.\scripts\aws\init-terraform.ps1 -Stack foundation
 terraform -chdir=infra/terraform plan "-var-file=$stateDir/batch.tfvars" "-out=$stateDir/batch.tfplan"
 ```
 

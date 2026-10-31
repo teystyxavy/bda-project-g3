@@ -1,0 +1,5 @@
+bucket              = "is459-g3-tfstate-588738581042"
+region              = "ap-southeast-1"
+dynamodb_table      = "is459-g3-tfstate-lock"
+encrypt             = true
+allowed_account_ids = ["588738581042"]

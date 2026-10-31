@@ -168,9 +168,11 @@ analysis commands are retained in the
 
 The default subset is `HI-Small` (about 510 MB); the full dataset is about 39 GB.
 Datasets, generated model/dashboard artifacts, environment files, keys, credentials,
-Terraform variables and state stay outside Git. AWS settings/state are kept under
-`%LOCALAPPDATA%/IS459-G3`; Kaggle credentials belong in the user's Kaggle profile
-or the configured AWS secret. Provider lock files and sanitized evidence are committed.
+Terraform variables and credentials stay outside Git. Authoritative state for all
+12 stacks is in the private, locked S3 backend; [connect from another machine](infra/tfstate-bootstrap/README.md).
+Reviewed recovery snapshots are committed under `handoff/terraform-state/`. Private
+inputs and caches stay under `%LOCALAPPDATA%/IS459-G3`. Kaggle credentials belong
+in the user's Kaggle profile or configured AWS secret.
 
 The course budget is **USD 250**. The deployed monthly alert is **USD 10**; it is
 an alert rather than a spending cap. Jobs use bounded runtimes and no automatic

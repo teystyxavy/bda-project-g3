@@ -1,0 +1,559 @@
+{
+  "completed_at_utc": "2026-10-31T15:02:19.989121+00:00",
+  "account_id": "588738581042",
+  "region": "ap-southeast-1",
+  "bucket": "is459-g3-tfstate-588738581042",
+  "lock_table": "is459-g3-tfstate-lock",
+  "method": "Saved refresh-only plans against actual stack configurations and deployed inputs; zero infrastructure resource actions checked before isolated state-only applies. Second refresh-only plans found no resource drift. Published through locked Terraform S3 backend without force; resource attributes and outputs compared after S3 download. Bootstrap: state-only import of six existing resources.",
+  "application_resources_modified": false,
+  "paid_jobs_started": false,
+  "all_current_states_match_live_provider_reads": true,
+  "latest_state_instances": 145,
+  "shared_states": [
+    {
+      "stack": "cloud-ingestion",
+      "key": "cloud-ingestion/terraform.tfstate",
+      "lineage": "78827e8e-71a1-9214-b119-76de472231ab",
+      "serial": 1,
+      "sha256": "51d988ede53c24edcbc6b5d87f182670fd1aadf74bf8bed884b637ee6938629d",
+      "version_id": "ulj4srMi.DQb1Sfjsdppa_Wtx0yPAQuu",
+      "resource_instances": 9,
+      "readback_verified": true,
+      "source_lineage": "81b89690-cad4-57c3-56b3-ee266d55a7a2",
+      "source_serial": 12,
+      "new_remote_history": true
+    },
+    {
+      "stack": "dashboard-control",
+      "key": "dashboard-control/terraform.tfstate",
+      "lineage": "7e3f48fd-e74a-e75b-734b-e4fdf0aa8e31",
+      "serial": 1,
+      "sha256": "9e7b9cd0d00e09732ecaca38305e2096c23993b7596386f5fe3778538afb0389",
+      "version_id": "vLVkc_0U45zH_dXTv1zAVWNVieyyJ7EE",
+      "resource_instances": 18,
+      "readback_verified": true,
+      "source_lineage": "7a85376e-42c2-f834-d331-3831e15ec932",
+      "source_serial": 20,
+      "new_remote_history": true
+    },
+    {
+      "stack": "dashboard-status",
+      "key": "dashboard-status/terraform.tfstate",
+      "lineage": "271a5d09-247c-4111-2b67-be3e710eb440",
+      "serial": 1,
+      "sha256": "2be7a839bd03f56c11f89b9ef23b9992b30651e6f61fc53ae4ea31aebb4aea79",
+      "version_id": "sI_X4Sd2ozEwmTClbcueKuXlaBlXsj0C",
+      "resource_instances": 10,
+      "readback_verified": true,
+      "source_lineage": "485f01a0-899c-8035-7e89-9c8a9c4d9637",
+      "source_serial": 12,
+      "new_remote_history": true
+    },
+    {
+      "stack": "eventbridge-trigger",
+      "key": "eventbridge-trigger/terraform.tfstate",
+      "lineage": "0298cba0-6c28-6e10-197a-87f36951157b",
+      "serial": 1,
+      "sha256": "46f5a71af89a8b8af6251e6ccc60f502b421f2dd1bad36b904047fa2be1df5e8",
+      "version_id": "wZ.ep6rcIyUC8rbh6E1ohG8aYpKrdE6c",
+      "resource_instances": 8,
+      "readback_verified": true,
+      "source_lineage": "3912718a-fa6d-bf4a-eb70-28c2745716ba",
+      "source_serial": 10,
+      "new_remote_history": true
+    },
+    {
+      "stack": "foundation",
+      "key": "foundation/terraform.tfstate",
+      "lineage": "333593e5-c269-45a0-d063-51c89903efb0",
+      "serial": 26,
+      "sha256": "1456d8455ec08297057ed45f1bacd802f667251c9549fc0ac05321a0a792ed2d",
+      "version_id": "fTjtrb2MZuZgPEssaCkXUwH1EDe8j8V4",
+      "resource_instances": 25,
+      "readback_verified": true,
+      "source_lineage": "333593e5-c269-45a0-d063-51c89903efb0",
+      "source_serial": 27,
+      "new_remote_history": false
+    },
+    {
+      "stack": "hosting",
+      "key": "hosting/terraform.tfstate",
+      "lineage": "8983eb84-f6ed-b9c9-dd60-c0890e626cb1",
+      "serial": 1,
+      "sha256": "aa8adc0a729d37d9645d1a2782e52ac11c7d2c202d48f5f6b9109e86172cc8d5",
+      "version_id": "Js8_cePffSVt3PTjIV2k_MDGxVIurEq6",
+      "resource_instances": 9,
+      "readback_verified": true,
+      "source_lineage": "05903462-ed8b-4ce6-06f1-511c3910185a",
+      "source_serial": 13,
+      "new_remote_history": true
+    },
+    {
+      "stack": "ingestion",
+      "key": "ingestion/terraform.tfstate",
+      "lineage": "d746667e-667e-c579-a5f4-18cef973af63",
+      "serial": 1,
+      "sha256": "b8516c42af8cac2221c3affe181a3d1d96ac707b12f4a703e10fd60bf146a879",
+      "version_id": "X1gMbYFkap3GF3L9V.PkCfA5gqNBjPiq",
+      "resource_instances": 33,
+      "readback_verified": true,
+      "source_lineage": "d49fc274-1c70-3ac1-e995-67e25a4b29dd",
+      "source_serial": 133,
+      "new_remote_history": true
+    },
+    {
+      "stack": "orchestration",
+      "key": "orchestration/terraform.tfstate",
+      "lineage": "1e9cb3d8-d277-8421-0e20-78c7c3781445",
+      "serial": 1,
+      "sha256": "fa2ba2fbef29a44fa85990fea260f064c06b8cfc4bc2815cf3e944eb628090b7",
+      "version_id": "r6iWDbRuqksI872rFNmjuKC9wAp7.smG",
+      "resource_instances": 3,
+      "readback_verified": true,
+      "source_lineage": "43a1e9ed-29e0-049a-4d7f-04f7a39cc675",
+      "source_serial": 5,
+      "new_remote_history": true
+    },
+    {
+      "stack": "sagemaker",
+      "key": "sagemaker/terraform.tfstate",
+      "lineage": "095c02e8-58e2-6c94-0917-8a71825f862e",
+      "serial": 1,
+      "sha256": "1f121e0f1673de3e9f70c153a8ddcd6013f706201c590d6659fde2ad8dbc5405",
+      "version_id": "KODHA9DzKHRJD123FTIFbXph4BalPnX4",
+      "resource_instances": 3,
+      "readback_verified": true,
+      "source_lineage": "4cbf4305-891c-a4a5-c57e-ae59a55fbfdb",
+      "source_serial": 5,
+      "new_remote_history": true
+    },
+    {
+      "stack": "scoring",
+      "key": "scoring/terraform.tfstate",
+      "lineage": "32da2610-42eb-dbf1-3a3d-253e066034fc",
+      "serial": 1,
+      "sha256": "9761245746aecd5c8dfc7246da7dd76304769335a038eeb2a37583beda059d08",
+      "version_id": "MS8eupnCrGjHnOkA3yMyHtoxn1S4XqhX",
+      "resource_instances": 9,
+      "readback_verified": true,
+      "source_lineage": "1dc7ce50-df5b-7971-38fc-169bb18244c6",
+      "source_serial": 27,
+      "new_remote_history": true
+    },
+    {
+      "stack": "streaming",
+      "key": "streaming/terraform.tfstate",
+      "lineage": "e51e9752-91cd-a272-37e9-d15b8dd50f71",
+      "serial": 1,
+      "sha256": "532bd0bddea83ec0fa31e524b99dc2c8dd52d45e6bb001fc76584475bfb3bbe6",
+      "version_id": "ZECnnlM.2CWUJwUctZ_r8mFnGxn18oYH",
+      "resource_instances": 12,
+      "readback_verified": true,
+      "source_lineage": "1f743ba4-37c7-a5f9-5b87-377d5aab4cd2",
+      "source_serial": 32,
+      "new_remote_history": true
+    },
+    {
+      "stack": "tfstate-bootstrap",
+      "key": "tfstate-bootstrap/terraform.tfstate",
+      "lineage": "d342ea24-b279-671e-26d6-e00982010aef",
+      "serial": 1,
+      "sha256": "ac9fd8c18ba6cc15514a4b132a41ab13edb3fd84ac0160a135887dcb37717941",
+      "version_id": "Y5_NFSN0I5JneW..cmaaLSdPPf9ogllq",
+      "resource_instances": 6,
+      "readback_verified": true,
+      "source_lineage": "0a13a407-3cfe-1627-e6ea-1e3e7519607c",
+      "source_serial": 7,
+      "new_remote_history": true
+    }
+  ],
+  "configuration_plan_results": [
+    {
+      "stack": "cloud-ingestion",
+      "status": "refreshed_and_verified",
+      "lineage": "81b89690-cad4-57c3-56b3-ee266d55a7a2",
+      "serial": 12,
+      "instances": 9,
+      "refresh_check_exit_code": 0,
+      "normal_plan_exit_code": 0,
+      "normal_plan_actions": [],
+      "normal_plan_errors": ""
+    },
+    {
+      "stack": "dashboard-control",
+      "status": "refreshed_and_verified",
+      "lineage": "7a85376e-42c2-f834-d331-3831e15ec932",
+      "serial": 20,
+      "instances": 18,
+      "refresh_check_exit_code": 0,
+      "normal_plan_exit_code": 0,
+      "normal_plan_actions": [],
+      "normal_plan_errors": ""
+    },
+    {
+      "stack": "dashboard-status",
+      "status": "refreshed_and_verified",
+      "lineage": "485f01a0-899c-8035-7e89-9c8a9c4d9637",
+      "serial": 12,
+      "instances": 10,
+      "refresh_check_exit_code": 0,
+      "normal_plan_exit_code": 0,
+      "normal_plan_actions": [],
+      "normal_plan_errors": ""
+    },
+    {
+      "stack": "eventbridge-trigger",
+      "status": "refreshed_and_verified",
+      "lineage": "3912718a-fa6d-bf4a-eb70-28c2745716ba",
+      "serial": 10,
+      "instances": 8,
+      "refresh_check_exit_code": 0,
+      "normal_plan_exit_code": 2,
+      "normal_plan_actions": [
+        {
+          "address": "aws_sfn_state_machine.raw_trigger",
+          "actions": [
+            "update"
+          ]
+        }
+      ],
+      "normal_plan_errors": ""
+    },
+    {
+      "stack": "foundation",
+      "status": "refreshed_and_verified",
+      "lineage": "333593e5-c269-45a0-d063-51c89903efb0",
+      "serial": 27,
+      "instances": 25,
+      "refresh_check_exit_code": 0,
+      "normal_plan_exit_code": 2,
+      "normal_plan_actions": [
+        {
+          "address": "aws_s3_object.glue_script",
+          "actions": [
+            "update"
+          ]
+        }
+      ],
+      "normal_plan_errors": ""
+    },
+    {
+      "stack": "hosting",
+      "status": "refreshed_and_verified",
+      "lineage": "05903462-ed8b-4ce6-06f1-511c3910185a",
+      "serial": 13,
+      "instances": 9,
+      "refresh_check_exit_code": 0,
+      "normal_plan_exit_code": 0,
+      "normal_plan_actions": [],
+      "normal_plan_errors": ""
+    },
+    {
+      "stack": "ingestion",
+      "status": "refreshed_and_verified",
+      "lineage": "d49fc274-1c70-3ac1-e995-67e25a4b29dd",
+      "serial": 133,
+      "instances": 33,
+      "refresh_check_exit_code": 0,
+      "normal_plan_exit_code": 0,
+      "normal_plan_actions": [],
+      "normal_plan_errors": ""
+    },
+    {
+      "stack": "orchestration",
+      "status": "refreshed_and_verified",
+      "lineage": "43a1e9ed-29e0-049a-4d7f-04f7a39cc675",
+      "serial": 5,
+      "instances": 3,
+      "refresh_check_exit_code": 0,
+      "normal_plan_exit_code": 2,
+      "normal_plan_actions": [
+        {
+          "address": "aws_sfn_state_machine.batch[0]",
+          "actions": [
+            "update"
+          ]
+        }
+      ],
+      "normal_plan_errors": ""
+    },
+    {
+      "stack": "sagemaker",
+      "status": "refreshed_and_verified",
+      "lineage": "4cbf4305-891c-a4a5-c57e-ae59a55fbfdb",
+      "serial": 5,
+      "instances": 3,
+      "refresh_check_exit_code": 0,
+      "normal_plan_exit_code": 0,
+      "normal_plan_actions": [],
+      "normal_plan_errors": ""
+    },
+    {
+      "stack": "scoring",
+      "status": "refreshed_and_verified",
+      "lineage": "1dc7ce50-df5b-7971-38fc-169bb18244c6",
+      "serial": 27,
+      "instances": 9,
+      "refresh_check_exit_code": 0,
+      "normal_plan_exit_code": 0,
+      "normal_plan_actions": [],
+      "normal_plan_errors": ""
+    },
+    {
+      "stack": "streaming",
+      "status": "refreshed_and_verified",
+      "lineage": "1f743ba4-37c7-a5f9-5b87-377d5aab4cd2",
+      "serial": 32,
+      "instances": 12,
+      "refresh_check_exit_code": 0,
+      "normal_plan_exit_code": 0,
+      "normal_plan_actions": [],
+      "normal_plan_errors": ""
+    },
+    {
+      "stack": "tfstate-bootstrap",
+      "status": "refreshed_and_verified",
+      "lineage": "0a13a407-3cfe-1627-e6ea-1e3e7519607c",
+      "serial": 7,
+      "instances": 6,
+      "refresh_check_exit_code": 0,
+      "normal_plan_exit_code": 0,
+      "normal_plan_actions": [],
+      "normal_plan_errors": ""
+    }
+  ],
+  "pending_application_updates": [
+    {
+      "stack": "eventbridge-trigger",
+      "changes": [
+        {
+          "address": "aws_sfn_state_machine.raw_trigger",
+          "actions": [
+            "update"
+          ]
+        }
+      ]
+    },
+    {
+      "stack": "foundation",
+      "changes": [
+        {
+          "address": "aws_s3_object.glue_script",
+          "actions": [
+            "update"
+          ]
+        }
+      ]
+    },
+    {
+      "stack": "orchestration",
+      "changes": [
+        {
+          "address": "aws_sfn_state_machine.batch[0]",
+          "actions": [
+            "update"
+          ]
+        }
+      ]
+    }
+  ],
+  "validation": {
+    "terraform": [
+      {
+        "module": "dashboard-control",
+        "checks": [
+          {
+            "check": "validate",
+            "exit_code": 0,
+            "summary": "Success! The configuration is valid."
+          },
+          {
+            "check": "test",
+            "exit_code": 0,
+            "summary": "Success! 1 passed, 0 failed."
+          }
+        ]
+      },
+      {
+        "module": "cloud-ingestion",
+        "checks": [
+          {
+            "check": "validate",
+            "exit_code": 0,
+            "summary": "Success! The configuration is valid."
+          },
+          {
+            "check": "test",
+            "exit_code": 0,
+            "summary": "Success! 1 passed, 0 failed."
+          }
+        ]
+      },
+      {
+        "module": "dashboard-status",
+        "checks": [
+          {
+            "check": "validate",
+            "exit_code": 0,
+            "summary": "Success! The configuration is valid."
+          },
+          {
+            "check": "test",
+            "exit_code": 0,
+            "summary": "Success! 1 passed, 0 failed."
+          }
+        ]
+      },
+      {
+        "module": "eventbridge-trigger",
+        "checks": [
+          {
+            "check": "validate",
+            "exit_code": 0,
+            "summary": "Success! The configuration is valid."
+          },
+          {
+            "check": "test",
+            "exit_code": 0,
+            "summary": "Success! 2 passed, 0 failed."
+          }
+        ]
+      },
+      {
+        "module": "ingestion",
+        "checks": [
+          {
+            "check": "validate",
+            "exit_code": 0,
+            "summary": "Success! The configuration is valid."
+          },
+          {
+            "check": "test",
+            "exit_code": 0,
+            "summary": "Success! 1 passed, 0 failed. Used deployed artifact_directory/model_file/pipeline_config inputs with mock AWS provider."
+          }
+        ]
+      },
+      {
+        "module": "hosting",
+        "checks": [
+          {
+            "check": "validate",
+            "exit_code": 0,
+            "summary": "Success! The configuration is valid."
+          },
+          {
+            "check": "test",
+            "exit_code": 0,
+            "summary": "Success! 4 passed, 0 failed."
+          }
+        ]
+      },
+      {
+        "module": "orchestration",
+        "checks": [
+          {
+            "check": "validate",
+            "exit_code": 0,
+            "summary": "Success! The configuration is valid."
+          },
+          {
+            "check": "test",
+            "exit_code": 0,
+            "summary": "Success! 5 passed, 0 failed."
+          }
+        ]
+      },
+      {
+        "module": "sagemaker",
+        "checks": [
+          {
+            "check": "validate",
+            "exit_code": 0,
+            "summary": "Success! The configuration is valid."
+          },
+          {
+            "check": "test",
+            "exit_code": 0,
+            "summary": "Success! 1 passed, 0 failed."
+          }
+        ]
+      },
+      {
+        "module": "scoring",
+        "checks": [
+          {
+            "check": "validate",
+            "exit_code": 0,
+            "summary": "Success! The configuration is valid."
+          },
+          {
+            "check": "test",
+            "exit_code": 0,
+            "summary": "Success! 7 passed, 0 failed."
+          }
+        ]
+      },
+      {
+        "module": "terraform",
+        "checks": [
+          {
+            "check": "validate",
+            "exit_code": 0,
+            "summary": "Success! The configuration is valid."
+          },
+          {
+            "check": "test",
+            "exit_code": 0,
+            "summary": "Success! 3 passed, 0 failed."
+          }
+        ]
+      },
+      {
+        "module": "tfstate-bootstrap",
+        "checks": [
+          {
+            "check": "validate",
+            "exit_code": 0,
+            "summary": "Success! The configuration is valid."
+          },
+          {
+            "check": "test",
+            "exit_code": 0,
+            "summary": "Success! 3 passed, 0 failed."
+          }
+        ]
+      },
+      {
+        "module": "streaming",
+        "checks": [
+          {
+            "check": "validate",
+            "exit_code": 0,
+            "summary": "Success! The configuration is valid."
+          },
+          {
+            "check": "test",
+            "exit_code": 0,
+            "summary": "Success! 7 passed, 0 failed."
+          }
+        ]
+      }
+    ],
+    "python": "14 tests passed (medium dataset and Terraform artifact retention tests)",
+    "powershell": "Changed AWS scripts parsed successfully",
+    "teammate_setup": {
+      "ingestion": "Downloaded deployed inputs and all 11 artifacts; SHA-256 checks passed. Normal plan on the new local paths proposes 11 source-path updates plus semantically unchanged workflow JSON formatting; no create/delete actions.",
+      "dashboard_control": "Downloaded deployed Lambda package; AWS code SHA-256 matches inventory. Normal plan proposes only the local filename change.",
+      "streaming": "Downloaded deployed parked-stream inputs; normal plan exits 0 with no changes."
+    }
+  },
+  "teammate_inputs_prefix": "handoff/current/",
+  "historical_verification_report": "live-verification-20261031.json",
+  "notes": [
+    "S3 is authoritative; committed snapshots and prior local states must not overwrite newer remote state.",
+    "Newly populated S3 keys have backend-generated lineage/serial histories; original source metadata is recorded alongside each key. Foundation retains its existing shared history.",
+    "Historical backups are preserved without claiming they match live resources.",
+    "Three application changes remain pending review/deployment; state refresh does not deploy them."
+  ]
+}

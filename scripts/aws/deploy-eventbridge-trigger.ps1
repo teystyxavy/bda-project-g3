@@ -37,17 +37,12 @@ try {
     $env:AWS_DEFAULT_REGION = 'ap-southeast-1'
     $account = & aws sts get-caller-identity --query Account --output text --profile $Profile
     if ($LASTEXITCODE -ne 0 -or $account.Trim() -ne '588738581042') { throw 'Wrong/unavailable AWS account' }
-    # Private Terraform data dir and local state; reuse the shared provider
-    # mirror if it exists.
+    # Private Terraform cache; shared S3 state is initialized below.
     $privateRoot = Join-Path $env:LOCALAPPDATA 'IS459-G3/terraform-eventbridge-trigger'
     $env:TF_DATA_DIR = Join-Path $privateRoot 'runtime'
     $terraform = Join-Path $projectRoot 'output/tools/terraform/terraform.exe'
-    $statePath = Join-Path $privateRoot 'state/terraform.tfstate'
-    $providerMirror = Join-Path $env:LOCALAPPDATA 'IS459-G3/terraform-orchestration/providers'
-    $initArgs = @('-chdir=infra/eventbridge-trigger', 'init', "-backend-config=path=$($statePath.Replace('\','/'))")
-    if (Test-Path -LiteralPath $providerMirror) { $initArgs += "-plugin-dir=$($providerMirror.Replace('\','/'))" }
-    & $terraform @initArgs
-    if ($LASTEXITCODE -ne 0) { throw 'Terraform initialization failed' }
+    & (Join-Path $PSScriptRoot 'init-terraform.ps1') -Stack 'eventbridge-trigger' -Profile $Profile -Terraform $terraform -AllowEmptyState
+
 
     # Build the plan. The 'enabled' variable sets the rule state (false for
     # -Disable); -destroy plans the removal of everything in this stack.

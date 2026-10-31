@@ -25,8 +25,7 @@
 # reviewed image_uri; without -Execute it stops there. With -Execute it runs
 # scripts/ingestion/check-ingestion.py (read-only preflight) and requires the
 # SageMaker instance quotas; each Terraform plan must contain exactly the
-# reviewed number of resources, all 'create'. Terraform state is private
-# (%LOCALAPPDATA%\IS459-G3\terraform-<module>). No jobs are started; use
+# reviewed number of resources, all 'create'. Terraform state is shared in the locked S3 backend. No jobs are started; use
 # update-ingestion.ps1 for an already deployed stack.
 # =============================================================================
 [CmdletBinding()]
@@ -75,17 +74,12 @@ try {
     $terraform = Join-Path $projectRoot 'output/tools/terraform/terraform.exe'
     # Deploy sagemaker first (creates the ECR repo the image is pushed to), then
     # ingestion (which references that image). Each module gets its own
-    # private data dir and local state file.
+    # private plugin cache and a shared S3 state key.
     foreach ($module in @('sagemaker', 'ingestion')) {
         $privateRoot = Join-Path $env:LOCALAPPDATA "IS459-G3/terraform-$module"
         $env:TF_DATA_DIR = Join-Path $privateRoot 'runtime'
-        $statePath = Join-Path $privateRoot 'state/terraform.tfstate'
-        [IO.Directory]::CreateDirectory((Split-Path $statePath -Parent)) > $null
-        $initArgs = @("-chdir=infra/$module", 'init', "-backend-config=path=$($statePath.Replace('\','/'))")
-        $providerMirror = Join-Path $env:LOCALAPPDATA 'IS459-G3/terraform-orchestration/providers'
-        if (Test-Path -LiteralPath $providerMirror) { $initArgs += "-plugin-dir=$($providerMirror.Replace('\','/'))" }
-        & $terraform @initArgs
-        if ($LASTEXITCODE -ne 0) { throw 'Terraform initialization failed' }
+        & (Join-Path $PSScriptRoot 'init-terraform.ps1') -Stack $module -Profile $Profile -Terraform $terraform -AllowEmptyState
+
         # Save a plan; only the ingestion module needs the prepared tfvars file.
         $planArgs = @("-chdir=infra/$module", 'plan', "-out=$($privateRoot.Replace('\','/'))/deployment.tfplan")
         if ($module -eq 'ingestion') { $planArgs += "-var-file=$($prepared.Replace('\','/'))/terraform.tfvars.json" }

@@ -696,3 +696,12 @@ is retained. Frozen-model scoring is a transfer evaluation; no Medium retraining
 or model promotion is enabled. See [the runbook](runbooks/hi-medium.md) for verified
 source counts, compute limits and the acceptance status. This implementation note
 does not by itself claim a successful full AWS run.
+
+### Shared Terraform state — 31 October 2026
+
+All 12 stacks now use the existing versioned/encrypted S3 backend and DynamoDB
+locking. States were refreshed against live resources; bootstrap ownership was
+recovered by imports. No application deployment or paid job was started. See
+[the shared-backend guide](../infra/tfstate-bootstrap/README.md) for current keys,
+teammate setup and recovery, and [the final state report](../handoff/terraform-state/shared-backend-verification-20261031.json)
+for readback evidence and the three still-pending application updates.

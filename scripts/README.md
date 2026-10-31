@@ -103,3 +103,12 @@ inspection. The replay command defaults to a dry run. See the
 The previous flat `scripts/<name>` paths have moved to these categories. Runbooks
 use the new locations; sanitized evidence retains paths recorded at execution
 time. Add new scripts to the relevant category and this index.
+
+## Shared Terraform state
+
+From the repository root, `scripts/aws/init-terraform.ps1 -Stack <name>` connects
+to an existing locked S3 state key. `scripts/aws/get-terraform-inputs.ps1 -Stack
+<name>` also downloads deployed inputs/artifacts into private local storage and
+checks their hashes. See [teammate setup](../infra/tfstate-bootstrap/README.md).
+The artifact-retention helper now backs up `terraform state pull` from the
+initialized shared backend rather than reading an obsolete local state file.

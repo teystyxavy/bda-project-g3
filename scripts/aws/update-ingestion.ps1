@@ -61,18 +61,17 @@ try {
     # Run lock check #1: KeyCount 0 means no pipeline/lock.json, i.e. idle.
     $locks = & aws s3api list-objects-v2 --bucket is459-g3-588738581042-ap-southeast-1 --prefix pipeline/lock.json --max-keys 1 --profile $Profile --query KeyCount --output text
     if ($LASTEXITCODE -ne 0 -or $locks.Trim() -ne '0') { throw 'Pipeline is locked; preserve the current deployment' }
-    # An update needs the existing private state; a fresh account must use
+    # An update needs the existing shared state; a fresh account must use
     # deploy-ingestion.ps1 instead.
     $terraform = Join-Path $projectRoot 'output/tools/terraform/terraform.exe'
     $privateRoot = Join-Path $env:LOCALAPPDATA 'IS459-G3/terraform-ingestion'
-    if (-not (Test-Path -LiteralPath (Join-Path $privateRoot 'state/terraform.tfstate'))) { throw 'Existing ingestion state is required; use the initial deployment procedure for a fresh account' }
-    $env:TF_DATA_DIR = Join-Path $privateRoot 'runtime'
+    & (Join-Path $PSScriptRoot 'init-terraform.ps1') -Stack ingestion -Profile $Profile -Terraform $terraform
     $planPath = Join-Path $privateRoot 'optimisation.tfplan'
     # A changed immutable prefix must not delete the predecessor's S3 objects.
     # Back up private state and forget only allowlisted predecessor uploads;
     # Terraform then plans fresh uploads while old releases remain recoverable.
     $retentionPython = Join-Path $projectRoot 'output/ml-venv/Scripts/python.exe'
-    & $retentionPython scripts/aws/retain-deployment-artifacts.py --terraform $terraform --state (Join-Path $privateRoot 'state/terraform.tfstate') --prefix $config.artifact_prefix
+    & $retentionPython scripts/aws/retain-deployment-artifacts.py --terraform $terraform --stack-directory infra/ingestion --prefix $config.artifact_prefix
     if ($LASTEXITCODE -ne 0) { throw 'Could not safely retain predecessor deployment artifacts' }
     # Validate the configuration, then save a plan with the new tfvars.
     & $terraform '-chdir=infra/ingestion' validate

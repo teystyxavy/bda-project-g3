@@ -1,5 +1,14 @@
 # AWS foundation deployment â€” 2026-10-05
 
+**Shared Terraform state, 31 October 2026:** all 12 stacks now use
+`s3://is459-g3-tfstate-588738581042/<stack>/terraform.tfstate`, with DynamoDB
+locking. States were refreshed against live AWS, missing bootstrap ownership was
+recovered through six imports, and all 145 current resource instances were
+verified. Earlier local-state instructions in this historical log are superseded
+by [the current backend guide](../infra/tfstate-bootstrap/README.md). Three
+application updates remain undeployed; see [the final state report](../handoff/terraform-state/shared-backend-verification-20261031.json).
+
+
 **EventBridge acceptance, 7 October 2026:** the existing opt-in S3 upload trigger
 passed a live 1,000-row run through Glue curation/scoring, Athena corridor analysis,
 SageMaker verification and publication. All 1,000 native scores matched exactly;

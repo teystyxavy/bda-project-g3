@@ -1,12 +1,12 @@
 # =============================================================================
 # infra/streaming/versions.tf -- Terraform/provider pins for the streaming demo
 # =============================================================================
-# Separate Terraform root with its own local state, so the demo can be created
+# Separate Terraform root with its own shared S3 state, so the demo can be created
 # and destroyed without touching the batch pipeline stacks.
 
 terraform {
   required_version = ">= 1.9, < 2.0"
-  backend "local" {}
+  backend "s3" {}
   required_providers {
     aws = {
       source  = "hashicorp/aws"

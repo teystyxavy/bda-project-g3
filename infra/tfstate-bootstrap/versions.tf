@@ -1,14 +1,13 @@
 # =============================================================================
 # infra/tfstate-bootstrap/versions.tf -- Terraform/provider versions
 # =============================================================================
-# This stack creates the S3 bucket + DynamoDB lock table that every OTHER
-# stack's "s3" backend points at. It can never store its own state there
-# (chicken-and-egg), so backend "local" here is permanent, not a placeholder
-# to migrate later like the other stacks.
+# The existing backend was recovered by importing its six live resources.
+# Its state is now shared in the same versioned bucket; never destroy the
+# backend while any project state remains there. See the recovery runbook.
 
 terraform {
   required_version = ">= 1.7, < 2.0"
-  backend "local" {}
+  backend "s3" {}
   required_providers {
     aws = {
       source  = "hashicorp/aws"

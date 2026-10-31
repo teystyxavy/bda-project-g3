@@ -44,7 +44,7 @@ The Lambda zip contains dashboard_api.py and dashboard_sessions.py. Python 3.12 
 
 ## Deployment
 
-Deployment requires explicit authorization. Keep state and saved plans in the project's private local AWS directory, outside the repository. Supply the absolute prepared zip path as lambda_zip_path. Review and apply the saved plan. Initial deployment created 18 resources with zero changes and zero deletions; it created no AWS users or Cognito resources.
+Deployment requires explicit authorization. Use the [shared S3 backend](../tfstate-bootstrap/README.md); keep saved plans in private local storage. Supply the absolute prepared zip path as lambda_zip_path. Review and apply the saved plan. Initial deployment created 18 resources with zero changes and zero deletions; it created no AWS users or Cognito resources.
 
 1. Apply the reviewed control stack plan, preserving existing data pipeline stacks.
 2. Export public_configuration to UTF-8 JSON. Upload it to the existing hosting bucket at dashboard/ingestion-config.json with application/json, no-store,max-age=0 and AES256 encryption. Invalidate /ingestion-config.json on the existing CloudFront distribution.

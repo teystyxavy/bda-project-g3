@@ -11,15 +11,11 @@ destruction. Current deployed inputs are account `588738581042`, region
 `ap-southeast-1`, `provision_orchestration=true`, and
 `run_id=full-orchestrated-20261006`. Scheduling flags remain false.
 
-State and provider working files are private, outside OneDrive. From the
-repository root, initialize this stack only against its own state:
+State is in the [shared S3 backend](../tfstate-bootstrap/README.md). Initialize
+from the repository root:
 
 ```powershell
-$env:AWS_PROFILE='is459-g3-tools'
-$env:AWS_REGION='ap-southeast-1'
-$env:AWS_DEFAULT_REGION='ap-southeast-1'
-$env:TF_DATA_DIR='C:/Users/lowth/AppData/Local/IS459-G3/terraform-orchestration'
-terraform -chdir=infra/orchestration init -input=false -reconfigure -backend-config='path=C:/Users/lowth/AppData/Local/IS459-G3/orchestration.tfstate'
+.\scripts\aws\init-terraform.ps1 -Stack orchestration
 terraform -chdir=infra/orchestration validate
 terraform -chdir=infra/orchestration test
 terraform -chdir=infra/orchestration plan -input=false -var=aws_account_id=588738581042 -var=provision_orchestration=true
@@ -27,7 +23,7 @@ terraform -chdir=infra/orchestration plan -input=false -var=aws_account_id=58873
 
 The tests use a mock provider and create no AWS resources. The plan above is
 read-only. Do not apply a changed plan or start another paid execution without
-approval. Scoring resources use their existing separate `scoring.tfstate`.
+approval. Scoring uses the separate `scoring/terraform.tfstate` S3 key.
 
 To demonstrate the completed execution without replaying data:
 

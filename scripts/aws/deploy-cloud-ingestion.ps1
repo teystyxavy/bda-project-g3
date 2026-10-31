@@ -23,8 +23,7 @@
 # Each plan must contain only 'create' actions with the exact expected count;
 # anything else (e.g. a replace or delete) stops the deployment.
 #
-# Terraform state is kept privately in %LOCALAPPDATA%\IS459-G3\... (not in
-# the repo). It starts no acquisition run and no paid batch job.
+# Terraform state is shared in the private, locked S3 backend. It starts no acquisition run and no paid batch job.
 #
 # Usage:
 #   .\scripts\aws\deploy-cloud-ingestion.ps1             # verify only
@@ -62,17 +61,12 @@ try {
     $env:AWS_SDK_UA_APP_ID = 'AWSSkill-SageMaker'
     $account = & aws sts get-caller-identity --query Account --output text --profile $Profile
     if ($LASTEXITCODE -ne 0 -or $account.Trim() -ne '588738581042') { throw 'Wrong/unavailable AWS account' }
-    # Private Terraform working folders and state (outside the repo). A local
-    # provider mirror is used if present, avoiding a registry download.
+    # Private Terraform working folders; shared state is initialized below.
     $privateRoot = Join-Path $env:LOCALAPPDATA 'IS459-G3/terraform-cloud-ingestion'
     $env:TF_DATA_DIR = Join-Path $privateRoot 'runtime'
     $terraform = Join-Path $projectRoot 'output/tools/terraform/terraform.exe'
-    $statePath = Join-Path $privateRoot 'state/terraform.tfstate'
-    $providerMirror = Join-Path $env:LOCALAPPDATA 'IS459-G3/terraform-orchestration/providers'
-    $initArgs = @('-chdir=infra/cloud-ingestion', 'init', "-backend-config=path=$($statePath.Replace('\','/'))")
-    if (Test-Path -LiteralPath $providerMirror) { $initArgs += "-plugin-dir=$($providerMirror.Replace('\','/'))" }
-    & $terraform @initArgs
-    if ($LASTEXITCODE -ne 0) { throw 'Terraform initialization failed' }
+    & (Join-Path $PSScriptRoot 'init-terraform.ps1') -Stack 'cloud-ingestion' -Profile $Profile -Terraform $terraform -AllowEmptyState
+
     # Helper: save a plan (optionally -target'ed), read it back as JSON and
     # require exactly $Count changes, all of them 'create'. Returns plan path.
     function New-CheckedPlan([string]$Name, [int]$Count, [string[]]$Targets = @()) {
