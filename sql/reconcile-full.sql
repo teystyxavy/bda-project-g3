@@ -23,5 +23,7 @@ SELECT count(*) AS transactions,
        count_if(from_entity_id IS NULL OR to_entity_id IS NULL) AS missing_accounts,
        count_if(amount_usd IS NULL OR amount_usd_asof IS NULL) AS missing_fx,
        count_if(txn_count_1h IS NULL OR txn_count_24h IS NULL OR txn_count_7d IS NULL
-                OR distinct_counterparties_24h IS NULL OR distinct_counterparties_7d IS NULL) AS missing_behaviour
+                OR distinct_counterparties_24h IS NULL OR distinct_counterparties_7d IS NULL
+                OR in_txn_count_1h IS NULL OR in_txn_count_24h IS NULL OR in_txn_count_7d IS NULL
+                OR distinct_senders_24h IS NULL OR distinct_senders_7d IS NULL) AS missing_behaviour
 FROM full_transactions;

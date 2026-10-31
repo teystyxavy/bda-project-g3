@@ -110,11 +110,11 @@ def verify_curated(curated, raw, manifest):
        ``amount_usd_asof = amount_paid x rate(previous day)``, to a relative
        tolerance of 1e-12.
     9. **Labels** - the number of laundering labels equals the raw count.
-    10. **Behaviour features** - for a deterministic ~1% sample of senders
-        (chosen by hashing bank+account, *not* by label, so the sample is
-        unbiased), the full history is collected and the rolling-window
-        features are recomputed with ``analytics.add_behaviour``; they must
-        match Glue's values exactly.
+    10. **Behaviour features** - for deterministic ~1% samples of senders and
+        of receivers (chosen by hashing bank+account, *not* by label), the full
+        history is collected and recomputed with ``analytics.add_behaviour``.
+        The sender sample checks the five outgoing features and the receiver
+        sample the five incoming ones; each must match Glue's values exactly.
 
     Args:
         curated: Directory of hive-partitioned curated Parquet (``txn_date=...``).
@@ -161,7 +161,7 @@ def verify_curated(curated, raw, manifest):
     seen = np.zeros(n, dtype=bool)  # which source rows have been matched so far
     positives = 0
     amount_usd = 0.
-    histories = []
+    histories, receiver_histories = [], []
     # exclude_invalid_files skips non-Parquet objects such as _SUCCESS.
     dataset = ds.dataset(curated, format='parquet', partitioning='hive', exclude_invalid_files=True)
     for batch in dataset.to_batches(batch_size=100_000):
@@ -185,33 +185,34 @@ def verify_curated(curated, raw, manifest):
             expected = frame.amount_paid.to_numpy() * np.asarray([
                 fx[(day, currency)] for day, currency in zip(days, frame.payment_currency)])
             np.testing.assert_allclose(frame[column], expected, rtol=1e-12, atol=1e-8)
-        # Independent complete sender histories, chosen without labels; roughly 1%.
-        # Bank IDs are zero-stripped ('010' -> '10') to match the curated bank key;
-        # the first 8 hex digits of SHA-256(bank:account) mod 100 == 0 keeps ~1%.
-        bank = frame.from_bank.astype(str).str.lstrip('0').replace('', '0')
-        keep = pd.Series([int(hashlib.sha256(f'{b}:{a}'.encode()).hexdigest()[:8], 16) % 100 == 0
-                          for b, a in zip(bank, frame.from_account)], index=frame.index)
-        if keep.any(): histories.append(frame.loc[keep, COLUMNS])
+        # Label-independent ~1% cohorts: senders (outgoing features) and receivers (incoming features).
+        # Zero-stripped bank IDs; the first 8 hex digits of SHA-256(bank:account) mod 100 == 0 keeps ~1%.
+        for cohort, side in [(histories, 'from'), (receiver_histories, 'to')]:
+            bank = frame[f'{side}_bank'].astype(str).str.lstrip('0').replace('', '0')
+            keep = pd.Series([int(hashlib.sha256(f'{b}:{a}'.encode()).hexdigest()[:8], 16) % 100 == 0
+                              for b, a in zip(bank, frame[f'{side}_account'])], index=frame.index)
+            if keep.any(): cohort.append(frame.loc[keep, COLUMNS])
         positives += int(frame.is_laundering.sum())
         amount_usd += float(frame.amount_usd.sum())
     # Every raw row must have appeared exactly once, with the same labels.
     if not seen.all() or positives != positives_raw:
         raise ValueError('Curated census or label count differs from source')
-    # 10. Recompute behaviour features for the sampled senders' full histories.
+    # 10. Recompute behaviour features for each cohort's full history; FEATURES is 5 outgoing then 5 incoming.
     checked_rows = 0
-    if histories:
-        # Original file order, because the windows depend on chronological order.
-        reference = pd.concat(histories, ignore_index=True).sort_values('source_row_index').reset_index(drop=True)
-        actual = reference[FEATURES].copy()
-        recalculated = add_behaviour(reference)
-        np.testing.assert_array_equal(actual.to_numpy(), recalculated[FEATURES].to_numpy())
-        checked_rows = len(reference)
+    for cohort, features in [(histories, FEATURES[:5]), (receiver_histories, FEATURES[5:])]:
+        if cohort:
+            # Original file order, because the windows depend on chronological order.
+            reference = pd.concat(cohort, ignore_index=True).sort_values('source_row_index').reset_index(drop=True)
+            actual = reference[features].copy()
+            recalculated = add_behaviour(reference)
+            np.testing.assert_array_equal(actual.to_numpy(), recalculated[features].to_numpy())
+            checked_rows += len(reference)
     return {'status': 'passed', 'rows': n, 'positives': positives, 'amount_usd': amount_usd,
             'subset': manifest.get('subset', 'HI-Small'), 'start_date': manifest['start_date'], 'end_date': manifest['end_date'],
             'raw_identity_comparison': 'Every source row: ordered SHA256 fingerprint',
             'fx_comparison': 'All same-day and prior-day valuations',
             'behaviour_reference_rows': checked_rows,
-            'behaviour_scope': 'Complete histories for deterministic label-independent approximately 1% sender cohort'}
+            'behaviour_scope': 'Complete histories for deterministic label-independent approximately 1% sender and receiver cohorts'}
 
 
 def baseline_stage(inputs, output, assets):

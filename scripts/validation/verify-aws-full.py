@@ -36,6 +36,7 @@ import pyarrow.dataset as ds
 
 # corridor_totals: groups rows by day/bank pair/currency pair -> count + USD sum.
 from bda_pipeline.analytics import corridor_totals
+from bda_pipeline.batch import FEATURES
 
 
 def verify(curated, reference, corridor_reference, expected_rows):
@@ -86,8 +87,7 @@ def verify(curated, reference, corridor_reference, expected_rows):
     if rows != expected_rows or not seen.all():
         raise ValueError("Full row coverage failed")
     actual = pd.concat(selected, ignore_index=True)
-    features = ["txn_count_1h", "txn_count_24h", "txn_count_7d",
-                "distinct_counterparties_24h", "distinct_counterparties_7d"]
+    features = list(FEATURES)
     columns = ["source_row_index", "transaction_id", "timestamp", "from_bank", "from_account",
                "to_bank", "to_account", "amount_usd", "amount_usd_asof", "is_laundering", *features]
     actual = actual[columns].sort_values("source_row_index").reset_index(drop=True)
