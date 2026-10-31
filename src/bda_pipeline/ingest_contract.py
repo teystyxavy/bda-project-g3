@@ -52,17 +52,68 @@ DATABASE = 'is459_g3_ingest'
 # S3 key of the deployed pipeline configuration (image URI, roles, model hash, ...).
 CONFIG_KEY = 'pipeline/deployment.json'
 
-# Explicitly bounded subsets; Large/LI remain download-only.
-SUBSET_LIMITS = {
-    'HI-Small': {'rows': 5_100_000, 'bytes': 2_000_000_000, 'end': '2022-09-18'},
-    'HI-Medium': {'rows': 35_000_000, 'bytes': 4_000_000_000, 'end': '2022-09-30'},
-}
+# Resources by run size: the first profile whose max_rows covers the run is used (the last has no ceiling).
+# The small profile and the medium Glue/processing values have run on AWS; the medium training values and the
+# large profile are estimates to confirm on first use (also check the account's SageMaker quota for those instances).
+RUN_PROFILES = [
+    dict(name='small', max_rows=10_000_000, glue_workers=2, glue_timeout=10, shuffle_partitions=8,
+         processing_instance='ml.m5.2xlarge', processing_volume_gb=30, processing_seconds=1800,
+         train_instance='ml.m5.xlarge', train_threads=4, train_volume_gb=20,
+         train_seconds=1200, train_max_seconds=1800),
+    dict(name='medium', max_rows=50_000_000, glue_workers=4, glue_timeout=30, shuffle_partitions=32,
+         processing_instance='ml.m5.2xlarge', processing_volume_gb=150, processing_seconds=3600,
+         train_instance='ml.m5.4xlarge', train_threads=16, train_volume_gb=100,
+         train_seconds=3600, train_max_seconds=7200),
+    dict(name='large', max_rows=None, glue_workers=10, glue_timeout=120, shuffle_partitions=128,
+         processing_instance='ml.m5.4xlarge', processing_volume_gb=500, processing_seconds=10800,
+         train_instance='ml.m5.12xlarge', train_threads=48, train_volume_gb=250,
+         train_seconds=10800, train_max_seconds=21600),
+]
+MAX_TRAIN_THREADS = max(profile['train_threads'] for profile in RUN_PROFILES)
+TRAINING_ROLE = f'arn:aws:iam::{ACCOUNT}:role/is459-g3-sagemaker-training'
 
 
-def subset_limits(subset):
-    if subset not in SUBSET_LIMITS:
-        raise ValueError('Pipeline supports HI-Small and HI-Medium only')
-    return SUBSET_LIMITS[subset]
+def valid_subset(subset):
+    """Accepts any IBM subset name (``HI`` or ``LI`` with ``Small``, ``Medium`` or ``Large``); raises ValueError otherwise."""
+    if not isinstance(subset, str) or not re.fullmatch(r'(HI|LI)-(Small|Medium|Large)', subset):
+        raise ValueError('Unknown subset')
+    return subset
+
+
+def run_profile(rows):
+    """Resource profile for a run of ``rows`` transactions; raises ValueError unless ``rows`` is a positive int."""
+    if type(rows) is not int or rows <= 0:
+        raise ValueError('Invalid run size')
+    return next(profile for profile in RUN_PROFILES if profile['max_rows'] is None or rows <= profile['max_rows'])
+
+
+def training_job_request(job_name, image_uri, rows, rounds=120, max_runtime=None):
+    """The bounded ``CreateTrainingJob`` request for a run of ``rows`` transactions: the run profile's instance, volume and runtime, network isolation, no spot or profiler.
+    Raises ValueError if rounds are outside 1-500 or the runtime is outside 60 seconds to the profile's cap."""
+    profile = run_profile(rows)
+    max_runtime = profile['train_seconds'] if max_runtime is None else max_runtime
+    if not 1 <= rounds <= 500 or not 60 <= max_runtime <= profile['train_max_seconds']:
+        raise ValueError('Allow 1-500 rounds and a runtime of 60 seconds up to the profile cap')
+    prefix = f's3://{BUCKET}/sagemaker/inputs/{job_name}'
+    return {
+        'TrainingJobName': job_name, 'RoleArn': TRAINING_ROLE,
+        'AlgorithmSpecification': {'TrainingImage': image_uri, 'TrainingInputMode': 'File'},
+        'InputDataConfig': [
+            {'ChannelName': channel, 'DataSource': {'S3DataSource': {
+                'S3DataType': 'S3Prefix', 'S3Uri': f'{prefix}/{channel}/',
+                'S3DataDistributionType': 'FullyReplicated'}}, 'InputMode': 'File'}
+            for channel in ['baseline', 'manifest']],
+        'OutputDataConfig': {'S3OutputPath': f's3://{BUCKET}/sagemaker/outputs'},
+        'ResourceConfig': {'InstanceType': profile['train_instance'], 'InstanceCount': 1,
+                           'VolumeSizeInGB': profile['train_volume_gb']},
+        'StoppingCondition': {'MaxRuntimeInSeconds': max_runtime},
+        'HyperParameters': {'rounds': str(rounds), 'threads': str(profile['train_threads']), 'expected_rows': str(rows)},
+        'EnableNetworkIsolation': True, 'EnableInterContainerTrafficEncryption': True,
+        'EnableManagedSpotTraining': False,
+        'ProfilerConfig': {'DisableProfiler': True},
+        'Tags': [{'Key': 'Project', 'Value': 'is459-g3'},
+                 {'Key': 'Component', 'Value': 'SageMakerTraining'}],
+    }
 
 
 
@@ -116,29 +167,27 @@ def valid_run(run_id):
     return run_id
 
 
-def validate_dates(start, end, subset='HI-Small'):
-    """Validate an inclusive ISO date range against the reviewed data window.
+def validate_dates(start, end):
+    """Validate an inclusive ISO date range.
 
-    HI-Small is bounded to 1-18 September 2022; HI-Medium is bounded to
-    September 2022. Each run carries its observed start/end dates for exact
-    curation, FX coverage and corridor reconciliation. Comparing
-    ISO ``YYYY-MM-DD`` strings works because they sort chronologically.
+    Each run carries its observed start/end dates for exact curation, FX
+    coverage and corridor reconciliation. Comparing ISO ``YYYY-MM-DD``
+    strings works because they sort chronologically.
 
     Args:
         start: First transaction date, ``'YYYY-MM-DD'``.
         end: Last transaction date, ``'YYYY-MM-DD'``.
 
     Raises:
-        ValueError: if a value is not a real calendar date, or the range is
-        reversed or outside 2022-09-01..2022-09-18.
+        ValueError: if a value is not a real calendar date or the range is reversed.
     """
     for value in [start, end]:
         if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
             raise ValueError('Require ISO calendar dates')
         # fromisoformat() additionally rejects impossible dates like 2022-09-31.
         date.fromisoformat(value)
-    if not ('2022-09-01' <= start <= end <= subset_limits(subset)['end']):
-        raise ValueError('Date range outside the reviewed model contract')
+    if start > end:
+        raise ValueError('Date range is reversed')
 
 
 def validate_manifest(value, deployment_hash):
@@ -148,14 +197,14 @@ def validate_manifest(value, deployment_hash):
     then trusted by every later stage, so it is checked strictly each time it
     is read. Checks, in order:
 
-    1. ``run_id`` is safe; schema version 1 and allowlisted subset ``HI-Small`` or ``HI-Medium``.
-    2. ``rows`` is an int in (0, 5,100,000] (HI-Small has ~5.08M rows); the
+    1. ``run_id`` is safe; schema version 1 and a known subset (``valid_subset``).
+    2. ``rows`` is a positive int; the
        ``train`` and ``rerun`` flags are real booleans.
     3. ``deployment_sha256`` equals the hash of the currently deployed config,
        so a run prepared against an older deployment cannot be executed.
     4. Exactly the three allowed input files exist, each with a SHA-256 and a
-       size under the subset limit (2 GB Small, 4 GB Medium).
-    5. Dates are inside the reviewed window.
+       positive size.
+    5. Dates form a valid, non-reversed range (``validate_dates``).
     6. ``processing_sha256`` is recomputed from the identity fields and must
        match - this detects any tampering or accidental edits.
 
@@ -172,12 +221,10 @@ def validate_manifest(value, deployment_hash):
     valid_run(value['run_id'])
     if value.get('schema_version') != 1:
         raise ValueError('Unsupported manifest schema')
-    limits = subset_limits(value.get('subset'))
-    if value['subset'] == 'HI-Medium' and value.get('train'):
-        raise ValueError('HI-Medium currently supports frozen-model scoring only; training needs separate validation')
+    valid_subset(value.get('subset'))
     # ``type(...) is int`` (not isinstance) so that booleans, which are a
     # subclass of int in Python, are not accepted as a row count.
-    if (type(value.get('rows')) is not int or not 0 < value['rows'] <= limits['rows']
+    if (type(value.get('rows')) is not int or value['rows'] <= 0
             or type(value.get('train')) is not bool or type(value.get('rerun')) is not bool):
         raise ValueError('Invalid run bounds or mode')
     if value.get('deployment_sha256') != deployment_hash:
@@ -189,9 +236,9 @@ def validate_manifest(value, deployment_hash):
         raise ValueError('Invalid input allowlist')
     for info in value['files'].values():
         if (not re.fullmatch(r'[0-9a-f]{64}', info.get('sha256', ''))
-                or type(info.get('bytes')) is not int or not 0 < info['bytes'] < limits['bytes']):
+                or type(info.get('bytes')) is not int or info['bytes'] <= 0):
             raise ValueError('Invalid source size/hash')
-    validate_dates(value['start_date'], value['end_date'], value['subset'])
+    validate_dates(value['start_date'], value['end_date'])
     # Recompute the run identity. Only fields that change the *output* are
     # included (not run_id, rerun or created_at), so identical inputs on a new
     # run ID share the same processing_sha256 and can hit the result cache.
@@ -228,7 +275,7 @@ def paths(run_id):
                                                 'evidence', 'export', 'release']}
 
 
-def corridor_query(run_id, start, end, subset='HI-Small'):
+def corridor_query(run_id, start, end):
     """Build the reviewed Athena SQL for business question 2 (treasury corridors).
 
     The query reads the run's curated table ``is459_g3_ingest.run_<run_id>``
@@ -259,7 +306,7 @@ def corridor_query(run_id, start, end, subset='HI-Small'):
         The SQL string.
     """
     valid_run(run_id)
-    validate_dates(start, end, subset)
+    validate_dates(start, end)
     # Athena/Glue table names cannot contain hyphens.
     table = 'run_' + run_id.replace('-', '_')
     return f"""WITH directed AS (
@@ -276,7 +323,7 @@ SELECT *, sum(volume_share*volume_share) OVER (PARTITION BY corridor_type, txn_d
  AS daily_hhi FROM shares ORDER BY corridor_type, txn_date, volume_usd DESC, from_node, to_node"""
 
 
-def processing_request(run_id, stage, config, extra_inputs=None, subset='HI-Small'):
+def processing_request(run_id, stage, config, extra_inputs=None, rows=1):
     """Build a SageMaker ``CreateProcessingJob`` request for ``baseline`` or ``export``.
 
     The control Lambda returns this dict to Step Functions, which passes it
@@ -299,8 +346,8 @@ def processing_request(run_id, stage, config, extra_inputs=None, subset='HI-Smal
 
     Safety settings: network isolation (the container cannot reach the internet
     or call AWS APIs; SageMaker does all data transfer), encrypted
-    inter-container traffic, one ml.m5.2xlarge instance and a 30-minute Small / 60-minute Medium hard
-    stop so a stuck job cannot run up cost.
+    inter-container traffic, one instance and a hard stop sized by the run's
+    ``run_profile`` so a stuck job cannot run up cost.
 
     Args:
         run_id: Run ID.
@@ -308,6 +355,7 @@ def processing_request(run_id, stage, config, extra_inputs=None, subset='HI-Smal
         config: Deployed configuration (needs ``model_prefix``,
             ``processing_role_arn``, ``image_uri``).
         extra_inputs: Optional ``{input_name: s3_key}`` additions for export.
+        rows: Run size, which selects the resource profile (default: smallest).
 
     Returns:
         The request dict.
@@ -316,8 +364,7 @@ def processing_request(run_id, stage, config, extra_inputs=None, subset='HI-Smal
         ValueError: for any other stage name.
     """
     p = paths(run_id)
-    subset_limits(subset)
-    medium = subset == 'HI-Medium'
+    profile = run_profile(rows)
     if stage not in ['baseline', 'export']:
         raise ValueError('Unsupported processing stage')
     # input name -> S3 key (relative to BUCKET). A trailing '/' means "whole prefix".
@@ -350,8 +397,9 @@ def processing_request(run_id, stage, config, extra_inputs=None, subset='HI-Smal
             'S3Output': {'S3Uri': f"s3://{BUCKET}/{p[stage]}/", 'LocalPath': '/opt/ml/processing/output',
                          'S3UploadMode': 'EndOfJob'}}]},
         'ProcessingResources': {'ClusterConfig': {'InstanceCount': 1,
-            'InstanceType': 'ml.m5.2xlarge', 'VolumeSizeInGB': 150 if medium else 30}},
-        'StoppingCondition': {'MaxRuntimeInSeconds': 3600 if medium else 1800},
+            'InstanceType': profile['processing_instance'],
+            'VolumeSizeInGB': profile['processing_volume_gb']}},
+        'StoppingCondition': {'MaxRuntimeInSeconds': profile['processing_seconds']},
         'NetworkConfig': {'EnableNetworkIsolation': True, 'EnableInterContainerTrafficEncryption': True},
         # Cost-allocation tag so project spend can be tracked in Billing.
         'Tags': [{'Key': 'Project', 'Value': 'is459-g3'}],

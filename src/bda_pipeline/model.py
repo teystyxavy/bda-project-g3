@@ -1,5 +1,5 @@
 """Local chronological XGBoost comparison for the BQ1 review queue: trains on curated features, compares to the rule baseline with identical metrics and explains alerts with TreeSHAP.
-Splits (``SPLITS``) are chronological and the selection is frozen before test data is read; ``compare_models`` writes its artifacts to a fresh directory."""
+Splits come from ``splits.py`` (recorded in the snapshot) and the selection is frozen before test data is read; ``compare_models`` writes its artifacts to a fresh directory."""
 import gc
 import hashlib
 import json
@@ -12,6 +12,7 @@ import pyarrow.dataset as ds
 
 from .analytics import ranking_metrics
 from .batch import FEATURES, QUEUE_COLUMNS
+from .splits import LEGACY_SPLITS, eval_names
 
 # String columns that are one-hot encoded for the model.
 CATEGORICAL = ['payment_format', 'payment_currency', 'receiving_currency']
@@ -19,11 +20,6 @@ CATEGORICAL = ['payment_format', 'payment_currency', 'receiving_currency']
 INPUT_COLUMNS = ['transaction_id', 'source_row_index', 'timestamp', 'from_bank',
                  'from_account', 'to_bank', 'to_account', 'amount_usd_asof',
                  'is_laundering', 'risk_score', 'risk_reasons', *FEATURES, *CATEGORICAL]
-# Time windows for each split: (start inclusive, end exclusive).
-SPLITS = {'train': ('2022-09-01', '2022-09-07'),
-          'validation': ('2022-09-07', '2022-09-09'),
-          'test': ('2022-09-09', '2022-09-11'),
-          'tail': ('2022-09-11', '2022-09-19')}
 # Only tree depth is compared; a tiny, pre-declared search limits overfitting to validation.
 CANDIDATES = [{'name': 'hist-depth3', 'max_depth': 3},
               {'name': 'hist-depth5', 'max_depth': 5}]
@@ -86,10 +82,10 @@ def choose_candidate(candidates):
                   -(c['metrics']['precision_at_k'] or 0), c['name']))[0]
 
 
-def read_split(dataset, name):
-    """Loads one chronological split, pushing the timestamp filter down to pyarrow and reading only ``INPUT_COLUMNS``.
+def read_split(dataset, name, splits):
+    """Loads one chronological split of ``splits`` (``(start, end)`` dates), pushing the timestamp filter down to pyarrow and reading only ``INPUT_COLUMNS``.
     Raises ValueError if the split is empty, has non-0/1 labels or has duplicate ``transaction_id``."""
-    start, end = SPLITS[name]
+    start, end = splits[name]
     condition = ((ds.field('timestamp') >= pd.Timestamp(start)) &
                  (ds.field('timestamp') < pd.Timestamp(end)))
     frame = dataset.to_table(columns=INPUT_COLUMNS, filter=condition).to_pandas()
@@ -144,6 +140,7 @@ class SavedRanker:
             if digest(directory / name) != self.report[key]:
                 raise ValueError(f'Artifact hash mismatch: {name}')
         self.selection = json.loads((directory / 'selection.json').read_text(encoding='utf-8'))
+        self.splits = self.report.get('splits') or LEGACY_SPLITS
         if self.selection != self.report['selection'] or not self.selection['frozen_before_test']:
             raise ValueError('Frozen selection mismatch')
         selected = self.selection['selected']
@@ -213,11 +210,12 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
     actual_hash = digest(scored)
     if actual_hash != expected_hash:
         raise ValueError('Scored input hash differs from verified export')
+    splits = snapshot.get('splits') or LEGACY_SPLITS
     dataset = ds.dataset(scored, format='parquet')
     if dataset.count_rows() != snapshot['full_rows']:
         raise ValueError('Scored input row count mismatch')
     output.mkdir(parents=True)
-    training, validation = read_split(dataset, 'train'), read_split(dataset, 'validation')
+    training, validation = read_split(dataset, 'train', splits), read_split(dataset, 'validation', splits)
     vocabulary = fit_encoder(training)
     xtrain, xvalid = encode(training, vocabulary), encode(validation, vocabulary)
     positives = int(training.is_laundering.sum())
@@ -278,8 +276,8 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
     # Running totals for the coverage check below (start with training).
     total_rows = train_counts['rows']
     total_positives = positives
-    for name in ['validation', 'test', 'tail']:
-        frame = read_split(dataset, name)
+    for name in eval_names(splits):
+        frame = read_split(dataset, name, splits)
         predictions = model.predict(xgb.DMatrix(encode(frame, vocabulary), nthread=threads))
         metrics[name] = dict(model=ranking_metrics(rank(frame, predictions)),
                             baseline=ranking_metrics(rank(frame, frame.risk_score.to_numpy())))
@@ -292,10 +290,10 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
         gc.collect()
     # The splits must cover every row once and match the snapshot's positives (training positives are added separately).
     if total_rows != snapshot['full_rows'] or total_positives != sum(
-            snapshot['aml'][p]['metrics']['positives'] for p in ['validation', 'test', 'tail']) + positives:
+            snapshot['aml'][p]['metrics']['positives'] for p in eval_names(splits)) + positives:
         raise ValueError('Split coverage mismatch')
     # Hashes of selection/features let SavedRanker detect later tampering.
-    report = dict(selection=selection, metrics=metrics, train=train_counts,
+    report = dict(selection=selection, metrics=metrics, train=train_counts, splits=splits,
                   total_rows=total_rows, total_positives=total_positives,
                   parameters=params, max_rounds=rounds, xgboost_version=xgb.__version__,
                   feature_names=feature_names, selection_sha256=digest(output / 'selection.json'),

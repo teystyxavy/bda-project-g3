@@ -31,6 +31,7 @@ from pathlib import Path
 import pandas as pd
 
 from .analytics import ranking_metrics
+from .splits import LEGACY_SPLITS, eval_names, window_label
 
 
 def records(frame):
@@ -54,12 +55,13 @@ def ranked(frame):
                              ascending=[False, True, True], kind='stable')
 
 
-def diagnose_rules(scored):
+def diagnose_rules(scored, splits=None):
     """Compare rule variants on the validation window only (an ablation study).
 
     Args:
         scored: output of ``analytics.score_baseline`` for the whole cohort,
             including the label column and the behaviour features.
+        splits: chronological windows (see ``splits.py``); defaults to HI-Small.
 
     Returns:
         dict with the validation period, metrics for each variant
@@ -71,8 +73,10 @@ def diagnose_rules(scored):
     the test period untouched, so the reported test metrics are not tuned on
     test data. Nothing is promoted automatically from this comparison.
     """
-    training = scored.loc[scored.timestamp.lt('2022-09-07')]
-    validation = scored.loc[scored.timestamp.ge('2022-09-07') & scored.timestamp.lt('2022-09-09')].copy()
+    splits = splits or LEGACY_SPLITS
+    start, end = splits['validation']
+    training = scored.loc[scored.timestamp.lt(start)]
+    validation = scored.loc[scored.timestamp.ge(start) & scored.timestamp.lt(end)].copy()
     # Re-derive the per-format P99 amount threshold from training rows only.
     thresholds = training.groupby('payment_format').amount_usd_asof.quantile(.99)
     # Rebuild each rule component with the same weights as score_baseline:
@@ -93,7 +97,7 @@ def diagnose_rules(scored):
     breakdown = queue.groupby(['risk_score', 'risk_reasons'], dropna=False).agg(
         reviewed=('is_laundering', 'size'), positives=('is_laundering', 'sum')).reset_index()
     breakdown['false_positives'] = breakdown.reviewed - breakdown.positives
-    return dict(period='2022-09-07 to 2022-09-08', variants=comparisons,
+    return dict(period=window_label(splits['validation']), variants=comparisons,
                 top100_reasons=records(breakdown),
                 decision='Exploratory comparison only. Keep current baseline; no test-set retuning or automatic promotion.')
 
@@ -162,15 +166,16 @@ def treasury_view(frame):
                 bank_pairs=len(banks))
 
 
-def build_snapshot(scored, corridors):
+def build_snapshot(scored, corridors, splits=None):
     """Assemble the full ``dashboard.json`` structure from in-memory tables.
 
     Args:
         scored: scored transactions (from ``analytics.score_baseline``).
         corridors: daily corridor totals (from ``analytics.corridor_totals``).
+        splits: chronological windows (see ``splits.py``); defaults to HI-Small.
 
     Returns:
-        dict with ``aml`` (validation/test/tail views), ``treasury`` (an
+        dict with ``aml`` (one view per evaluation window), ``treasury`` (an
         ``'all'`` view plus one per day), ``treasury_daily`` trend rows,
         ``diagnostics`` and row counts.
 
@@ -185,10 +190,10 @@ def build_snapshot(scored, corridors):
         raise ValueError('Labels must be binary')
     if corridors[['volume_usd', 'transaction_count']].isna().any().any():
         raise ValueError('Missing corridor measurements')
+    splits = splits or LEGACY_SPLITS
     aml = {}
-    # Same half-open chronological windows as batch.PERIODS.
-    for name, start, end in [('validation','2022-09-07','2022-09-09'), ('test','2022-09-09','2022-09-11'),
-                             ('tail','2022-09-11','2022-09-19')]:
+    for name in eval_names(splits):
+        start, end = splits[name]
         aml[name] = aml_view(scored.loc[scored.timestamp.ge(start) & scored.timestamp.lt(end)])
     corridors = corridors.copy()
     # Normalise dates to 'YYYY-MM-DD' strings so they work as JSON keys and
@@ -199,12 +204,12 @@ def build_snapshot(scored, corridors):
     for day, group in corridors.groupby('txn_date', observed=True):
         treasury[day] = treasury_view(group)
         daily.append(dict(day=day, **{key: treasury[day][key] for key in ['transactions','volume_usd','hhi','top5_share']}))
-    diagnostics = diagnose_rules(scored)
+    diagnostics = diagnose_rules(scored, splits)
     # cohort_rows = rows scored for BQ1 here; full_rows = all transactions
     # covered by the BQ2 corridors (they differ if BQ1 used a sample cohort).
     return dict(schema_version=1, generated_at=datetime.now(timezone.utc).isoformat(),
                 aml=aml, treasury=treasury, treasury_daily=daily, diagnostics=diagnostics,
-                cohort_rows=len(scored), full_rows=treasury['all']['transactions'])
+                cohort_rows=len(scored), full_rows=treasury['all']['transactions'], splits=splits)
 
 
 def export_dashboard(scored_path, corridors_path, output):

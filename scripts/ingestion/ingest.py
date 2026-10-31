@@ -413,20 +413,14 @@ def main():
             args.subset = resolve_subset(args.subset, args.variant, args.size)
             if args.dataset_version is not None and args.dataset_version < 1:
                 raise ValueError('Dataset version must be positive')
-            # The downstream Glue/SageMaker jobs and model were built for HI-Small
-            # only, so other subsets may be downloaded but not processed.
+            # Cloud acquisition downloads HI-Small only; any other subset is acquired locally.
             if args.action != 'download':
-                from bda_pipeline.ingest_contract import subset_limits
-                limits = subset_limits(args.subset)
-                if args.subset == 'HI-Medium':
-                    if args.train:
-                        raise ValueError('HI-Medium currently supports frozen-model scoring only')
-                    if args.action == 'run' and not args.local_acquisition:
-                        raise ValueError('HI-Medium requires -LocalAcquisition (Python: --local-acquisition)')
+                if args.subset != 'HI-Small' and args.action == 'run' and not args.local_acquisition:
+                    raise ValueError(f'{args.subset} requires -LocalAcquisition (Python: --local-acquisition)')
                 if args.files is not None or args.include_patterns:
                     raise ValueError('File selection and patterns require -DownloadOnly (Python: download); the pipeline needs transactions and accounts')
-                if args.rows is not None and not 0 < args.rows <= limits['rows']:
-                    raise ValueError(f"Rows must be between 1 and {limits['rows']:,}")
+                if args.rows is not None and args.rows <= 0:
+                    raise ValueError('Rows must be positive')
                 if args.train and args.rows is not None:
                     raise ValueError('Training requires the full subset; omit --rows')
                 if getattr(args, 'trigger', 'direct') == 'eventbridge' and not args.local_acquisition:

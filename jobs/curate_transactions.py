@@ -54,22 +54,9 @@ def normalized_bank(column):
     return functions.when(stripped == "", "0").otherwise(stripped)
 
 
-def read_transactions(spark, path):
-    """Read the transactions CSV with stable row numbers.
-
-    Args:
-        spark: active SparkSession.
-        path: path/URI of ONE CSV file (not a folder).
-
-    Returns:
-        DataFrame with the 11 TRANSACTION_COLUMNS as strings, plus
-        ``source_row_index`` (long; 0 = first data row after the header) and
-        ``transaction_id`` (``'HI-Small:<source_row_index>'``).
-
-    Raises:
-        ValueError: if the path is not a single file, the header differs from
-        RAW_HEADER, or a line does not have exactly 11 CSV fields.
-    """
+def read_transactions(spark, path, subset='HI-Small'):
+    """Reads ONE transactions CSV into the 11 string columns plus a stable ``source_row_index`` and ``transaction_id`` ('<subset>:<index>').
+    Raises ValueError if the path is not a single file, the header differs from RAW_HEADER or a line does not have 11 fields."""
     # A single immutable, one-record-per-line file is the source identity contract.
     # zipWithIndex preserves physical row order, unlike monotonically_increasing_id.
     jpath = spark._jvm.org.apache.hadoop.fs.Path(path)
@@ -159,26 +146,9 @@ def add_behaviour(frame):
     return frame.join(out_features, "source_row_index", "inner").join(in_features, "source_row_index", "inner")
 
 
-def curate(transactions, accounts, rates):
-    """Validate, enrich and USD-convert the transactions.
-
-    Args:
-        transactions: output of ``read_transactions`` (string columns).
-        accounts: accounts CSV DataFrame (ACCOUNT_COLUMNS headers).
-        rates: FX CSV DataFrame with ``txn_date``, ``currency``, ``usd_rate``
-            (USD value of one unit of the currency on that day).
-
-    Returns:
-        DataFrame with typed timestamp/amounts/label, ``txn_date``,
-        ``from_*``/``to_*`` account metadata (bank_name, entity_id,
-        entity_name), ``amount_usd``, ``amount_usd_asof``, ``is_self_txn`` and
-        ``currency_mismatch``. Row count is unchanged (checked by ``main``).
-
-    Raises:
-        ValueError: on missing columns, empty fields, bad timestamps/dates/
-        labels/amounts, invalid or duplicate account keys or FX rates, an
-        account that cannot be matched, or a missing FX rate.
-    """
+def curate(transactions, accounts, rates, start_date='2022-09-01', end_date='2022-09-18'):
+    """Validates, enriches and USD-converts the transactions: joins sender/receiver account metadata, converts at the same-day and prior-day FX rates and adds self-transfer and currency-mismatch flags.
+    Raises ValueError on any invalid field, account or FX rate; the row count is unchanged (checked by ``main``)."""
     missing = set(ACCOUNT_COLUMNS) - set(accounts.columns)
     if missing:
         raise ValueError(f"Missing account columns: {sorted(missing)}")

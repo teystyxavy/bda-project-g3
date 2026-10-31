@@ -14,9 +14,10 @@ import pandas as pd
 import pyarrow.dataset as ds
 
 from .analytics import ranking_metrics
-from .batch import PERIODS, QUEUE_COLUMNS, evaluation_periods
+from .batch import QUEUE_COLUMNS, evaluation_periods
 from .dashboard import records
 from .model import INPUT_COLUMNS, rank
+from .splits import LEGACY_SPLITS
 
 CAPACITIES = [25, 50, 100, 250]
 QUEUE_FIELDS = [*QUEUE_COLUMNS, 'model_score', 'model_evidence',
@@ -104,10 +105,10 @@ def stream_model_view(dataset, scores, ranker, start, end, subset='HI-Small'):
             records(ranker.queue(queue, queue._rank_score.to_numpy())) if queue is not None else []}
 
 
-def aml_exploration(dataset, scores, ranker, end_date='2022-09-18', subset='HI-Small'):
+def aml_exploration(dataset, scores, ranker, end_date='2022-09-18', subset='HI-Small', splits=None):
     views, pool, targets = {}, {}, {}
     optional = [c for c in ['amount_paid', 'receiving_currency'] if c in dataset.schema.names and c not in INPUT_COLUMNS]
-    for period, (start, end) in evaluation_periods(end_date).items():
+    for period, (start, end) in evaluation_periods(splits or LEGACY_SPLITS, end_date).items():
         condition = (ds.field('timestamp') >= pd.Timestamp(start)) & (ds.field('timestamp') < pd.Timestamp(end))
         banks, choices = defaultdict(float), {'payment_format': set(), 'payment_currency': set()}
         # Determine offered filters from the entire period, reading only compact columns.
@@ -265,7 +266,7 @@ def treasury_exploration(corridors):
 def enrich_snapshot(snapshot, dataset, scores, ranker, corridors=None):
     if len(scores) != snapshot['full_rows']:
         raise ValueError('Exploration score population mismatch')
-    snapshot['exploration'] = {'version': 1, 'aml': aml_exploration(dataset, scores, ranker, snapshot.get('pipeline', {}).get('end_date', '2022-09-18'), snapshot.get('pipeline', {}).get('subset', 'HI-Small')),
+    snapshot['exploration'] = {'version': 1, 'aml': aml_exploration(dataset, scores, ranker, snapshot.get('pipeline', {}).get('end_date', '2022-09-18'), snapshot.get('pipeline', {}).get('subset', 'HI-Small'), snapshot.get('splits')),
         'treasury': treasury_exploration(corridors if corridors is not None else joint_corridors(dataset)),
         'quality': {'status': 'verified-source', 'rows': snapshot['full_rows'],
                     'model_changed': False, 'labels_in_queue': False}}

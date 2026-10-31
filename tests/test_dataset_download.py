@@ -169,7 +169,7 @@ def test_download_launcher_smoke_uses_real_acquisition_without_aws(tmp_path, mon
 
 
 @pytest.mark.parametrize('arguments', [
-    ['run', '--size', 'Medium'], ['prepare', '--variant', 'LI'],
+    ['run', '--size', 'Medium'], ['run', '--variant', 'LI', '--size', 'Large'],
     ['run', '--include-patterns'], ['run', '--files', 'accounts'],
     ['run', '--dataset-version', '0'], ['run', '--rows', '-1'], ['run', '--train', '--rows', '10'],
     ['download', '--subset', 'LI-Large', '--size', 'Small'],

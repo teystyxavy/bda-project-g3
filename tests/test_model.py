@@ -63,10 +63,10 @@ def test_tiny_model_comparison_artifact_reload_and_explanations(tmp_path, monkey
     output = tmp_path / 'model'
     from bda_pipeline import model as module
     original_read = module.read_split
-    def guarded_read(dataset, name):
+    def guarded_read(dataset, name, splits):
         if name in ['test', 'tail']:
             assert (output / 'selection.json').exists()
-        return original_read(dataset, name)
+        return original_read(dataset, name, splits)
     monkeypatch.setattr(module, 'read_split', guarded_read)
     report = compare_models(scored, snapshot, output, rounds=3, threads=1)
     assert report['total_rows'] == len(frame)
@@ -137,3 +137,24 @@ def test_tiny_model_comparison_artifact_reload_and_explanations(tmp_path, monkey
     frame.to_parquet(scored, index=True)
     with pytest.raises(ValueError, match='hash'):
         compare_models(scored, snapshot, tmp_path / 'tampered', rounds=3, threads=1)
+
+
+def test_training_uses_the_three_way_splits_recorded_in_the_snapshot(tmp_path):
+    pytest.importorskip('xgboost')
+    from bda_pipeline.splits import row_share_splits
+    frame = sample()
+    scored = tmp_path / 'scored.parquet'
+    frame.to_parquet(scored, index=False)
+    splits = json.loads(json.dumps(row_share_splits(frame.timestamp.dt.strftime('%Y-%m-%d').value_counts().to_dict())))
+    assert splits == {'train': ['2022-09-01', '2022-09-09'], 'validation': ['2022-09-09', '2022-09-12'],
+                      'test': ['2022-09-12', '2022-09-13']}
+    snapshot = tmp_path / 'dashboard.json'
+    snapshot.write_text(json.dumps(dict(aml_scope='full', full_rows=len(frame), splits=splits,
+        sources=[dict(file='bq1_scored.parquet', sha256=digest(scored))],
+        aml={name: dict(metrics=dict(positives=int(frame.iloc[start:end].is_laundering.sum())))
+             for name, start, end in [('validation', 160, 240), ('test', 240, 320)]})))
+    report = compare_models(scored, snapshot, tmp_path / 'model', rounds=3, threads=1)
+    assert report['splits'] == splits
+    assert set(report['metrics']) == {'validation', 'test'}
+    assert report['train']['rows'] == 160 and report['total_rows'] == len(frame)
+    assert SavedRanker(tmp_path / 'model').splits == splits
