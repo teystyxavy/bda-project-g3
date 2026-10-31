@@ -1,4 +1,4 @@
-"""Bounded SageMaker job contracts (fixed account, region, bucket, role, digest-pinned image, one ml.m5.xlarge, at most 500 rounds and 30 minutes, network isolation) plus the offline training entry point.
+"""Bounded SageMaker job contracts (fixed account, region, bucket, role, digest-pinned image, instance and runtime from the run's size profile, at most 500 rounds, network isolation) plus the offline training entry point.
 ``prepare_bundle``/``validate_bundle``/``build_request`` run locally; ``train_channels`` runs inside the training container and only produces a candidate model."""
 import json
 import re
@@ -7,14 +7,11 @@ from pathlib import Path
 
 import pyarrow.dataset as ds
 
+from .ingest_contract import ACCOUNT, BUCKET, MAX_TRAIN_THREADS, REGION, TRAINING_ROLE, training_job_request
 from .model import SavedRanker, compare_models, digest
 
-# Fixed deployment target, hard-coded so a request can only target the project's own account, region, bucket, role and image.
-ACCOUNT = '588738581042'
-REGION = 'ap-southeast-1'
-BUCKET = f'is459-g3-{ACCOUNT}-{REGION}'
-# IAM role SageMaker assumes: read inputs, write outputs, pull from ECR.
-ROLE = f'arn:aws:iam::{ACCOUNT}:role/is459-g3-sagemaker-training'
+# The deployment target (account, region, bucket, role) comes from ingest_contract, so a request can only target the project's own resources.
+ROLE = TRAINING_ROLE
 REPOSITORY = f'{ACCOUNT}.dkr.ecr.{REGION}.amazonaws.com/is459-g3-training'
 
 
@@ -42,39 +39,16 @@ def validate_inputs(scored, snapshot):
     return {'rows': rows, 'scored_sha256': expected, 'snapshot_sha256': digest(snapshot)}
 
 
-def build_request(job_name, image_uri, rows, rounds=120, max_runtime=1200):
-    """Builds the exact SageMaker ``CreateTrainingJob`` request: digest-pinned image, File input mode, one ml.m5.xlarge, network isolation, no spot training or profiler.
-    Raises ValueError if any argument is outside the bounded contract (1-500 rounds, 60-1800 s)."""
+def build_request(job_name, image_uri, rows, rounds=120, max_runtime=None):
+    """Builds the exact SageMaker ``CreateTrainingJob`` request for the run's size profile (see ``ingest_contract.training_job_request``) after checking the job name and digest-pinned image.
+    Raises ValueError if any argument is outside the bounded contract."""
     validate_name(job_name)
     if not re.fullmatch(re.escape(REPOSITORY) + r'@sha256:[0-9a-f]{64}', image_uri):
         raise ValueError('Pin a SHA256 digest in the Group 3 training ECR repository')
-    # bool is a subclass of int in Python, so True would otherwise pass as 1.
-    if not isinstance(rows, int) or isinstance(rows, bool) or rows <= 0:
-        raise ValueError('Expected rows must be positive')
-    if not 1 <= rounds <= 500 or not 60 <= max_runtime <= 1800:
-        raise ValueError('Allow 1-500 rounds and a 60-1800 second runtime')
-    prefix = f's3://{BUCKET}/sagemaker/inputs/{job_name}'
-    return {
-        'TrainingJobName': job_name, 'RoleArn': ROLE,
-        'AlgorithmSpecification': {'TrainingImage': image_uri, 'TrainingInputMode': 'File'},
-        'InputDataConfig': [
-            {'ChannelName': channel, 'DataSource': {'S3DataSource': {
-                'S3DataType': 'S3Prefix', 'S3Uri': f'{prefix}/{channel}/',
-                'S3DataDistributionType': 'FullyReplicated'}}, 'InputMode': 'File'}
-            for channel in ['baseline', 'manifest']],
-        'OutputDataConfig': {'S3OutputPath': f's3://{BUCKET}/sagemaker/outputs'},
-        'ResourceConfig': {'InstanceType': 'ml.m5.xlarge', 'InstanceCount': 1, 'VolumeSizeInGB': 20},
-        'StoppingCondition': {'MaxRuntimeInSeconds': max_runtime},
-        'HyperParameters': {'rounds': str(rounds), 'threads': '4', 'expected_rows': str(rows)},
-        'EnableNetworkIsolation': True, 'EnableInterContainerTrafficEncryption': True,
-        'EnableManagedSpotTraining': False,
-        'ProfilerConfig': {'DisableProfiler': True},
-        'Tags': [{'Key': 'Project', 'Value': 'is459-g3'},
-                 {'Key': 'Component', 'Value': 'SageMakerTraining'}],
-    }
+    return training_job_request(job_name, image_uri, rows, rounds, max_runtime)
 
 
-def prepare_bundle(scored, snapshot, output, job_name, image_uri, rounds=120, max_runtime=1200):
+def prepare_bundle(scored, snapshot, output, job_name, image_uri, rounds=120, max_runtime=None):
     """Writes the local bundle (``baseline/``, ``manifest/`` with ``input.json`` provenance, ``request.json``) for one job into a fresh ``output`` directory and returns the request.
     Nothing is uploaded or started here."""
     output = Path(output)
@@ -125,7 +99,7 @@ def train_channels(baseline, manifest, work, model_dir, report_dir, rounds=120, 
         raise ValueError('Staged source differs from reviewed manifest')
     if expected_rows is not None and inputs['rows'] != expected_rows:
         raise ValueError('Job expected row count mismatch')
-    if not 1 <= rounds <= 500 or not 1 <= threads <= 4:
+    if not 1 <= rounds <= 500 or not 1 <= threads <= MAX_TRAIN_THREADS:
         raise ValueError('Training exceeds the bounded contract')
     report = compare_models(scored, snapshot, work, rounds=rounds, threads=threads)
     report['execution'] = {'service': 'sagemaker-training-container',

@@ -57,7 +57,7 @@ from urllib.parse import urlsplit
 
 from .ingest_contract import (
     ACCOUNT, REGION, BUCKET, SITE_BUCKET, MACHINE, DATABASE, canonical, sha,
-    valid_run, validate_manifest, paths, processing_request, corridor_query,
+    valid_run, validate_manifest, paths, processing_request, corridor_query, run_profile, training_job_request,
 )
 from .release import ASSETS, _inspect, SENSITIVE_TEXT
 from .stage_cache import register, reuse
@@ -337,20 +337,21 @@ def handle(event, config, clients):
         put_json(s3, p['evidence'] + '/stage-cache.json', cached)
         # Stored as $.work in the state machine; drives the cache Choice states,
         # the Glue job arguments and the Athena query.
+        profile = run_profile(manifest['rows'])
         return {'train': manifest['train'], 'rows': manifest['rows'],
-            'glue_workers': 4 if manifest['subset'] == 'HI-Medium' else 2,
-            'glue_timeout': 30 if manifest['subset'] == 'HI-Medium' else 10,
+            'glue_workers': profile['glue_workers'],
+            'glue_timeout': profile['glue_timeout'],
             'curated_cache_hit': cached['curated']['hit'], 'scored_cache_hit': cached['scored']['hit'],
             'curate_arguments': {'--transactions': f"s3://{BUCKET}/{p['raw']}/transactions.csv",
                 '--accounts': f"s3://{BUCKET}/{p['raw']}/accounts.csv", '--fx': f"s3://{BUCKET}/{p['raw']}/fx.csv",
                 '--output': f"s3://{BUCKET}/{p['curated']}/", '--expected_rows': str(manifest['rows']),
                 '--behaviour': 'true', '--subset': manifest['subset'],
                 '--start_date': manifest['start_date'], '--end_date': manifest['end_date'],
-                '--shuffle_partitions': '32' if manifest['subset'] == 'HI-Medium' else '8', '--TempDir': f's3://{BUCKET}/tmp/ingest/{run_id}/curate/'},
+                '--shuffle_partitions': str(profile['shuffle_partitions']), '--TempDir': f's3://{BUCKET}/tmp/ingest/{run_id}/curate/'},
             'score_arguments': {'--INPUT': f"s3://{BUCKET}/{p['curated']}/",
                 '--OUTPUT': f"s3://{BUCKET}/{p['scored']}/", '--EXPECTED_ROWS': str(manifest['rows']),
                 '--TempDir': f's3://{BUCKET}/tmp/ingest/{run_id}/score/'},
-            'query': corridor_query(run_id, manifest['start_date'], manifest['end_date'], manifest['subset']),
+            'query': corridor_query(run_id, manifest['start_date'], manifest['end_date']),
             # Athena idempotency token: the same run always maps to the same query execution.
             'query_token': sha({'run_id': run_id, 'query': 'corridors'})}
     # ---- publish (early path): already published -> make the call idempotent ----
@@ -396,7 +397,7 @@ def handle(event, config, clients):
             if existing['StorageDescriptor']['Location'] != location:
                 raise ValueError('Existing run table has a different source')
         # Becomes $.baseline_request; Step Functions passes it to CreateProcessingJob.
-        return processing_request(run_id, 'baseline', config, subset=manifest['subset'])
+        return processing_request(run_id, 'baseline', config, rows=manifest['rows'])
     # ---- baseline: baseline job done -> optionally build a training job request ----
     if op == 'baseline':
         job = sm.describe_processing_job(ProcessingJobName=f'is459-g3-baseline-{run_id}')
@@ -412,22 +413,11 @@ def handle(event, config, clients):
                                    ('manifest/dashboard.json', 'manifest/dashboard.json'), ('manifest/input.json', 'manifest/input.json')]:
                 s3.copy_object(Bucket=BUCKET, Key=f'sagemaker/inputs/{name}/{target}',
                     CopySource={'Bucket': BUCKET, 'Key': f"{p['baseline']}/{source}"}, ServerSideEncryption='AES256')
-            # SageMaker CreateTrainingJob request: one ml.m5.xlarge, 20-minute
-            # cap, 120 boosting rounds, no internet (network isolation), no
+            # SageMaker CreateTrainingJob request sized by the run's profile (see
+            # ingest_contract.RUN_PROFILES): no internet (network isolation), no
             # Spot (so the job cannot be interrupted mid-run). The output is
             # only a *candidate*; export_stage verifies it and never promotes it.
-            training = {'TrainingJobName': name, 'RoleArn': f'arn:aws:iam::{ACCOUNT}:role/is459-g3-sagemaker-training',
-                'AlgorithmSpecification': {'TrainingImage': config['image_uri'], 'TrainingInputMode': 'File'},
-                'InputDataConfig': [{'ChannelName': channel, 'InputMode': 'File', 'DataSource': {'S3DataSource': {
-                    'S3DataType': 'S3Prefix', 'S3Uri': f's3://{BUCKET}/sagemaker/inputs/{name}/{channel}/',
-                    'S3DataDistributionType': 'FullyReplicated'}}} for channel in ['baseline', 'manifest']],
-                'OutputDataConfig': {'S3OutputPath': f's3://{BUCKET}/sagemaker/outputs'},
-                'ResourceConfig': {'InstanceType': 'ml.m5.xlarge', 'InstanceCount': 1, 'VolumeSizeInGB': 20},
-                'StoppingCondition': {'MaxRuntimeInSeconds': 1200}, 'HyperParameters': {
-                    'rounds': '120', 'threads': '4', 'expected_rows': str(manifest['rows'])},
-                'EnableNetworkIsolation': True, 'EnableManagedSpotTraining': False,
-                'EnableInterContainerTrafficEncryption': True, 'ProfilerConfig': {'DisableProfiler': True},
-                'Tags': [{'Key': 'Project', 'Value': 'is459-g3'}]}
+            training = training_job_request(name, config['image_uri'], manifest['rows'])
         # None -> the workflow's TrainRequested Choice goes to ReuseFrozen.
         return {'training_request': training}
     # ---- export: all parallel branches done -> verify Athena, build export job ----
@@ -438,7 +428,7 @@ def handle(event, config, clients):
             raise ValueError('Export requires independent baseline verification')
         work = event['work']
         # The SQL in the state must be exactly the reviewed query for this run.
-        if (work['query'] != corridor_query(run_id, manifest['start_date'], manifest['end_date'], manifest['subset'])
+        if (work['query'] != corridor_query(run_id, manifest['start_date'], manifest['end_date'])
                 or work['query_token'] != sha({'run_id': run_id, 'query': 'corridors'})):
             raise ValueError('Unexpected query request')
         # Same ClientRequestToken as the Corridors state used, so Athena
@@ -463,7 +453,7 @@ def handle(event, config, clients):
                 raise ValueError('Unexpected candidate training output')
             extra['candidate'] = expected
         # Becomes $.export_request for the Export processing job.
-        return processing_request(run_id, 'export', config, extra, subset=manifest['subset'])
+        return processing_request(run_id, 'export', config, extra, rows=manifest['rows'])
     # ---- publish: verify the release, then make it live on the dashboard ----
     if op == 'publish':
         job = sm.describe_processing_job(ProcessingJobName=f'is459-g3-export-{run_id}')

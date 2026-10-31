@@ -155,7 +155,7 @@ def main():
     prepare.add_argument('--job-name', required=True)
     prepare.add_argument('--image-uri', required=True)
     prepare.add_argument('--rounds', type=int, default=120)
-    prepare.add_argument('--max-runtime', type=int, default=1200)
+    prepare.add_argument('--max-runtime', type=int, default=None, help='Seconds; default comes from the run size profile')
     start = commands.add_parser('start', help='Upload inputs and start one paid job')
     start.add_argument('--prepared', type=Path, required=True)
     start.add_argument('--execute', action='store_true', help='Required to start paid training')

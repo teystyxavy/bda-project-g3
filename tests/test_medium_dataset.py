@@ -30,8 +30,12 @@ def medium_manifest(**updates):
 def test_medium_size_bounds_and_cache_isolation():
     value = medium_manifest()
     validate_manifest(value, sha(config()))
-    for updates in [{'rows': 35_000_001}, {'train': True}, {'subset': 'HI-Large'},
+    # Any size, subset, training flag and end date is accepted; only malformed values are rejected.
+    for updates in [{'rows': 35_000_001}, {'train': True}, {'subset': 'HI-Large'}, {'subset': 'LI-Medium'},
                     {'end_date': '2022-10-01'}]:
+        validate_manifest(medium_manifest(**updates), sha(config()))
+    for updates in [{'rows': 0}, {'rows': True}, {'subset': 'HI-Huge'}, {'subset': 'HI-Small/../x'},
+                    {'start_date': '2022-09-30', 'end_date': '2022-09-01'}]:
         with pytest.raises(ValueError):
             validate_manifest(medium_manifest(**updates), sha(config()))
     cfg = config() | {'stage_versions': {'curated': 'a', 'scored': 'b'}}
@@ -54,13 +58,26 @@ def test_subset_identity_cannot_be_mixed():
 def test_medium_processing_is_bounded_and_small_settings_preserved():
     for stage in ['baseline', 'export']:
         small = processing_request('test-run', stage, config())
-        medium = processing_request('test-run', stage, config(), subset='HI-Medium')
+        medium = processing_request('test-run', stage, config(), rows=31_898_238)
+        large = processing_request('test-run', stage, config(), rows=179_702_229)
         assert small['ProcessingResources']['ClusterConfig']['InstanceType'] == 'ml.m5.2xlarge'
         assert small['StoppingCondition']['MaxRuntimeInSeconds'] == 1800
         assert medium['ProcessingResources']['ClusterConfig'] == {
             'InstanceCount': 1, 'InstanceType': 'ml.m5.2xlarge', 'VolumeSizeInGB': 150}
         assert medium['StoppingCondition']['MaxRuntimeInSeconds'] == 3600
+        assert large['ProcessingResources']['ClusterConfig']['InstanceType'] == 'ml.m5.4xlarge'
+        assert large['StoppingCondition']['MaxRuntimeInSeconds'] == 10800
         assert medium['NetworkConfig']['EnableNetworkIsolation']
+
+
+def test_run_profiles_are_chosen_by_row_count_with_no_ceiling():
+    from bda_pipeline.ingest_contract import run_profile
+    rows = [1, 5_078_345, 10_000_000, 10_000_001, 31_898_238, 50_000_000, 50_000_001, 2_000_000_000]
+    assert [run_profile(count)['name'] for count in rows] == [
+        'small', 'small', 'small', 'medium', 'medium', 'medium', 'large', 'large']
+    for bad in [0, -1, True, 1.5, None]:
+        with pytest.raises(ValueError):
+            run_profile(bad)
 
 
 def test_medium_preview_uses_local_route_without_network(monkeypatch, capsys):
