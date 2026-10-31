@@ -1,0 +1,844 @@
+{
+  "verified_at_utc": "2026-10-31T14:49:12.238101+00:00",
+  "account_id": "588738581042",
+  "region": "ap-southeast-1",
+  "terraform_version": "1.16.4",
+  "aws_provider_version": "6.67.0",
+  "method": "Isolated local copies with provider configuration and original default tags; terraform plan -refresh-only -input=false -lock=false -detailed-exitcode; no apply or refresh command. Every snapshot instance produced a provider refresh log entry. Output removals caused by omitted configuration outputs are excluded.",
+  "scope": "Latest available snapshot for each of 11 stacks, plus previous local foundation snapshot. Historical backups are not asserted to match live AWS. Provider reads verify recorded resources; they do not discover all unmanaged resources or verify application behavior.",
+  "shared_backend": {
+    "bucket": "is459-g3-tfstate-588738581042",
+    "keys": [
+      "foundation/terraform.tfstate"
+    ],
+    "lock_table": "is459-g3-tfstate-lock",
+    "lock_table_status": "ACTIVE",
+    "bucket_versioning": "Enabled",
+    "bucket_encryption": "AES256",
+    "public_access_block_all_four_settings": true,
+    "bootstrap_state_found": false
+  },
+  "results": [
+    {
+      "stack": "cloud-ingestion",
+      "snapshot_sha256": "3a68c9b6d2c3c0d14dd5ec8f02b235012cdf1d96a4d00ae0e2bed3edc50e6127",
+      "snapshot_serial": 11,
+      "instances_in_snapshot": 9,
+      "plan_exit_code": 2,
+      "refresh_log_entries": 9,
+      "status": "drift_detected",
+      "drift": [
+        {
+          "address": "aws_cloudwatch_log_group.acquisition",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_iam_role.acquisition",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/inline_policy",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_iam_role.workflow",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/inline_policy",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_lambda_function.acquisition",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/layers",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_sfn_state_machine.cloud_ingest",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/tags"
+          ]
+        }
+      ],
+      "all_snapshot_instances_read": true,
+      "classification": "readback_only_differences",
+      "differences_beyond_empty_value_normalization_and_duplicate_policies": [],
+      "role_policies_identical_to_separately_tracked_resources": [
+        "aws_iam_role.acquisition",
+        "aws_iam_role.workflow"
+      ]
+    },
+    {
+      "stack": "dashboard-control",
+      "snapshot_sha256": "c7ec6f3176a9759d236375659feb7e77f3d9323f7e846fd5a3e235e6edde823f",
+      "snapshot_serial": 19,
+      "instances_in_snapshot": 18,
+      "plan_exit_code": 2,
+      "refresh_log_entries": 18,
+      "status": "drift_detected",
+      "drift": [
+        {
+          "address": "aws_apigatewayv2_api.control",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/cors_configuration/0/expose_headers",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_apigatewayv2_integration.control",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/request_parameters",
+            "/request_templates"
+          ]
+        },
+        {
+          "address": "aws_apigatewayv2_route.control[\"GET /options\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/authorization_scopes",
+            "/request_models"
+          ]
+        },
+        {
+          "address": "aws_apigatewayv2_route.control[\"GET /runs\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/authorization_scopes",
+            "/request_models"
+          ]
+        },
+        {
+          "address": "aws_apigatewayv2_route.control[\"GET /runs/{run_id}\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/authorization_scopes",
+            "/request_models"
+          ]
+        },
+        {
+          "address": "aws_apigatewayv2_route.control[\"POST /runs\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/authorization_scopes",
+            "/request_models"
+          ]
+        },
+        {
+          "address": "aws_apigatewayv2_route.control[\"POST /session/bootstrap\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/authorization_scopes",
+            "/request_models"
+          ]
+        },
+        {
+          "address": "aws_apigatewayv2_route.control[\"POST /session/exchange\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/authorization_scopes",
+            "/request_models"
+          ]
+        },
+        {
+          "address": "aws_apigatewayv2_route.control[\"POST /session/logout\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/authorization_scopes",
+            "/request_models"
+          ]
+        },
+        {
+          "address": "aws_apigatewayv2_stage.control",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/deployment_id",
+            "/stage_variables",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_cloudwatch_log_group.api",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_cloudwatch_log_group.function",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_cloudwatch_metric_alarm.errors",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/insufficient_data_actions",
+            "/ok_actions",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_dynamodb_table.launch",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_iam_role.function",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/inline_policy",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_lambda_function.control",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/layers",
+            "/tags"
+          ]
+        }
+      ],
+      "all_snapshot_instances_read": true,
+      "classification": "live_metadata_differs",
+      "differences_beyond_empty_value_normalization_and_duplicate_policies": [
+        {
+          "address": "aws_apigatewayv2_stage.control",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/deployment_id"
+          ]
+        }
+      ],
+      "role_policies_identical_to_separately_tracked_resources": [
+        "aws_iam_role.function"
+      ]
+    },
+    {
+      "stack": "dashboard-status",
+      "snapshot_sha256": "c92f10c8160ffb79a1838df442337ac2ea4982dff71a2d2a12c36b576b4279d0",
+      "snapshot_serial": 11,
+      "instances_in_snapshot": 10,
+      "plan_exit_code": 2,
+      "refresh_log_entries": 10,
+      "status": "drift_detected",
+      "drift": [
+        {
+          "address": "aws_apigatewayv2_api.status",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/cors_configuration/0/allow_headers",
+            "/cors_configuration/0/expose_headers",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_apigatewayv2_integration.status",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/request_parameters",
+            "/request_templates"
+          ]
+        },
+        {
+          "address": "aws_apigatewayv2_route.status",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/authorization_scopes",
+            "/request_models"
+          ]
+        },
+        {
+          "address": "aws_apigatewayv2_stage.status",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/deployment_id",
+            "/stage_variables",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_cloudwatch_log_group.api",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_cloudwatch_log_group.function",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_iam_role.function",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/inline_policy",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_lambda_function.status",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/layers",
+            "/tags"
+          ]
+        }
+      ],
+      "all_snapshot_instances_read": true,
+      "classification": "live_metadata_differs",
+      "differences_beyond_empty_value_normalization_and_duplicate_policies": [
+        {
+          "address": "aws_apigatewayv2_stage.status",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/deployment_id"
+          ]
+        }
+      ],
+      "role_policies_identical_to_separately_tracked_resources": [
+        "aws_iam_role.function"
+      ]
+    },
+    {
+      "stack": "eventbridge-trigger",
+      "snapshot_sha256": "a8bdb7a6eabb9def48b94abe29d6b39d10344bd8b214f7d19b1b26e514d3c63e",
+      "snapshot_serial": 9,
+      "instances_in_snapshot": 8,
+      "plan_exit_code": 2,
+      "refresh_log_entries": 8,
+      "status": "drift_detected",
+      "drift": [
+        {
+          "address": "aws_cloudwatch_event_rule.raw_upload",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_iam_role.events",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/inline_policy",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_iam_role.workflow",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/inline_policy",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_sfn_state_machine.raw_trigger",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/tags"
+          ]
+        }
+      ],
+      "all_snapshot_instances_read": true,
+      "classification": "readback_only_differences",
+      "differences_beyond_empty_value_normalization_and_duplicate_policies": [],
+      "role_policies_identical_to_separately_tracked_resources": [
+        "aws_iam_role.events",
+        "aws_iam_role.workflow"
+      ]
+    },
+    {
+      "stack": "foundation",
+      "snapshot_sha256": "1456d8455ec08297057ed45f1bacd802f667251c9549fc0ac05321a0a792ed2d",
+      "snapshot_serial": 26,
+      "instances_in_snapshot": 25,
+      "refresh_log_entries": 25,
+      "all_snapshot_instances_read": true,
+      "classification": "matches_live_provider_read",
+      "drift": [],
+      "source": "shared S3 backend"
+    },
+    {
+      "stack": "hosting",
+      "snapshot_sha256": "9bb035fe2d8b473e7958f1f873ef94f1076bfa18934e04d450a6b40a6d4f367b",
+      "snapshot_serial": 12,
+      "instances_in_snapshot": 9,
+      "plan_exit_code": 0,
+      "refresh_log_entries": 9,
+      "status": "matches_live_provider_read",
+      "drift": [],
+      "all_snapshot_instances_read": true,
+      "classification": "matches_live_provider_read",
+      "differences_beyond_empty_value_normalization_and_duplicate_policies": [],
+      "role_policies_identical_to_separately_tracked_resources": []
+    },
+    {
+      "stack": "ingestion",
+      "snapshot_sha256": "85ab1fea48f0a670ce863564db72eb631c04d60c7f1ccd800dfa4ac1db9f9cec",
+      "snapshot_serial": 132,
+      "instances_in_snapshot": 33,
+      "plan_exit_code": 2,
+      "refresh_log_entries": 33,
+      "status": "drift_detected",
+      "drift": [
+        {
+          "address": "aws_s3_object.deployment_artifact[\"bda_pipeline.zip\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/metadata",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_s3_object.deployment_artifact[\"control.zip\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/metadata",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_s3_object.deployment_artifact[\"curate_transactions.py\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/metadata",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_s3_object.deployment_artifact[\"model/comparison.json\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/metadata",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_s3_object.deployment_artifact[\"model/deployment.json\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/metadata",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_s3_object.deployment_artifact[\"model/features.json\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/metadata",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_s3_object.deployment_artifact[\"model/hist-depth5.ubj\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/metadata",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_s3_object.deployment_artifact[\"model/model-manifest.json\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/metadata",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_s3_object.deployment_artifact[\"model/selection.json\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/metadata",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_s3_object.deployment_artifact[\"runtime.gluewheels.zip\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/metadata",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_s3_object.deployment_artifact[\"score_transactions.py\"]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/metadata",
+            "/tags"
+          ]
+        }
+      ],
+      "all_snapshot_instances_read": true,
+      "classification": "readback_only_differences",
+      "differences_beyond_empty_value_normalization_and_duplicate_policies": [],
+      "role_policies_identical_to_separately_tracked_resources": []
+    },
+    {
+      "stack": "orchestration",
+      "snapshot_sha256": "615167982224b68f6b50f968562a72b039b4323577680edc1c6c73df889a47be",
+      "snapshot_serial": 4,
+      "instances_in_snapshot": 3,
+      "plan_exit_code": 2,
+      "refresh_log_entries": 3,
+      "status": "drift_detected",
+      "drift": [
+        {
+          "address": "aws_iam_role.workflow[0]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/inline_policy",
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_sfn_state_machine.batch[0]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/tags"
+          ]
+        }
+      ],
+      "all_snapshot_instances_read": true,
+      "classification": "readback_only_differences",
+      "differences_beyond_empty_value_normalization_and_duplicate_policies": [],
+      "role_policies_identical_to_separately_tracked_resources": [
+        "aws_iam_role.workflow[0]"
+      ]
+    },
+    {
+      "stack": "sagemaker",
+      "snapshot_sha256": "ba6f733baf398ca72983de1ac858de8f249ddd40c59c6c9bf02bb1a3af3d70f6",
+      "snapshot_serial": 4,
+      "instances_in_snapshot": 3,
+      "plan_exit_code": 2,
+      "refresh_log_entries": 3,
+      "status": "drift_detected",
+      "drift": [
+        {
+          "address": "aws_ecr_repository.training",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/tags"
+          ]
+        },
+        {
+          "address": "aws_iam_role.training",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/inline_policy",
+            "/tags"
+          ]
+        }
+      ],
+      "all_snapshot_instances_read": true,
+      "classification": "readback_only_differences",
+      "differences_beyond_empty_value_normalization_and_duplicate_policies": [],
+      "role_policies_identical_to_separately_tracked_resources": [
+        "aws_iam_role.training"
+      ]
+    },
+    {
+      "stack": "scoring",
+      "snapshot_sha256": "6656b7cf98efcc6189401eefc2c9213f76fa9713dd46b12e920e678fc8e674ca",
+      "snapshot_serial": 25,
+      "instances_in_snapshot": 9,
+      "plan_exit_code": 2,
+      "refresh_log_entries": 9,
+      "status": "drift_detected",
+      "drift": [
+        {
+          "address": "aws_iam_role.scoring[0]",
+          "actions": [
+            "update"
+          ],
+          "changed_paths": [
+            "/inline_policy/0/policy"
+          ]
+        }
+      ],
+      "all_snapshot_instances_read": true,
+      "classification": "readback_only_differences",
+      "differences_beyond_empty_value_normalization_and_duplicate_policies": [],
+      "role_policies_identical_to_separately_tracked_resources": [
+        "aws_iam_role.scoring[0]"
+      ]
+    },
+    {
+      "stack": "streaming",
+      "snapshot_sha256": "f6865788cc6b7aedb9617487a823ac9f8881609b018449e95c08c1cb3888a5d0",
+      "snapshot_serial": 31,
+      "instances_in_snapshot": 14,
+      "plan_exit_code": 2,
+      "refresh_log_entries": 14,
+      "status": "drift_detected",
+      "drift": [
+        {
+          "address": "aws_kinesis_stream.replay[0]",
+          "actions": [
+            "delete"
+          ],
+          "changed_paths": [
+            ""
+          ]
+        },
+        {
+          "address": "aws_lambda_event_source_mapping.replay[0]",
+          "actions": [
+            "delete"
+          ],
+          "changed_paths": [
+            ""
+          ]
+        }
+      ],
+      "all_snapshot_instances_read": true,
+      "classification": "stale_missing_resources",
+      "differences_beyond_empty_value_normalization_and_duplicate_policies": [
+        {
+          "address": "aws_kinesis_stream.replay[0]",
+          "actions": [
+            "delete"
+          ],
+          "changed_paths": [
+            "/arn",
+            "/encryption_type",
+            "/enforce_consumer_deletion",
+            "/id",
+            "/kms_key_id",
+            "/max_record_size_in_kib",
+            "/name",
+            "/region",
+            "/retention_period",
+            "/shard_count",
+            "/stream_mode_details",
+            "/tags_all",
+            "/warm_throughput_mib_ps"
+          ]
+        },
+        {
+          "address": "aws_lambda_event_source_mapping.replay[0]",
+          "actions": [
+            "delete"
+          ],
+          "changed_paths": [
+            "/arn",
+            "/batch_size",
+            "/bisect_batch_on_function_error",
+            "/destination_config",
+            "/enabled",
+            "/event_source_arn",
+            "/function_arn",
+            "/function_name",
+            "/function_response_types",
+            "/id",
+            "/last_modified",
+            "/last_processing_result",
+            "/maximum_batching_window_in_seconds",
+            "/maximum_record_age_in_seconds",
+            "/maximum_retry_attempts",
+            "/parallelization_factor",
+            "/region",
+            "/starting_position",
+            "/state",
+            "/state_transition_reason",
+            "/tags_all",
+            "/tumbling_window_in_seconds",
+            "/uuid"
+          ]
+        }
+      ],
+      "role_policies_identical_to_separately_tracked_resources": []
+    }
+  ],
+  "replaced_local_foundation_snapshot": {
+    "stack": "foundation",
+    "snapshot_sha256": "ad82a2f331645da8f3934c34766306a7aeb558e7f662ad4d0d74f99611b96be3",
+    "snapshot_serial": 32,
+    "instances_in_snapshot": 25,
+    "plan_exit_code": 2,
+    "refresh_log_entries": 25,
+    "status": "drift_detected",
+    "drift": [
+      {
+        "address": "aws_athena_named_query.corridors",
+        "actions": [
+          "delete"
+        ],
+        "changed_paths": [
+          ""
+        ]
+      },
+      {
+        "address": "aws_athena_named_query.reconcile",
+        "actions": [
+          "delete"
+        ],
+        "changed_paths": [
+          ""
+        ]
+      },
+      {
+        "address": "aws_budgets_budget.account",
+        "actions": [
+          "update"
+        ],
+        "changed_paths": [
+          "/limit_amount",
+          "/notification/0/subscriber_email_addresses/0",
+          "/notification/1/subscriber_email_addresses/0",
+          "/notification/2/subscriber_email_addresses/0"
+        ]
+      },
+      {
+        "address": "aws_glue_catalog_table.full",
+        "actions": [
+          "update"
+        ],
+        "changed_paths": [
+          "/storage_descriptor/0/columns"
+        ]
+      },
+      {
+        "address": "aws_s3_object.glue_script",
+        "actions": [
+          "update"
+        ],
+        "changed_paths": [
+          "/etag",
+          "/version_id"
+        ]
+      },
+      {
+        "address": "aws_sns_topic_subscription.email",
+        "actions": [
+          "delete"
+        ],
+        "changed_paths": [
+          ""
+        ]
+      }
+    ],
+    "all_snapshot_instances_read": true
+  },
+  "aws_resources_modified": false,
+  "working_backends_modified": false
+}
