@@ -249,7 +249,7 @@ def workflow():
         # Step 3: end the execution as FAILED (outputs and lock are preserved).
         'Failed': {'Type': 'Fail', 'Error': 'IngestFailed', 'Cause': 'Run outputs preserved; inspect evidence and recover only after all workers stop.'},
     }
-    return {'Comment': 'Parallel verified full batch; 15-second bounded processing checks; no paid-job retries.', 'StartAt': 'Begin', 'TimeoutSeconds': 14400, 'States': states}
+    return {'Comment': 'Parallel verified full batch; 15-second bounded processing checks; no paid-job retries.', 'StartAt': 'Begin', 'TimeoutSeconds': 43200, 'States': states}
 
 
 if __name__ == '__main__':
