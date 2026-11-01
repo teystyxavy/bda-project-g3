@@ -11,14 +11,14 @@ const escapeText = value => String(value ?? '').replace(/[&<>"']/g, character =>
 
 function selectDashboardView(view) {
   activeView=view;
-  for(const name of ['aml','treasury','ingestion']) {
+  for(const name of ['aml','network','ingestion']) {
     element(name).hidden=name!==view || (name!=='ingestion' && !snapshot);
     element(`${name}-tab`).setAttribute('aria-pressed',String(name===view));
   }
   element('status').hidden=view==='ingestion';element('methods').hidden=view==='ingestion';
-  if(view==='treasury' && snapshot) renderTreasury();
+  if(view==='network' && snapshot) renderNetwork();
 }
-for(const view of ['aml','treasury','ingestion']) element(`${view}-tab`).onclick=()=>selectDashboardView(view);
+for(const view of ['aml','network','ingestion']) element(`${view}-tab`).onclick=()=>selectDashboardView(view);
 
 function cards(target, items) {
   element(target).innerHTML = items.map(([label,value,detail]) => `<div class="kpi"><span>${escapeText(label)}</span><strong>${escapeText(value)}</strong><span>${escapeText(detail)}</span></div>`).join('');
@@ -152,17 +152,6 @@ function showDetailLegacy(row) {
   element('close-detail').onclick=()=>{element('detail').hidden=true;};
 }
 
-function renderTreasuryLegacy() {
-  const selection=element('day').value, current=snapshot.treasury[selection];
-  cards('treasury-kpis',[['Transactions',integer(current.transactions),'Full dataset · selected period'],['USD-equivalent volume',dollars(current.volume_usd),'Historical same-day FX'],['Top-five bank-pair share',percent(current.top5_share),`${integer(current.bank_pairs)} directed pairs`],['Bank-pair HHI',current.hhi==null?'Unavailable':current.hhi.toFixed(4),'0–1 · larger = more concentrated']]);
-  bars('banks',current.banks,row=>`${row.from_bank} → ${row.to_bank}`,'volume_usd',dollars);
-  bars('currencies',current.currencies.slice(0,15),row=>`${row.payment_currency} → ${row.receiving_currency}`,'volume_usd',dollars);
-  trend('volume-trend',snapshot.treasury_daily,'volume_usd',dollars,selection);
-  trend('hhi-trend',snapshot.treasury_daily,'hhi',value=>value.toFixed(2),selection);
-  table('corridors',['From bank','To bank','Transactions','USD volume','Period share'],current.banks.map(row=>[row.from_bank,row.to_bank,integer(row.transactions),dollars(row.volume_usd),percent(row.share)]));
-  element('bank-share').textContent=`Shown top ${current.banks.length} pairs account for ${percent(current.banks.reduce((sum,row)=>sum+row.share,0))} of selected-period volume. Shares and HHI use all pairs, including those outside this table.`;
-}
-
 function download(rows,name) {
   if (!rows.length) return;
   const keys=Object.keys(rows[0]);
@@ -197,7 +186,7 @@ async function start(snapshotSource=null) {
     if(snapshot.schema_version!==1) throw new Error('Unsupported snapshot version');
     updateEvaluationLabels();renderScoringCoverage();
     const fullAml = snapshot.aml_scope === 'full';
-    element('status').textContent=`Snapshot generated ${snapshot.generated_at.slice(0,10)} · AML ${fullAml ? 'full population' : 'cohort'} ${integer(snapshot.cohort_rows)} rows · Treasury ${integer(snapshot.full_rows)} rows`;
+    element('status').textContent=`Snapshot generated ${snapshot.generated_at.slice(0,10)} · AML ${fullAml ? 'full population' : 'cohort'} ${integer(snapshot.cohort_rows)} rows · Networks ${integer(snapshot.full_rows)} rows`;
     if (fullAml) {
       element('aml-scope').textContent='Retrospective full-population queue. Rule scores are priorities, not probabilities.';
       element('score-scope').textContent='All transactions in the selected period.';
@@ -207,7 +196,7 @@ async function start(snapshotSource=null) {
       element('scoring-control').hidden=false;element('model-comparison').hidden=false;element('model-methods').hidden=false;
       element('aml-scope').textContent='Retrospective full-population queues. Compare frozen-model ranking with the rule baseline; neither score is a probability.';
       if(snapshot.model.inference_source==='aws-glue') {
-        element('method-scope').textContent='Features and model scores come from verified AWS Glue runs. Rule scoring, explanation reconstruction and dashboard export run locally. Treasury uses the full population.';
+        element('method-scope').textContent='Features and model scores come from verified AWS Glue runs. Rule scoring, explanation reconstruction and dashboard export run locally. Mule networks use the full population.';
       }
       element('scoring').onchange=renderAml;
     }
@@ -216,18 +205,10 @@ async function start(snapshotSource=null) {
       element('status').textContent=`Run ${p.run_id} · ${integer(snapshot.full_rows)} transactions · ${p.start_date} to ${p.end_date} · Dataset version ${p.dataset_version??'unrecorded local copy'} · Refreshed ${p.refresh_time}`;
       const scope=p.source_scope==='smoke-prefix' ? 'Demonstration sample' : `Selected ${p.subset || 'HI-Small'} population`;
       element('method-scope').textContent=`${scope}. Both views use the same verified transaction run. ${snapshot.model?.evaluation_scope || 'Optional training creates a candidate for separate review.'}`;
-      element('day').options[0].textContent='All transaction dates';
-      document.querySelector('#treasury .heading p').textContent=`${integer(snapshot.full_rows)} transactions in this run. High volume and concentration do not imply suspicious activity.`;
-      document.querySelectorAll('#treasury article p').forEach(node=>{
-        if(node.textContent.startsWith('Full 18-day context')) node.textContent='Full transaction-date context; summary selection is highlighted.';
-      });
       document.querySelector('footer').textContent='Group 3 · Verified batch analysis';
     }
-    element('day').options.length=1;
-    snapshot.treasury_daily.forEach(row=>{const option=document.createElement('option');option.value=row.day;option.textContent=row.day;element('day').appendChild(option);});
-    element('split').onchange=renderAml;element('day').onchange=renderTreasury;
+    element('split').onchange=renderAml;
     element('export-queue').onclick=()=>download(currentQueue().queue,`queue-${isModelQueue()?'model':'rules'}-${element('split').value}.csv`);
-    element('export-corridors').onclick=()=>download(snapshot.treasury[element('day').value].banks,`corridors-${element('day').value}.csv`);
     table('variants',['Variant','Precision@100','Recall@100','Average precision'],snapshot.diagnostics.variants.map(row=>[row.variant,percent(row.precision_at_k),percent(row.recall_at_k),row.average_precision==null?'Unavailable':row.average_precision.toFixed(4)]));
     table('reasons',['Score','Reasons','Reviewed','Positives','False positives'],snapshot.diagnostics.top100_reasons.map(row=>[row.risk_score,row.risk_reasons,row.reviewed,row.positives,row.false_positives]));
     element('provenance').textContent=JSON.stringify({generated_at:snapshot.generated_at,pipeline:snapshot.pipeline,sources:snapshot.sources,provenance:snapshot.provenance,model:snapshot.model?{name:snapshot.model.name,provenance:snapshot.model.provenance}:undefined},null,2);
@@ -394,7 +375,7 @@ start();
   async function loadResults(run) {
     if(loadedRelease===run.release_url) return true;
     const ok=await start(resultPath(run));
-    if(ok) {loadedRelease=run.release_url;element('ingestion-run-note').textContent='Verified results loaded. Open AML review or Treasury corridors to explore this run.';}
+    if(ok) {loadedRelease=run.release_url;element('ingestion-run-note').textContent='Verified results loaded. Open AML review or Mule networks to explore this run.';}
     else element('ingestion-run-note').textContent='Run succeeded. Results are not available here yet; select View verified results to try again.';
     return ok;
   }
@@ -598,8 +579,6 @@ function initialiseExploration() {
   element('aml-reset').onclick=()=>{element('aml-population').value='all';element('review-capacity').value='100';clearQueueFilters();renderAml();};
   for(const id of ['queue-search','queue-minimum']) element(id).oninput=renderQueue;
   for(const id of ['queue-payment','queue-currency','queue-sort']) element(id).onchange=renderQueue;
-  element('corridor-picker').onchange=renderCorridor;
-  element('treasury-reset').onclick=()=>{element('day').value='all';element('corridor-picker').value='0';renderTreasury();};
 }
 function clearQueueFilters() {
   for(const id of ['queue-search','queue-minimum','queue-payment','queue-currency']) element(id).value='';
@@ -704,43 +683,185 @@ function showDetail(row) {
   if(history) table('account-timeline',['Event time','Receiver bank / account','Payment','Prior-day USD'],history.events.map(event=>[event.timestamp.replace('T',' ').slice(0,16),`${event.to_bank} / ${event.to_account}`,event.payment_format,dollars(event.amount_usd_asof)]));
   element('close-detail').onclick=()=>{element('detail').hidden=true;};
 }
-function renderTreasury() {
-  renderTreasuryLegacy();
-  if(!snapshot?.exploration) {element('treasury-explore').hidden=true;element('treasury-context').hidden=true;return;}
-  initialiseExploration();element('treasury-explore').hidden=false;element('treasury-context').hidden=false;
-  const data=snapshot.exploration.treasury, period=element('day').value, current=snapshot.treasury[period];
-  element('treasury-context').textContent=`${period==='all'?'All transaction dates':period} · ${integer(current.transactions)} transactions · ${dollars(current.volume_usd)} USD-equivalent · Same-day historical FX · Source ${snapshot.pipeline?.run_id||'verified batch'} · Volume describes treasury exposure.`;
-  element('corridor-coverage').textContent=data.coverage;
-  selectOptions('corridor-picker',data.corridors.map((row,index)=>String(index)),value=>{const row=data.corridors[Number(value)];return `${row.from_bank} → ${row.to_bank}`;});
-  const nodes=data.heatmap_nodes, cells=data.heatmaps[period], lookup=new Map(cells.map(row=>[JSON.stringify([row.source,row.target]),row]));
-  const max=Math.max(1,...cells.map(row=>row.volume_usd));
-  element('bank-heatmap').innerHTML=`<table class="heatmap"><thead><tr><th>Send ↓ / receive →</th>${nodes.map(node=>`<th>${escapeText(node)}</th>`).join('')}</tr></thead><tbody>${nodes.map(source=>`<tr><th>${escapeText(source)}</th>${nodes.map(target=>{const row=lookup.get(JSON.stringify([source,target]));const amount=row?.volume_usd||0;const intensity=amount/max;const index=data.corridors.findIndex(item=>item.from_bank===source&&item.to_bank===target);return `<td style="background:rgba(43,108,154,${.04+intensity*.85})"><button ${index<0?'disabled':''} data-corridor="${index}" title="${escapeText(source)} → ${escapeText(target)}: ${dollars(amount)}, ${integer(row?.transaction_count||0)} transactions" style="color:${intensity>.55?'white':'#183d52'}">${amount?compact(amount):'0'}</button></td>`;}).join('')}</tr>`).join('')}</tbody></table><p class="field-help">Cell labels are USD volume. Linear colour scale; darker = larger volume. Residual groups and untracked corridors have no individual drilldown.</p>`;
-  element('bank-heatmap').querySelectorAll('button[data-corridor]').forEach(button=>{button.onclick=()=>{element('corridor-picker').value=button.dataset.corridor;renderCorridor();};});
-  chartLines('share-trend',[{name:'Top-one share',color:'#2b6c9a',rows:data.daily_shares.map(row=>({x:Date.parse(row.day),y:row.top1_share,label:row.day.slice(5)}))},{name:'Top-five share',color:'#8971b0',rows:data.daily_shares.map(row=>({x:Date.parse(row.day),y:row.top5_share,label:row.day.slice(5)}))}],1);
-  const comparison=data.comparisons[period];
-  element('movers-period').textContent=comparison?`${comparison.label}. Share changes use all bank pairs and each period’s total volume. This is a descriptive comparison; it does not identify a cause.`:'No earlier observed period is available for comparison.';
-  if(comparison) table('corridor-movers',['Sender','Receiver','Previous USD','Current USD','USD change','Share change'],comparison.movers.map(row=>[row.from_bank,row.to_bank,dollars(row.previous),dollars(row.current),`${row.volume_change>=0?'+':''}${dollars(row.volume_change)}`,signedPercent(row.share_change)]));
-  else element('corridor-movers').textContent='Unavailable for the first observed day.';
-  renderCorridor();renderCurrencyFlow();
-  element('corridors').querySelectorAll('tbody tr').forEach((tr,index)=>{const row=current.banks[index];const button=document.createElement('button');button.textContent=row.from_bank;button.onclick=()=>{const selected=data.corridors.findIndex(item=>item.from_bank===row.from_bank&&item.to_bank===row.to_bank);if(selected>=0){element('corridor-picker').value=String(selected);renderCorridor();}};tr.firstChild.replaceChildren(button);});
+
+// ---- BQ2: mule networks (hubs, loops, rings) and the ring node graph ----
+let networkReady=false, selectedRing=null, selectedAccount=null;
+const ringLayouts={};
+const GRAPH={width:820,height:540,margin:48};
+const ROLE={hub:{label:'Hub',color:'#b3402f',radius:13},loop:{label:'Loop account',color:'#7c5cb0',radius:9},counterparty:{label:'Counterparty',color:'#2b6c9a',radius:6}};
+const share = value => value==null ? 'Unavailable' : `${(value*100).toFixed(1)}%`;
+const times = value => value==null ? 'Unavailable' : `${value.toFixed(1)}×`;
+const shortAccount = id => {const [bank,account='']=String(id).split(':');return account.length>9?`${bank}:…${account.slice(-5)}`:String(id);};
+const dateRange = (first,last) => `${monthDay(first.slice(0,10))} → ${monthDay(last.slice(0,10))}`;
+
+function renderNetwork() {
+  const data=snapshot?.network;
+  element('network-body').hidden=!data;element('network-empty').hidden=Boolean(data);
+  if(!data) {
+    element('network-context').textContent=`${integer(snapshot?.full_rows||0)} transactions in this release.`;
+    element('network-empty').textContent='This release was published before the mule-network analysis. Run the pipeline again to publish BQ2 network results.';
+    return;
+  }
+  const t=data.totals, p=data.parameters, headline=data.thresholds.find(row=>row.headline)||data.thresholds[0];
+  const three=data.loops.three_account, rings=data.rings;
+  element('network-question').textContent=`${data.question} Audience: ${data.audience}.`;
+  element('network-context').textContent=`${integer(t.rows)} transactions · ${integer(t.accounts)} accounts · ${integer(t.links)} account links after merging repeat payments · ${integer(t.self_transfers)} self-transfers excluded · Source ${snapshot.pipeline?.run_id||'verified batch'} · ${data.verification?.status==='passed'?'Glue tables matched an independent recomputation':'Local analysis'}`;
+  cards('network-kpis',[
+    ['Rings to investigate',integer(rings.rings),`${integer(rings.accounts)} accounts · largest ${integer(rings.largest)}`],
+    ['Ring accounts touching laundering',share(rings.laundering_rate),`${times(rings.lift)} the ${share(t.laundering_rate)} base rate`],
+    [`Mule-sized hubs (${p.headline_threshold}+ in and out)`,integer(headline.hubs.accounts),`${share(headline.hubs.laundering_rate)} touch laundering · ${integer(headline.high_volume.accounts)} high-volume listed separately`],
+    ['Three-account loops',integer(three.loops),`${integer(three.accounts)} accounts · ${share(three.laundering_rate)} touch laundering`]]);
+  table('threshold-table',['Cut-off','Hubs','Hubs · laundering','High-volume · laundering','Fan-in only','Fan-out only'],
+    data.thresholds.map(row=>[`${row.threshold}+${row.headline?' (rings)':''}`,integer(row.hubs.accounts),`${integer(row.hubs.laundering_accounts)} · ${share(row.hubs.laundering_rate)}`,
+      `${integer(row.high_volume.accounts)} · ${share(row.high_volume.laundering_rate)}`,`${integer(row.fan_in_only.accounts)} · ${share(row.fan_in_only.laundering_rate)}`,`${integer(row.fan_out_only.accounts)} · ${share(row.fan_out_only.laundering_rate)}`]));
+  element('threshold-note').textContent=`A hub has at least this many distinct senders and receivers, and at most ${p.max_links} links in total. The cut-off is our choice, so three are shown.`;
+  const signals=[
+    ['All accounts (base rate)',{accounts:t.accounts,laundering_accounts:t.laundering_accounts,laundering_rate:t.laundering_rate,lift:1}],
+    [`Fan-out ${p.headline_threshold}+ only`,headline.fan_out_only],[`Fan-in ${p.headline_threshold}+ only`,headline.fan_in_only],
+    ['Two-account back-and-forth',data.loops.two_account],['Three-account loops',three],
+    ['Ring accounts',{accounts:rings.accounts,laundering_accounts:rings.laundering_accounts,laundering_rate:rings.laundering_rate,lift:rings.lift}],
+    [`Mule-sized hubs (${p.headline_threshold}+)`,headline.hubs]];
+  bars('signal-bars',signals.map(([label,row])=>({label,value:row.laundering_rate??0})),row=>row.label,'value',share);
+  table('signal-table',['Signal','Accounts','Touching laundering','Rate','Against base'],signals.map(([label,row])=>[label,integer(row.accounts),integer(row.laundering_accounts),share(row.laundering_rate),times(row.lift)]));
+  table('top-rings',['Rings reviewed','Accounts reviewed','Accounts touching laundering','Rings with any laundering'],data.top_rings.map(row=>[`Top ${integer(row.rings)}`,integer(row.accounts),share(row.laundering_rate),`${integer(row.rings_with_laundering)} of ${integer(row.rings)}`]));
+  element('network-terms').innerHTML=Object.entries(data.definitions).map(([term,text])=>`<dt>${escapeText(term.replace('_',' '))}</dt><dd>${escapeText(text)}</dd>`).join('');
+  element('network-verification').textContent=data.verification?JSON.stringify(data.verification,null,2):'';
+  renderRingList(data);
+  if(!networkReady) {
+    networkReady=true;
+    element('ring-picker').onchange=()=>selectRing(element('ring-picker').value);
+    element('ring-search').oninput=()=>findAccount(element('ring-search').value);
+    element('ring-reset').onclick=()=>{if(selectedRing){delete ringLayouts[selectedRing];renderRing();}};
+    element('export-rings').onclick=()=>download(snapshot.network.ring_list,'mule-network-rings.csv');
+  }
+  const ids=data.ring_list.map(row=>row.ring_id);
+  if(!ids.length) {
+    element('ring-explorer').hidden=true;
+    element('ring-list').textContent='No rings were found in this run. Small demonstration runs usually contain too few payments for hubs or loops.';
+    return;
+  }
+  element('ring-explorer').hidden=false;
+  selectOptions('ring-picker',ids,id=>{const row=data.ring_list.find(item=>item.ring_id===id);return `#${row.rank} · ${row.accounts} accounts · ${row.hubs} hub${row.hubs===1?'':'s'}, ${row.loops} loop${row.loops===1?'':'s'}`;});
+  selectRing(ids.includes(selectedRing)?selectedRing:ids[0]);
 }
-function renderCorridor() {
-  const row=snapshot.exploration.treasury.corridors[Number(element('corridor-picker').value||0)];
-  if(!row) return;
-  const period=element('day').value, selected=period==='all'?row.daily:row.daily.filter(item=>item.day===period);
-  const volume=selected.reduce((sum,item)=>sum+item.volume_usd,0), count=selected.reduce((sum,item)=>sum+item.transactions,0);
-  cards('corridor-kpis',[['Selected corridor',`${row.from_bank} → ${row.to_bank}`,period==='all'?'All observed dates':period],['USD volume',dollars(volume),'Same-day historical FX'],['Transactions',integer(count),'Selected period'],['Share of period volume',percent(snapshot.treasury[period].volume_usd?volume/snapshot.treasury[period].volume_usd:0),'All bank pairs in denominator']]);
-  chartLines('corridor-volume',[{name:'USD volume',color:'#2b6c9a',rows:row.daily.map(item=>({x:Date.parse(item.day),y:item.volume_usd,label:item.day.slice(5)}))}],Math.max(1,...row.daily.map(item=>item.volume_usd)),null,'Date',dollars);
-  chartLines('corridor-share',[{name:'Daily share',color:'#8971b0',rows:row.daily.map(item=>({x:Date.parse(item.day),y:item.share,label:item.day.slice(5)}))}],Math.max(.01,...row.daily.map(item=>item.share)));
-  bars('corridor-currencies',row.currencies,item=>`${item.payment_currency} → ${item.receiving_currency}`,'volume_usd',dollars);
-  table('corridor-transactions',['Date','Transactions','Average USD'],row.daily.map(item=>[item.day,integer(item.transactions),item.transactions?dollars(item.volume_usd/item.transactions):'Unavailable']));
+
+function renderRingList(data) {
+  element('ring-list-note').textContent=`Top ${data.ring_list.length} of ${integer(data.rings.rings)} rings. ${data.definitions.ranking} The last column is a check against labels, not an input.`;
+  table('ring-list',['Rank','Ring (smallest account)','Accounts','Hubs','Loops','Payments','USD','Active','Accounts touching laundering'],
+    data.ring_list.map(row=>[row.rank,row.ring_id,integer(row.accounts),integer(row.hubs),integer(row.loops),integer(row.txns),dollars(row.usd),dateRange(row.first_seen,row.last_seen),share(row.laundering_rate)]));
+  element('ring-list').querySelectorAll('tbody tr').forEach((tr,index)=>{
+    const row=data.ring_list[index], button=document.createElement('button');
+    button.textContent=row.ring_id;button.onclick=()=>{selectRing(row.ring_id);element('ring-explorer').scrollIntoView?.({behavior:'smooth'});};
+    tr.children?.[1]?.replaceChildren?.(button);
+  });
 }
-function renderCurrencyFlow() {
-  const current=snapshot.treasury[element('day').value], flows=current.currencies.slice(0,8).map(row=>({...row}));
-  const rest=current.currencies.slice(8).reduce((sum,row)=>sum+row.volume_usd,0);
-  if(rest>0) flows.push({payment_currency:'Other',receiving_currency:'Other',volume_usd:rest});
-  const max=Math.max(1,...flows.map(row=>row.volume_usd));
-  element('currency-flow').innerHTML=`<svg class="currency-flow" viewBox="0 0 950 ${70+flows.length*43}" role="img" aria-label="Directed currency flows, width proportional to USD volume"><text x="10" y="20">Payment currency</text><text x="690" y="20">Receiving currency</text>${flows.map((row,index)=>{const y=55+index*43;return `<g data-flow="${index}" tabindex="0" role="button" aria-label="${escapeText(row.payment_currency)} to ${escapeText(row.receiving_currency)}, ${dollars(row.volume_usd)}"><text x="10" y="${y+4}">${escapeText(row.payment_currency)}</text><path d="M170 ${y} C300 ${y-8},550 ${y+8},670 ${y}" fill="none" stroke="#729db9" stroke-width="${row.volume_usd/max*26}"/><text x="690" y="${y+4}">${escapeText(row.receiving_currency)}</text><text x="925" y="${y+4}" text-anchor="end">${dollars(row.volume_usd)}</text><title>${escapeText(row.payment_currency)} → ${escapeText(row.receiving_currency)}: ${dollars(row.volume_usd)}</title></g>`;}).join('')}</svg><p class="field-help">Ribbon widths use the same linear volume scale. Other combines the remaining flows; it is not a currency.</p>`;
-  element('currency-flow-detail').hidden=true;
-  element('currency-flow').querySelectorAll('[data-flow]').forEach(mark=>{const activate=()=>{const row=flows[Number(mark.dataset.flow)];element('currency-flow-detail').hidden=false;if(row.payment_currency==='Other'){element('currency-flow-detail').textContent='Other aggregates flows outside the eight shown; select an individually labelled flow for daily values.';return;}const values=snapshot.treasury_daily.map(day=>{const match=snapshot.treasury[day.day].currencies.find(item=>item.payment_currency===row.payment_currency&&item.receiving_currency===row.receiving_currency);return [day.day,dollars(match?.volume_usd||0),integer(match?.transactions||0)];});element('currency-flow-detail').innerHTML=`<h3>${escapeText(row.payment_currency)} → ${escapeText(row.receiving_currency)}</h3><div id="currency-daily" class="table-wrap"></div>`;table('currency-daily',['Date','USD volume','Transactions'],values);};mark.onclick=activate;mark.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activate();}};});
+
+function selectRing(id,account=null) {
+  selectedRing=id;selectedAccount=account;element('ring-picker').value=id;
+  const row=snapshot.network.ring_list.find(item=>item.ring_id===id), graph=snapshot.network.graphs[id];
+  element('ring-summary').textContent=`Rank ${row.rank}. ${row.hubs?`${row.hubs} hub${row.hubs===1?'':'s'} with ${integer(row.accounts-row.hubs)} linked accounts`:'Accounts linked by loops'}; ${integer(row.loops)} timed loop${row.loops===1?'':'s'}. Treat the ring as one case.`;
+  cards('ring-kpis',[['Accounts',integer(row.accounts),graph.truncated?`${graph.shown_accounts} drawn · hubs and loops always shown`:'All drawn'],
+    ['Red flags',`${row.hubs} · ${row.loops}`,'Hubs · timed loops'],['Payments',integer(row.txns),`${integer(row.links)} account links · ${dollars(row.usd)}`],
+    ['Active',dateRange(row.first_seen,row.last_seen),`${share(row.laundering_rate)} of accounts touch laundering (check only)`]]);
+  renderRing();
+}
+
+function findAccount(text) {
+  const query=text.trim().toLowerCase();
+  if(!query) {element('ring-search-result').textContent='';return;}
+  for(const row of snapshot.network.ring_list) {
+    const node=snapshot.network.graphs[row.ring_id].nodes.find(item=>item.id.toLowerCase().includes(query));
+    if(node) {element('ring-search-result').textContent=`${node.id} is in ring #${row.rank}.`;selectRing(row.ring_id,node.id);return;}
+  }
+  element('ring-search-result').textContent='No drawn ring contains that account. Only the listed rings are searchable here.';
+}
+
+// Deterministic force-directed layout (Fruchterman–Reingold): accounts repel
+// each other, links pull them together, a weak pull keeps the ring centred.
+function layoutRing(graph) {
+  const {width,height,margin}=GRAPH, n=graph.nodes.length, cx=width/2, cy=height/2;
+  const index=new Map(graph.nodes.map((node,i)=>[node.id,i]));
+  const order=graph.nodes.map((node,i)=>i).sort((a,b)=>({hub:0,loop:1,counterparty:2}[graph.nodes[a].role]-{hub:0,loop:1,counterparty:2}[graph.nodes[b].role])||a-b);
+  const pos=new Array(n);
+  order.forEach((i,rank)=>{const ring=graph.nodes[i].role==='hub'?.15:graph.nodes[i].role==='loop'?.45:.85, angle=rank*2.399963;
+    pos[i]={x:cx+Math.cos(angle)*ring*(width/2-margin),y:cy+Math.sin(angle)*ring*(height/2-margin)};});
+  const edges=graph.links.map(link=>[index.get(link.source),index.get(link.target)]).filter(([a,b])=>a!=null&&b!=null);
+  const k=Math.sqrt((width-2*margin)*(height-2*margin)/Math.max(n,1))*.75;
+  let temperature=width/8;
+  for(let step=0;step<320;step++) {
+    const move=pos.map(()=>({x:0,y:0}));
+    for(let a=0;a<n;a++) for(let b=a+1;b<n;b++) {
+      let dx=pos[a].x-pos[b].x, dy=pos[a].y-pos[b].y, d=Math.hypot(dx,dy)||.01;
+      const force=k*k/d; dx/=d; dy/=d;
+      move[a].x+=dx*force;move[a].y+=dy*force;move[b].x-=dx*force;move[b].y-=dy*force;
+    }
+    for(const [a,b] of edges) {
+      let dx=pos[a].x-pos[b].x, dy=pos[a].y-pos[b].y, d=Math.hypot(dx,dy)||.01;
+      const force=d*d/k; dx/=d; dy/=d;
+      move[a].x-=dx*force;move[a].y-=dy*force;move[b].x+=dx*force;move[b].y+=dy*force;
+    }
+    for(let i=0;i<n;i++) {
+      move[i].x+=(cx-pos[i].x)*.02*k/10;move[i].y+=(cy-pos[i].y)*.02*k/10;
+      const length=Math.hypot(move[i].x,move[i].y)||1, limited=Math.min(length,temperature);
+      pos[i].x=Math.min(width-margin,Math.max(margin,pos[i].x+move[i].x/length*limited));
+      pos[i].y=Math.min(height-margin,Math.max(margin,pos[i].y+move[i].y/length*limited));
+    }
+    temperature*=.985;
+  }
+  return Object.fromEntries(graph.nodes.map((node,i)=>[node.id,pos[i]]));
+}
+
+function renderRing() {
+  const graph=snapshot.network.graphs[selectedRing];
+  if(!graph) return;
+  const layout=ringLayouts[selectedRing]||(ringLayouts[selectedRing]=layoutRing(graph));
+  const byId=new Map(graph.nodes.map(node=>[node.id,node]));
+  const maxTxns=Math.max(1,...graph.links.map(link=>link.txns));
+  const linkMarkup=graph.links.map((link,i)=>`<line data-link="${i}" class="ring-link${link.loop?' ring-loop-link':''}" stroke-width="${(1+3*Math.log1p(link.txns)/Math.log1p(maxTxns)).toFixed(2)}" marker-end="url(#ring-arrow${link.loop?'-loop':''})"><title>${escapeText(link.source)} → ${escapeText(link.target)}: ${integer(link.txns)} payment${link.txns===1?'':'s'}, ${dollars(link.usd)}${link.loop?' · part of a timed loop':''}</title></line>`).join('');
+  const nodeMarkup=graph.nodes.map(node=>{const role=ROLE[node.role];return `<g class="ring-node${node.id===selectedAccount?' ring-node-selected':''}" data-node="${escapeText(node.id)}" tabindex="0" role="button" aria-label="${escapeText(role.label)} ${escapeText(node.id)}, ${integer(node.fan_in)} senders, ${integer(node.fan_out)} receivers"><circle r="${role.radius}" fill="${role.color}"/>${node.role==='counterparty'?'':`<text y="${-role.radius-5}" text-anchor="middle">${escapeText(shortAccount(node.id))}</text>`}<title>${escapeText(node.id)} · ${escapeText(role.label)} · ${integer(node.fan_in)} senders, ${integer(node.fan_out)} receivers</title></g>`;}).join('');
+  element('ring-graph').innerHTML=`<svg id="ring-svg" viewBox="0 0 ${GRAPH.width} ${GRAPH.height}" role="img" aria-label="Money flows between ${graph.shown_accounts} accounts of the selected ring"><defs>
+<marker id="ring-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8aa1b1"/></marker>
+<marker id="ring-arrow-loop" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#7c5cb0"/></marker></defs><g>${linkMarkup}</g><g>${nodeMarkup}</g></svg>`;
+  element('ring-graph-note').textContent=`${graph.truncated?`Showing ${graph.shown_accounts} of ${graph.total_accounts} accounts: every hub and loop account, then counterparties by payment volume. `:''}Drag accounts to rearrange. Select an account for its details.`;
+  placeRing(graph,layout,byId);
+  const svg=element('ring-svg');
+  svg?.querySelectorAll?.('[data-node]').forEach(mark=>{
+    const id=mark.dataset.node, activate=()=>{selectedAccount=id;showAccount(id);svg.querySelectorAll('[data-node]').forEach(other=>other.classList.toggle('ring-node-selected',other.dataset.node===id));};
+    mark.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activate();}};
+    let drag=null;
+    mark.onpointerdown=event=>{drag={x:event.clientX,y:event.clientY,moved:false};mark.setPointerCapture?.(event.pointerId);};
+    mark.onpointermove=event=>{
+      if(!drag) return;
+      if(Math.hypot(event.clientX-drag.x,event.clientY-drag.y)>3) drag.moved=true;
+      if(!drag.moved) return;
+      const point=svg.createSVGPoint();point.x=event.clientX;point.y=event.clientY;
+      const local=point.matrixTransform(svg.getScreenCTM().inverse());
+      layout[id]={x:Math.min(GRAPH.width-GRAPH.margin,Math.max(GRAPH.margin,local.x)),y:Math.min(GRAPH.height-GRAPH.margin,Math.max(GRAPH.margin,local.y))};
+      placeRing(graph,layout,byId);
+    };
+    mark.onpointerup=()=>{const click=drag&&!drag.moved;drag=null;if(click) activate();};
+  });
+  if(selectedAccount&&byId.has(selectedAccount)) showAccount(selectedAccount);
+  else element('ring-node').innerHTML='<h3>Account details</h3><p>Select an account in the graph.</p>';
+}
+
+// Moves nodes and trims each link to stop at the edge of its target circle.
+function placeRing(graph,layout,byId) {
+  const svg=element('ring-svg');
+  if(!svg?.querySelectorAll) return;
+  svg.querySelectorAll('[data-node]').forEach(mark=>{const p=layout[mark.dataset.node];mark.setAttribute('transform',`translate(${p.x.toFixed(1)},${p.y.toFixed(1)})`);});
+  svg.querySelectorAll('[data-link]').forEach(line=>{
+    const link=graph.links[Number(line.dataset.link)], a=layout[link.source], b=layout[link.target];
+    const d=Math.hypot(b.x-a.x,b.y-a.y)||1, from=ROLE[byId.get(link.source).role].radius+1, to=ROLE[byId.get(link.target).role].radius+3;
+    line.setAttribute('x1',(a.x+(b.x-a.x)*from/d).toFixed(1));line.setAttribute('y1',(a.y+(b.y-a.y)*from/d).toFixed(1));
+    line.setAttribute('x2',(b.x-(b.x-a.x)*to/d).toFixed(1));line.setAttribute('y2',(b.y-(b.y-a.y)*to/d).toFixed(1));
+  });
+}
+
+function showAccount(id) {
+  const graph=snapshot.network.graphs[selectedRing], node=graph.nodes.find(item=>item.id===id);
+  if(!node) return;
+  const out=graph.links.filter(link=>link.source===id).sort((a,b)=>b.usd-a.usd), inn=graph.links.filter(link=>link.target===id).sort((a,b)=>b.usd-a.usd);
+  const list=(links,key,arrow)=>links.length?`<ul class="ring-flows">${links.slice(0,6).map(link=>`<li>${arrow} ${escapeText(link[key])} · ${integer(link.txns)} payment${link.txns===1?'':'s'} · ${dollars(link.usd)}</li>`).join('')}${links.length>6?`<li>…and ${links.length-6} more in this ring</li>`:''}</ul>`:'<p class="field-help">None in this ring.</p>';
+  element('ring-node').innerHTML=`<h3>${escapeText(node.id)}</h3><p><span class="role-chip" style="background:${ROLE[node.role].color}">${escapeText(ROLE[node.role].label)}</span></p><div class="evidence-facts ring-facts"><span><small>Distinct senders</small>${integer(node.fan_in)}</span><span><small>Distinct receivers</small>${integer(node.fan_out)}</span><span><small>Received (all payments)</small>${dollars(node.in_usd)}</span><span><small>Sent (all payments)</small>${dollars(node.out_usd)}</span></div><h3>Money in, within this ring</h3>${list(inn,'source','←')}<h3>Money out, within this ring</h3>${list(out,'target','→')}<p class="field-help">Sender, receiver and USD counts cover the whole dataset.${node.role==='hub'?' Restricting this hub cuts the most flows in its ring.':''}</p>`;
 }

@@ -39,13 +39,29 @@ function run(status='RUNNING') {
     ...(status==='SUCCEEDED'?{release_url:'https://example.cloudfront.net/releases/verified-run/index.html'}:{})};
 }
 
+function networkSection() {
+  const group=(accounts,hits)=>({accounts,laundering_accounts:hits,laundering_rate:accounts?hits/accounts:null,lift:accounts?hits/accounts/0.01:null});
+  return {question:'Which accounts collect from many and pass it on?',audience:'Network investigations team',
+    parameters:{hub_thresholds:[5,10,15],headline_threshold:10,max_links:100,loop_window_days:7,min_ring_accounts:3},
+    totals:{rows:1000,self_transfers:10,accounts:500,links:900,laundering_accounts:5,laundering_rate:0.01},
+    thresholds:[5,10,15].map(threshold=>({threshold,headline:threshold===10,hubs:group(threshold===15?0:1,threshold===15?0:1),high_volume:group(0,0),fan_in_only:group(4,1),fan_out_only:group(6,1)})),
+    loops:{three_account:{loops:1,...group(3,3)},two_account:{pairs:2,...group(4,0)}},
+    rings:{rings:1,accounts:4,largest:4,coverage:0.8,laundering_accounts:4,laundering_rate:1,lift:100},
+    top_rings:[{rings:1,accounts:4,laundering_rate:1,rings_with_laundering:1}],
+    ring_list:[{rank:1,ring_id:'10:A',accounts:4,hubs:1,loops:1,red_flags:2,links:4,txns:9,usd:1234,first_seen:'2022-09-01T00:00:00',last_seen:'2022-09-03T00:00:00',laundering_rate:1}],
+    graphs:{'10:A':{nodes:[{id:'10:H',role:'hub',fan_in:10,fan_out:10,in_usd:500,out_usd:450},{id:'10:A',role:'loop',fan_in:1,fan_out:2,in_usd:5,out_usd:6},
+      {id:'10:B',role:'loop',fan_in:1,fan_out:1,in_usd:5,out_usd:5},{id:'20:R1',role:'counterparty',fan_in:1,fan_out:0,in_usd:45,out_usd:0}],
+      links:[{source:'10:A',target:'10:B',txns:1,usd:5,loop:true},{source:'10:B',target:'10:A',txns:1,usd:5,loop:true},{source:'10:A',target:'10:H',txns:2,usd:9,loop:false},{source:'10:H',target:'20:R1',txns:5,usd:45,loop:false}],
+      total_accounts:4,shown_accounts:4,truncated:false}},
+    definitions:{hub:'Hub definition.',ranking:'Hubs first.'},verification:{status:'passed'}};
+}
+
 function snapshot() {
   const metrics={rows:1000,k:100,positives:1,precision_at_k:0,recall_at_k:0,average_precision:0,lift_at_k:0};
   const view={metrics,flagged:0,daily:[],histogram:[],queue:[]};
   return {schema_version:1,generated_at:'2026-10-06',full_rows:1000,cohort_rows:1000,aml_scope:'full',
     aml:{test:view,validation:view,tail:view},diagnostics:{variants:[],top100_reasons:[]},
-    treasury_daily:[{day:'2022-09-01',volume_usd:5,hhi:1}],
-    treasury:{all:{transactions:1000,volume_usd:5,top5_share:1,bank_pairs:1,hhi:1,banks:[],currencies:[]}},
+    network:networkSection(),
     pipeline:{run_id:'verified-run',start_date:'2022-09-01',end_date:'2022-09-01',refresh_time:'2026-10-06'}};
 }
 
@@ -56,7 +72,7 @@ async function harness({configured=true,authenticated=true,stored={},search='',h
     const node=new Element();node.dataset.stage=match[1];node.statusElement=new Element();return node;
   });
   el('ingestion-size').value='demo';el('ingestion-subset').value='HI-Small';
-  el('split').value='test';el('scoring').value='rules';el('day').value='all';el('day').options=[new Element()];
+  el('split').value='test';el('scoring').value='rules';
   const storage=new Map(Object.entries(stored).map(([key,value])=>['is459-ingestion-'+key,JSON.stringify(value)]));
   if(authenticated) storage.set('is459-ingestion-auth',JSON.stringify({access_token:'fixture-access-token',
     expires_at:Date.now()+3600000,client_id:configuration.client_id}));
@@ -332,4 +348,38 @@ test('scoring coverage hides unsupported or inconsistent populations',async()=>{
     vm.runInContext('snapshot='+JSON.stringify(data)+';renderScoringCoverage()',h.context);
     assert.equal(h.el('scoring-coverage').hidden,true);
   }
+});
+
+
+test('mule-network tab renders hubs, loops, rings and the ring node graph from the snapshot',async()=>{
+  const h=await harness();
+  vm.runInContext(`snapshot=${JSON.stringify(snapshot())};selectDashboardView('network')`,h.context);
+  assert.equal(h.el('network').hidden,false);assert.equal(h.el('aml').hidden,true);
+  assert.equal(h.el('network-body').hidden,false);assert.equal(h.el('network-empty').hidden,true);
+  assert.match(h.el('network-kpis').innerHTML,/Rings to investigate/);
+  assert.match(h.el('network-kpis').innerHTML,/Mule-sized hubs \(10\+ in and out\)/);
+  assert.match(h.el('threshold-table').innerHTML,/10\+ \(rings\)/);
+  assert.match(h.el('ring-list').innerHTML,/10:A/);
+  assert.match(h.el('network-context').textContent,/Glue tables matched an independent recomputation/);
+  const svg=h.el('ring-graph').innerHTML;
+  assert.match(svg,/<svg id="ring-svg"/);
+  assert.equal((svg.match(/class="ring-node/g)||[]).length,4);
+  assert.equal((svg.match(/ring-loop-link/g)||[]).length,2);
+  assert.match(svg,/marker-end="url\(#ring-arrow-loop\)"/);
+  // The deterministic layout keeps every account inside the drawing area.
+  const layout=vm.runInContext("ringLayouts['10:A']",h.context);
+  for(const point of Object.values(layout)) {assert.ok(point.x>=48&&point.x<=772);assert.ok(point.y>=48&&point.y<=492);}
+  assert.deepEqual(vm.runInContext("JSON.stringify(layoutRing(snapshot.network.graphs['10:A']))",h.context),JSON.stringify(layout));
+  vm.runInContext("findAccount('20:r1')",h.context);
+  assert.match(h.el('ring-search-result').textContent,/20:R1 is in ring #1/);
+  vm.runInContext("showAccount('10:H')",h.context);
+  assert.match(h.el('ring-node').innerHTML,/Hub/);assert.match(h.el('ring-node').innerHTML,/→ 20:R1/);
+});
+
+test('releases from before the network analysis explain that BQ2 is missing',async()=>{
+  const h=await harness();
+  const old=snapshot();delete old.network;
+  vm.runInContext(`snapshot=${JSON.stringify(old)};selectDashboardView('network')`,h.context);
+  assert.equal(h.el('network-body').hidden,true);assert.equal(h.el('network-empty').hidden,false);
+  assert.match(h.el('network-empty').textContent,/before the mule-network analysis/);
 });
