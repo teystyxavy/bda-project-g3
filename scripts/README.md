@@ -20,6 +20,8 @@ python scripts/ingestion/ingest.py --help
 
 # Open the live dashboard using the existing Group 3 AWS identity.
 python scripts/aws/dashboard-signin.py --profile is459-g3-tools
+# Or double-click scripts\aws\open-dashboard.cmd (Windows) or
+# scripts/aws/open-dashboard.command (macOS); both re-run "aws login" if the session expired.
 
 # Package the dashboard ingestion API locally; creates no AWS resources.
 python scripts/aws/prepare-dashboard-api.py --output output/dashboard-control-package

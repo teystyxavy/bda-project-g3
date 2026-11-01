@@ -1,5 +1,7 @@
 # Keep source and documentation portable across Windows and Linux containers.
 * text=auto eol=lf
+# cmd.exe can mis-handle labels and goto in LF-only batch files.
+*.cmd text eol=crlf
 *.png binary
 *.jpg binary
 *.jpeg binary
