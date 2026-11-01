@@ -1,0 +1,33 @@
+{
+  "date": "2026-11-01",
+  "account": "588738581042",
+  "region": "ap-southeast-1",
+  "deleted_object_versions": 170,
+  "deleted_bytes": 4539490364,
+  "removed_current_objects": 167,
+  "deleted_catalog_table": "run_glue_smoke_20261101_b",
+  "removed_terraform_resources": {
+    "orchestration": 3,
+    "scoring": 9
+  },
+  "retired_stack_post_plans": "no-changes",
+  "handoff": {
+    "orchestration": {
+      "serial": 2,
+      "resources": 0,
+      "provision": false
+    },
+    "scoring": {
+      "serial": 2,
+      "resources": 0,
+      "provision": false
+    }
+  },
+  "dashboard_asset_hashes_unchanged": true,
+  "all_retained_objects_unchanged": true,
+  "retained_object_count": 4072,
+  "retained_job_definitions_unchanged": true,
+  "dashboard_http": 200,
+  "status_http": 200,
+  "paid_pipeline_runs_started": 0
+}

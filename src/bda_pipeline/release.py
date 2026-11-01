@@ -21,7 +21,7 @@ It writes ``<output>/site/<four files>`` plus ``<output>/manifest.json``
 outside ``site/`` so it is not itself served.
 
 Callers:
-    * ``ingest_compute`` at the end of the SageMaker Processing run;
+    * ``ingest_compute`` at the end of the Glue baseline/export run;
     * ``scripts/dashboard/prepare-dashboard-release.py`` locally;
     * ``ingest_control`` (Lambda control plane) imports ``ASSETS``,
       ``_inspect`` and ``SENSITIVE_TEXT`` to re-check a release before it

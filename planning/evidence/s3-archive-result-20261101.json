@@ -1,0 +1,28 @@
+{
+  "archive_bucket": "is459-g3-archive-588738581042-ap-southeast-1",
+  "archived_objects": 278,
+  "archived_bytes": 84740508,
+  "removed_buckets": [
+    "aws-glue-assets-588738581042-us-east-1",
+    "aws-logs-588738581042-us-east-1",
+    "emr-hurhur-bucket",
+    "is459-lurence",
+    "is459-week-3-s3-bucket",
+    "is459-week6-thad.2026-stackoverflow"
+  ],
+  "retired_glue_job": "covid-export-js",
+  "remaining_buckets": [
+    "is459-g3-588738581042-ap-southeast-1",
+    "is459-g3-archive-588738581042-ap-southeast-1",
+    "is459-g3-dashboard-588738581042-ap-southeast-1",
+    "is459-g3-stream-failures-588738581042-ap-southeast-1",
+    "is459-g3-tfstate-588738581042"
+  ],
+  "all_copies_sha256_verified": true,
+  "archive_terraform_post_plan": "no-changes",
+  "all_five_buckets_accessible": true,
+  "dashboard_http": 200,
+  "dashboard_pointer_unchanged": true,
+  "old_lab_job_absent": true,
+  "paid_pipeline_runs_started": 0
+}

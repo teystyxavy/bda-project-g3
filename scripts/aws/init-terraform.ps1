@@ -4,7 +4,7 @@ param(
     [Parameter(Mandatory)]
     [ValidateSet('foundation', 'hosting', 'scoring', 'sagemaker', 'ingestion',
         'cloud-ingestion', 'orchestration', 'streaming', 'dashboard-status',
-        'dashboard-control', 'eventbridge-trigger', 'tfstate-bootstrap')]
+        'dashboard-control', 'eventbridge-trigger', 'tfstate-bootstrap', 'archive')]
     [string]$Stack,
     [string]$Profile = 'is459-g3-tools',
     [string]$Terraform = 'terraform',

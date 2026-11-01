@@ -1,5 +1,11 @@
 # Refreshed Terraform state handoff — 31 October 2026
 
+**1 November cleanup supersedes the scoring/orchestration snapshots below.**
+Those two stacks were retired through Terraform; their authoritative S3 states
+now contain no managed resources, and shared input inventory serials/settings
+were updated. Do not restore their older snapshots to recreate removed resources.
+See [cleanup record](../../planning/runbooks/aws-cleanup-20261101.md).
+
 All 12 stacks have current state in the versioned, encrypted S3 bucket
 `is459-g3-tfstate-588738581042`, under `<stack>/terraform.tfstate`. The
 `foundation` key belongs to `infra/terraform`. S3 is authoritative; files here are

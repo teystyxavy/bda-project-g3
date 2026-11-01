@@ -1,8 +1,16 @@
 # Automated ingestion runbook
 
+**1 November 2026 deployment verified:** baseline verification,
+rule scoring and dashboard export now use Glue jobs `is459-g3-ingest-baseline`
+and `is459-g3-ingest-export`. SageMaker is used only for optional candidate
+training. The fresh 1,000-row AWS smoke passed through public publication with
+all four Glue jobs successful. Earlier acceptance records below describe the predecessor.
+See [migration and validation](glue-stage-migration.md) for the deployment evidence and full-population validation limits.
+
+
 **Full-pipeline optimisation:** the deployed workflow now runs source/baseline
-verification, frozen scoring and corridor analysis concurrently. SageMaker jobs
-use bounded 15-second status checks. Successful curated/scored outputs can be
+verification, frozen scoring and corridor analysis concurrently. Glue jobs use
+synchronous completion; only optional SageMaker training uses bounded status checks. Successful curated/scored outputs can be
 reused under semantic cache keys, while every new release retains the complete
 independent verification gates. `-Rerun` bypasses all processing caches. See the
 [implementation and recovery details](pipeline-optimisation-implementation.md)

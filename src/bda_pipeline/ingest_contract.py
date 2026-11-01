@@ -5,7 +5,7 @@ What this file is
 The "contract" for one pipeline run: the fixed AWS names (account, region,
 buckets, state machine, Glue database), the S3 layout of a run, the rules a run
 manifest must satisfy, the reviewed Athena corridor SQL (business question 2),
-and the SageMaker Processing job request used for the baseline and export
+and the Glue stage job request used for the baseline and export
 stages.
 
 Why it is separate
@@ -258,9 +258,9 @@ def paths(run_id):
       manifest.json, upload-claim.json)
     * ``curated``  - Glue curate job output (Parquet partitioned by txn_date)
     * ``scored``   - Glue score job output (XGBoost model scores)
-    * ``baseline`` - SageMaker Processing baseline proof and rule-based snapshot
+    * ``baseline`` - Glue baseline proof and rule-based snapshot
     * ``evidence`` - control-plane receipts (stage-cache.json, failure.json, result.json)
-    * ``export``   - SageMaker Processing export: verified dashboard + release manifest
+    * ``export``   - Glue export: verified dashboard + release manifest
     * ``release``  - reserved name for release artefacts
 
     Args:
@@ -323,84 +323,36 @@ SELECT *, sum(volume_share*volume_share) OVER (PARTITION BY corridor_type, txn_d
  AS daily_hhi FROM shares ORDER BY corridor_type, txn_date, volume_usd DESC, from_node, to_node"""
 
 
-def processing_request(run_id, stage, config, extra_inputs=None, rows=1):
-    """Build a SageMaker ``CreateProcessingJob`` request for ``baseline`` or ``export``.
+def stage_request(run_id, stage, config, extra_inputs=None, subset='HI-Small', rows=1):
+    """Build a bounded Glue StartJobRun request for verification/baseline or export.
 
-    The control Lambda returns this dict to Step Functions, which passes it
-    field by field to ``sagemaker:CreateProcessingJob`` and then polls the job
-    every 15 seconds. Inside the container, ``/app/pipeline_worker.py <stage>``
-    runs ``ingest_compute.baseline_stage`` or ``ingest_compute.export_stage``.
-
-    Inputs (S3 prefixes copied by SageMaker into ``/opt/ml/processing/input/``):
-
-    * always: ``run`` (the run manifest) and ``model`` (frozen model artefacts
-      under ``config['model_prefix']``);
-    * baseline: ``curated`` Parquet and ``raw`` CSVs, so the curated data can be
-      checked against the original source;
-    * export: the baseline scored Parquet + baseline manifest, the Glue
-      ``scored`` output, plus ``extra_inputs`` from the control plane (the
-      Athena result CSV and, when training, the candidate model archive).
-
-    Output: ``/opt/ml/processing/output`` is uploaded at the end of the job to
-    ``s3://BUCKET/pipeline/runs/<run_id>/<stage>/``.
-
-    Safety settings: network isolation (the container cannot reach the internet
-    or call AWS APIs; SageMaker does all data transfer), encrypted
-    inter-container traffic, one instance and a hard stop sized by the run's
-    ``run_profile`` so a stuck job cannot run up cost.
-
-    Args:
-        run_id: Run ID.
-        stage: ``'baseline'`` or ``'export'``.
-        config: Deployed configuration (needs ``model_prefix``,
-            ``processing_role_arn``, ``image_uri``).
-        extra_inputs: Optional ``{input_name: s3_key}`` additions for export.
-        rows: Run size, which selects the resource profile (default: smallest).
-
-    Returns:
-        The request dict.
-
-    Raises:
-        ValueError: for any other stage name.
+    Calculations run on the G.2X driver using the independently tested Python
+    reference implementation. S3 channel layouts and output contracts are
+    unchanged. SageMaker is reserved for optional training.
     """
     p = paths(run_id)
+    valid_subset(subset)
     profile = run_profile(rows)
     if stage not in ['baseline', 'export']:
-        raise ValueError('Unsupported processing stage')
-    # input name -> S3 key (relative to BUCKET). A trailing '/' means "whole prefix".
+        raise ValueError('Unsupported Glue stage')
     sources = {'run': f"{p['raw']}/manifest.json", 'model': config['model_prefix'] + '/'}
     if stage == 'baseline':
         sources.update({'curated': p['curated'] + '/', 'raw': p['raw'] + '/'})
-    if stage == 'export':
+    else:
         sources.update({'baseline': p['baseline'] + '/baseline/bq1_scored.parquet',
-                        'baseline_manifest': p['baseline'] + '/manifest/', 'scored': p['scored'] + '/',
-                        **(extra_inputs or {})})
-    # Most inputs land in a folder named after the input; the two baseline
-    # inputs are nested so the worker sees the same 'baseline/...' layout that
-    # the baseline stage originally wrote.
-    local_paths = {'baseline': 'baseline/baseline', 'baseline_manifest': 'baseline/manifest'}
-    return {
-        # Deterministic job name: one baseline/export job per run, and the
-        # control plane can find (or stop) it later by name.
-        'ProcessingJobName': f'is459-g3-{stage}-{run_id}',
-        'RoleArn': config['processing_role_arn'],
-        'AppSpecification': {'ImageUri': config['image_uri'],
-                             'ContainerEntrypoint': ['python', '/app/pipeline_worker.py'],
-                             'ContainerArguments': [stage]},
-        'ProcessingInputs': [{'InputName': name, 'S3Input': {
-            'S3Uri': f's3://{BUCKET}/{key}', 'LocalPath': '/opt/ml/processing/input/' + local_paths.get(name, name),
-            'S3DataType': 'S3Prefix', 'S3InputMode': 'File', 'S3DataDistributionType': 'FullyReplicated'}}
-            for name, key in sources.items()],
-        # 'EndOfJob' uploads only once the worker exits successfully, so a
-        # crashed job does not leave a half-written stage output.
-        'ProcessingOutputConfig': {'Outputs': [{'OutputName': stage,
-            'S3Output': {'S3Uri': f"s3://{BUCKET}/{p[stage]}/", 'LocalPath': '/opt/ml/processing/output',
-                         'S3UploadMode': 'EndOfJob'}}]},
-        'ProcessingResources': {'ClusterConfig': {'InstanceCount': 1,
-            'InstanceType': profile['processing_instance'],
-            'VolumeSizeInGB': profile['processing_volume_gb']}},
-        'StoppingCondition': {'MaxRuntimeInSeconds': profile['processing_seconds']},
-        'NetworkConfig': {'EnableNetworkIsolation': True, 'EnableInterContainerTrafficEncryption': True},
-        # Cost-allocation tag so project spend can be tracked in Billing.
-        'Tags': [{'Key': 'Project', 'Value': 'is459-g3'}],
-    }
+                        'baseline_manifest': p['baseline'] + '/manifest/', 'scored': p['scored'] + '/'})
+        extra = extra_inputs or {}
+        if set(extra) - {'athena', 'candidate'}:
+            raise ValueError('Unsupported export input')
+        if 'athena' in extra and not re.fullmatch(r'athena-results/[A-Za-z0-9-]+\.csv', extra['athena']):
+            raise ValueError('Unexpected Athena input')
+        if 'candidate' in extra and extra['candidate'] != f'sagemaker/outputs/is459-g3-train-{run_id}/output/model.tar.gz':
+            raise ValueError('Unexpected candidate input')
+        sources.update(extra)
+    return {'JobName': f'is459-g3-ingest-{stage}',
+        'Arguments': {'--RUN_ID': run_id, '--STAGE': stage,
+            '--INPUTS_JSON': json.dumps(sources, sort_keys=True),
+            '--DEPLOYMENT_SHA256': sha(config),
+            '--OUTPUT': f"s3://{BUCKET}/{p[stage]}/"},
+        'WorkerType': 'G.2X', 'NumberOfWorkers': 2,
+        'Timeout': max(60 if subset.endswith('Medium') else 30, profile['processing_seconds'] // 60)}

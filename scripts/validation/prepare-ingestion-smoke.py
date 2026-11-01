@@ -1,38 +1,14 @@
-"""Prepare a real-data CPU-container smoke fixture locally; no AWS calls.
+"""Prepare a 1,000-row local fixture for the Glue reference calculations.
 
-Purpose
--------
-In the cloud ingestion workflow, two SageMaker Processing jobs run the
-pipeline worker container (``sagemaker/``): a *baseline* stage (verify the
-curated data, build the rule-baseline/BQ1 reference and dashboard snapshot)
-and an *export* stage (reconcile Glue scores and Athena corridors, then
-build the release assets). This script builds, on a laptop, the same input
-folder layout those containers expect, using 1,000 real HI-Small
-transactions, so the container can be tested locally with Docker before
-spending money on AWS.
+No AWS calls. With --stage prepare, builds input channels from existing local
+HI-Small files. --stage baseline runs the same baseline function as Glue;
+--stage finish adds native frozen scores and independent corridor reference;
+--stage export runs the same export function as Glue. These are local numerical
+checks, not proof of S3/IAM or a deployed Glue run.
 
-It is run in two stages around two local container runs:
-
-1. ``--stage prepare`` creates ``<output>/input/`` with
-   ``raw/`` (transactions, accounts, fx via ``prepare_inputs``),
-   ``run/manifest.json`` (a run manifest like the control Lambda writes),
-   ``model/`` (frozen model + ``deployment.json``) and
-   ``curated/data.parquet`` (curated rows with behaviour features computed by
-   the local pandas reference), plus an empty ``<output>/baseline-output``.
-   -> next, run the baseline container with ``baseline-output`` as output.
-2. ``--stage finish`` copies the baseline output into ``input/baseline``,
-   stands in for the Glue scoring job (native model scores ->
-   ``input/scored/data.parquet``) and for Athena (independently computed
-   corridor CSV -> ``input/athena/result.csv``), and creates an empty
-   ``<output>/export-output``.
-   -> next, run the export container.
-
-Usage::
-
-    python scripts/validation/prepare-ingestion-smoke.py --output output/ingest-smoke \\
-        --deployment deployment.json --models <model dir> --fx-file <fx.csv> [--stage prepare]
-    # ... run baseline container ...
-    python scripts/validation/prepare-ingestion-smoke.py ... --stage finish
+All stages take --output, --deployment, --models and --fx-file. Execute them in
+order: prepare, baseline, finish, export. Use the offline Glue container regression
+script to check runtime compatibility as well.
 """
 import argparse
 import json
@@ -42,7 +18,7 @@ import pandas as pd
 from bda_pipeline.acquisition import prepare_inputs
 from bda_pipeline.analytics import add_behaviour
 from bda_pipeline.ingest_contract import sha
-from bda_pipeline.ingest_compute import baseline_stage
+from bda_pipeline.ingest_compute import baseline_stage, export_stage
 from bda_pipeline.inference import SCORING_COLUMNS
 from bda_pipeline.model import SavedRanker
 from bda_pipeline.transform import read_transactions, read_accounts, build_curated_transactions
@@ -57,10 +33,15 @@ def main():
     parser.add_argument('--models', type=Path, required=True)
     parser.add_argument('--fx-file', type=Path, required=True)
     parser.add_argument('--dataset', type=Path, default=Path('dataset'))
-    parser.add_argument('--stage', choices=['prepare', 'finish'], default='prepare')
+    parser.add_argument('--stage', choices=['prepare', 'baseline', 'finish', 'export'], default='prepare')
     args = parser.parse_args()
     # Same folder name the Processing container reads its inputs from.
     inputs = args.output / 'input'
+    if args.stage in ['baseline', 'export']:
+        runner = baseline_stage if args.stage == 'baseline' else export_stage
+        runner(inputs, args.output / (args.stage + '-output'), Path(__file__).resolve().parents[2] / 'dashboard')
+        print('Completed local ' + args.stage + '; no AWS job started')
+        return
     if args.stage == 'prepare':
         # Fresh directory so no old outputs can make the smoke test pass falsely.
         if args.output.exists(): raise ValueError('Use a fresh smoke directory')
@@ -93,7 +74,7 @@ def main():
         (inputs / 'curated').mkdir()
         frame.to_parquet(inputs / 'curated/data.parquet', index=False)
         (args.output / 'baseline-output').mkdir()
-        print('Prepared 1,000 real transactions; next run the baseline container')
+        print('Prepared 1,000 real transactions; next run --stage baseline')
     else:
         # Stage 2: the baseline container's output becomes an input of export.
         shutil.copytree(args.output / 'baseline-output', inputs / 'baseline')
@@ -108,7 +89,7 @@ def main():
         (inputs / 'athena').mkdir()
         expected_corridors([frame.assign(txn_date=frame.txn_date.astype(str))], len(frame)).to_csv(inputs / 'athena/result.csv', index=False)
         (args.output / 'export-output').mkdir()
-        print('Prepared native scoring and independent corridor reference; next run the export container')
+        print('Prepared native scoring and independent corridor reference; next run --stage export')
 
 
 if __name__ == '__main__': main()

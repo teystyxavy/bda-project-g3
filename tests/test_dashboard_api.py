@@ -262,4 +262,4 @@ def test_parallel_branches_name_their_active_aws_services():
     stages = api.stage_progress({'status': 'RUNNING'}, {'status': 'RUNNING'},
                                 entries(['Score', 'Corridors', 'BaselineWait']), False)
     active = {item['id']: item['active_service'] for item in stages if item['status'] == 'running'}
-    assert active == {'score': 'AWS Glue', 'corridors': 'Amazon Athena', 'baseline': 'Amazon SageMaker'}
+    assert active == {'score': 'AWS Glue', 'corridors': 'Amazon Athena', 'baseline': 'AWS Glue'}

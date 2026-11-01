@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 
 from bda_pipeline.acquisition import HEADER, acquire_dataset, prepare_inputs, validate_fx
-from bda_pipeline.ingest_contract import sha, canonical, paths, processing_request, validate_manifest, corridor_query
+from bda_pipeline.ingest_contract import sha, canonical, paths, stage_request, validate_manifest, corridor_query
 from bda_pipeline.ingest_control import handle, BUCKET, SITE_BUCKET, release_lock
 from bda_pipeline.ingest_compute import baseline_stage, export_stage
 from bda_pipeline.analytics import add_behaviour
@@ -37,7 +37,7 @@ def load_script(relative):
 def config():
     return dict(image_uri='588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:' + 'a'*64,
         model_prefix='pipeline/deployments/test/model', model_manifest_sha256='b'*64,
-        processing_role_arn='arn:aws:iam::588738581042:role/is459-g3-ingest-processing',
+        artifact_prefix='pipeline/deployments/test',
         distribution_id='EU1WB6XM4GKHQ', dashboard_url='https://d1n61tlw9pcrog.cloudfront.net/')
 
 
@@ -103,11 +103,11 @@ def test_manifest_identity_and_sdk_shapes():
     validate_manifest(value, sha(config()))
     for changed in [dict(value, rows=321), dict(value, run_id='x; DROP TABLE y')]:
         with pytest.raises(ValueError): validate_manifest(changed, sha(config()))
-    request = processing_request('test-run', 'export', config(), {'athena': 'athena-results/q.csv'})
-    client = boto3.client('sagemaker', region_name='ap-southeast-1', aws_access_key_id='fixture', aws_secret_access_key='fixture')
-    validate_parameters(request, client.meta.service_model.operation_model('CreateProcessingJob').input_shape)
-    assert request['NetworkConfig']['EnableNetworkIsolation']
-    assert request['StoppingCondition']['MaxRuntimeInSeconds'] == 1800
+    request = stage_request('test-run', 'export', config(), {'athena': 'athena-results/q.csv'})
+    client = boto3.client('glue', region_name='ap-southeast-1', aws_access_key_id='fixture', aws_secret_access_key='fixture')
+    validate_parameters(request, client.meta.service_model.operation_model('StartJobRun').input_shape)
+    assert request['WorkerType'] == 'G.2X'
+    assert request['Timeout'] == 30
     assert 'run_test_run' in corridor_query('test-run', value['start_date'], value['end_date'])
     with pytest.raises(ValueError, match='ISO'):
         corridor_query('test-run', '2022-09-01', "2022-09-12' OR '1'='1")
@@ -128,6 +128,20 @@ class MemoryS3:
         if kwargs.get('IfNoneMatch') == '*' and (Bucket, Key) in self.data: raise ValueError('Claim conflict')
         if kwargs.get('IfMatch') and kwargs['IfMatch'] != self.get_object(Bucket=Bucket, Key=Key)['ETag']: raise ValueError('ETag conflict')
         self.data[Bucket, Key] = Body
+    def head_object(self, Bucket, Key):
+        return {'ContentLength': len(self.data[Bucket, Key]), 'ServerSideEncryption': 'AES256'}
+    def download_file(self, Bucket, Key, Filename):
+        Path(Filename).write_bytes(self.data[Bucket, Key])
+    def upload_file(self, Filename, Bucket, Key, **kwargs):
+        self.data[Bucket, Key] = Path(Filename).read_bytes()
+    def get_paginator(self, operation):
+        assert operation == 'list_objects_v2'
+        def paginate(Bucket, Prefix):
+            items = [{'Key': key, 'Size': len(value)} for (bucket, key), value in sorted(self.data.items())
+                     if bucket == Bucket and key.startswith(Prefix)]
+            # Multiple pages exercise pagination even with small fixtures.
+            return [{'Contents': items[i:i+2]} for i in range(0, len(items), 2)]
+        return SimpleNamespace(paginate=paginate)
     def delete_object(self, Bucket, Key, **kwargs):
         assert kwargs['IfMatch'] == self.get_object(Bucket=Bucket, Key=Key)['ETag']
         del self.data[Bucket, Key]; self.deleted.append(Key)
@@ -177,14 +191,16 @@ def publication_inputs():
     s3.put_object(Bucket=BUCKET, Key=p['export']+'/release/manifest.json', Body=canonical(release))
     for name, data in assets.items(): s3.put_object(Bucket=BUCKET, Key=p['export']+'/release/site/'+name, Body=data)
     invalidations = []
-    aws = clients(s3) | {'sagemaker': SimpleNamespace(describe_processing_job=lambda **kw: {'ProcessingJobStatus': 'Completed'}),
+    s3.data[BUCKET, p['export']+'/_SUCCESS'] = b''
+    job = dict(JobRunState='SUCCEEDED', Arguments=stage_request('test-run', 'export', config())['Arguments'])
+    aws = clients(s3) | {'glue': SimpleNamespace(get_job_run=lambda **kw: {'JobRun': job}),
         'cloudfront': SimpleNamespace(create_invalidation=lambda **kw: invalidations.append(kw))}
     return s3, aws, old, invalidations
 
 
 def test_publication_pointer_commit_and_cache():
     s3, aws, old, invalidations = publication_inputs()
-    result = handle({'op': 'publish', 'run_id': 'test-run'}, config(), aws)
+    result = handle({'op': 'publish', 'run_id': 'test-run', 'job_run_id': 'jr-test'}, config(), aws)
     assert json.loads(s3.data[SITE_BUCKET, 'dashboard/current.json'])['previous_run_id'] == 'previous-run'
     assert result['status'] == 'published'
     assert invalidations[0]['InvalidationBatch']['CallerReference'] == 'ingest-test-run'
@@ -195,7 +211,7 @@ def test_publication_pointer_commit_and_cache():
 def test_failed_hash_preserves_previous_release_and_lock():
     s3, aws, old, invalidations = publication_inputs()
     s3.data[BUCKET, paths('test-run')['export']+'/release/site/dashboard.json'] = b'corrupt'
-    with pytest.raises(ValueError, match='hash'): handle({'op': 'publish', 'run_id': 'test-run'}, config(), aws)
+    with pytest.raises(ValueError, match='hash'): handle({'op': 'publish', 'run_id': 'test-run', 'job_run_id': 'jr-test'}, config(), aws)
     assert s3.data[SITE_BUCKET, 'dashboard/current.json'] == old
     assert not invalidations and not s3.deleted
 

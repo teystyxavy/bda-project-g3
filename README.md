@@ -1,4 +1,22 @@
-# IS459 Group 3 — IBM AML data pipeline
+# IS459 Group 3 â€” IBM AML data pipeline
+
+**1 November coursework archive:** six older lab buckets were consolidated into
+one private archive. The AML pipeline does not use the archive. Data, dashboard,
+Terraform state and the parked streaming failure bucket remain separate.
+See [archive record](planning/runbooks/s3-archive-20261101.md).
+
+**1 November AWS cleanup:** removed 4.54 GB of failed-run/obsolete-deployment
+objects and retired the predecessor standalone scoring/orchestration stacks.
+The current ingestion pipeline, successful results and dashboard are retained.
+See [cleanup and handoff](planning/runbooks/aws-cleanup-20261101.md).
+
+**1 November 2026 deployment verified:** baseline verification,
+rule scoring and dashboard export now use Glue jobs `is459-g3-ingest-baseline`
+and `is459-g3-ingest-export`. SageMaker is used only for optional candidate
+training. The fresh 1,000-row AWS smoke passed through public publication with
+all four Glue jobs successful. Earlier acceptance records below describe the predecessor.
+See [migration and validation](planning/runbooks/glue-stage-migration.md) for the deployment evidence and full-population validation limits.
+
 
 An end-to-end AWS pipeline for the IBM Transactions for Anti-Money Laundering
 [dataset](https://www.kaggle.com/datasets/ealtman2019/ibm-transactions-for-anti-money-laundering-aml).
@@ -10,9 +28,9 @@ It answers two separate questions:
 - **Treasury:** which bank and currency corridors dominate USD-equivalent volume,
   and how does concentration change? High volume does not imply suspiciousness.
 
-[Open dashboard](https://d1n61tlw9pcrog.cloudfront.net/) ·
-[Script guide](scripts/README.md) ·
-[Documentation index](planning/README.md) ·
+[Open dashboard](https://d1n61tlw9pcrog.cloudfront.net/) Â·
+[Script guide](scripts/README.md) Â·
+[Documentation index](planning/README.md) Â·
 [Demonstration runbook](planning/delivery/final-demo-runbook.md)
 
 The dashboard includes expanded BQ1 investigation/evaluation and BQ2 corridor
@@ -43,7 +61,7 @@ python -m pip install -e ".[cloud]"
 The setup helper requires AWS CLI v2 and opens browser sign-in. The default launcher
 uses the deployed AWS acquisition workflow; no local dataset or Kaggle credential
 is needed. Kaggle and historical FX retrieval run in AWS, followed by Glue,
-SageMaker verification, Athena corridor analysis and dashboard publication.
+Glue verification/export, Athena corridor analysis and dashboard publication.
 
 ```powershell
 # Submit and let AWS continue after the terminal closes.
@@ -112,7 +130,7 @@ version 8, with **285 historical FX records across 15 currencies**.
 | Observed run | Source-to-result time |
 |---|---:|
 | Earlier full rebuild | 24m59s |
-| Optimised full rebuild | **20m55s — 16.3% faster** |
+| Optimised full rebuild | **20m55s â€” 16.3% faster** |
 | Verified stage reuse plus SageMaker candidate training | **18m02s**, no new Glue jobs |
 | Unchanged release reuse | **33.85s**, no batch processing |
 
@@ -156,7 +174,7 @@ python -m pip install -e ".[dev,ml,ingest]"
 python -m pytest tests --ignore=tests/spark -q
 ```
 
-The latest non-Spark suite passed **162 tests**, with one skipped. Spark parity
+The latest non-Spark suite passed **285 tests**, with one skipped. Spark parity
 runs separately in the Glue container through `scripts/validation/test-glue-local.ps1` and
 `scripts/validation/test-cloud-scoring-local.ps1`; see the
 [batch runbook](planning/runbooks/aws-batch-runbook.md) for fixtures and prerequisites.
@@ -169,7 +187,7 @@ analysis commands are retained in the
 The default subset is `HI-Small` (about 510 MB); the full dataset is about 39 GB.
 Datasets, generated model/dashboard artifacts, environment files, keys, credentials,
 Terraform variables and credentials stay outside Git. Authoritative state for all
-12 stacks is in the private, locked S3 backend; [connect from another machine](infra/tfstate-bootstrap/README.md).
+13 stacks is in the private, locked S3 backend; [connect from another machine](infra/tfstate-bootstrap/README.md).
 Reviewed recovery snapshots are committed under `handoff/terraform-state/`. Private
 inputs and caches stay under `%LOCALAPPDATA%/IS459-G3`. Kaggle credentials belong
 in the user's Kaggle profile or configured AWS secret.

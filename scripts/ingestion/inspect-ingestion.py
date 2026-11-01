@@ -106,7 +106,7 @@ def inspect(run_id, profile, output):
     # argument: curate writes to .../curated/ (--output) and score to
     # .../scored/ (--OUTPUT). Only runs belonging to this run ID are kept.
     report['glue'] = []
-    for name, argument, directory in [('curate', '--output', 'curated'), ('score', '--OUTPUT', 'scored')]:
+    for name, argument, directory in [('curate', '--output', 'curated'), ('score', '--OUTPUT', 'scored'), ('baseline', '--OUTPUT', 'baseline'), ('export', '--OUTPUT', 'export')]:
         for page in glue.get_paginator('get_job_runs').paginate(JobName='is459-g3-ingest-' + name):
             for run in page['JobRuns']:
                 if run.get('Arguments', {}).get(argument) == f"s3://{BUCKET}/{p[directory]}/":
@@ -114,10 +114,10 @@ def inspect(run_id, profile, output):
     # SageMaker job names are deterministic: is459-g3-<stage>-<run_id>.
     # 'train' only exists for --train runs, so a "not found" error is skipped.
     report['sagemaker'] = []
-    for kind, stage in [('Processing', 'baseline'), ('Processing', 'export'), ('Training', 'train')]:
+    for kind, stage in [('Training', 'train')]:
         name = f'is459-g3-{stage}-{run_id}'
         try:
-            job = sm.describe_processing_job(ProcessingJobName=name) if kind == 'Processing' else sm.describe_training_job(TrainingJobName=name)
+            job = sm.describe_training_job(TrainingJobName=name)
         except ClientError as error:
             if error.response['Error']['Code'] == 'ValidationException' and any(text in str(error) for text in ['not find', 'not found', 'does not exist']):
                 continue

@@ -50,6 +50,33 @@ def test_selection_and_ties_are_deterministic():
     assert ranked.source_row_index.tolist() == [0, 1, 2]
 
 
+def test_frozen_outgoing_model_keeps_its_schema_after_incoming_features_added(tmp_path, monkeypatch):
+    pytest.importorskip('xgboost')
+    from bda_pipeline import model as module
+    frame = sample()
+    scored = tmp_path / 'reference.parquet'
+    frame.to_parquet(scored, index=False)
+    snapshot = tmp_path / 'dashboard.json'
+    snapshot.write_text(json.dumps(dict(aml_scope='full', full_rows=len(frame),
+        sources=[dict(file='bq1_scored.parquet', sha256=digest(scored))],
+        aml={name: dict(metrics=dict(positives=int(frame.iloc[start:end].is_laundering.sum())))
+             for name, start, end in [('validation',80,160), ('test',160,240), ('tail',240,320)]})))
+    directory = tmp_path / 'legacy-model'
+    with monkeypatch.context() as old:
+        old.setattr(module, 'FEATURES', module.FEATURES[:5])
+        compare_models(scored, snapshot, directory, rounds=3, threads=1)
+        legacy = SavedRanker(directory, threads=1)
+        expected = legacy.predict(frame)
+    restored = SavedRanker(directory, threads=1)
+    np.testing.assert_array_equal(restored.predict(frame), expected)
+    queue = restored.queue(frame, expected)
+    assert len(queue) == 100
+    assert not any('incoming' in reason.lower() for reason in queue.model_evidence)
+    schema = restored.feature_names + ['log1p_untrusted_feature']
+    with pytest.raises(ValueError, match='frozen numeric feature schema'):
+        encode(frame, restored.vocabulary, schema)
+
+
 def test_tiny_model_comparison_artifact_reload_and_explanations(tmp_path, monkeypatch):
     xgb = pytest.importorskip('xgboost')
     frame = sample()

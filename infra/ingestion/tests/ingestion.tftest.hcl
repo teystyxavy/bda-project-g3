@@ -14,7 +14,19 @@ run "bounded_and_separate_from_existing_pipeline" {
     error_message = "Paid jobs must not retry; training and both business answers must be orchestrated."
   }
   assert {
-    condition     = length(aws_s3_object.deployment_artifact) == 11 && aws_s3_object.configuration.key == "pipeline/deployment.json"
+    condition     = length(aws_s3_object.deployment_artifact) == 15 && aws_s3_object.configuration.key == "pipeline/deployment.json"
     error_message = "Only allowlisted artifacts and the deployment pointer may be uploaded."
+  }
+}
+
+run "glue_reference_and_training_only_sagemaker" {
+  command = plan
+  assert {
+    condition = aws_glue_job.job["baseline"].worker_type == "G.2X" && aws_glue_job.job["export"].timeout == 30 && aws_glue_job.job["baseline"].max_retries == 0
+    error_message = "Reference computations need bounded G.2X Glue jobs with no automatic retry."
+  }
+  assert {
+    condition = !strcontains(file("${path.module}/main.tf"), "sagemaker:CreateProcessingJob") && !strcontains(file("${path.module}/main.tf"), "sagemaker:DescribeProcessingJob") && !strcontains(file("${path.module}/workflow.asl.json"), "createProcessingJob")
+    error_message = "SageMaker must be limited to training."
   }
 }

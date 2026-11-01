@@ -3,7 +3,7 @@
 Where this sits in the pipeline
 -------------------------------
 Deployment step 1 of the batch ingestion stack (``infra/ingestion``: control
-Lambda, Glue curate/score jobs, SageMaker processing role, Step Functions
+Lambda, Glue curate/score jobs, Glue verification/export jobs, Step Functions
 ``is459-g3-ingest``). It gathers everything that stack uploads to S3 into one
 fresh local folder, pins it by content hash, and writes the Terraform
 variables. ``deploy-ingestion.ps1`` (first deployment) or
@@ -87,7 +87,7 @@ def prepare(output, models, wheels, image_uri):
         models: folder holding the trained model and ``model-manifest.json``.
         wheels: path to the ``.gluewheels.zip`` bundle.
         image_uri: ECR image *pinned by digest* (``...@sha256:<64 hex>``), so
-            SageMaker always runs exactly the reviewed image, never a moved tag.
+            SageMaker training runs exactly the reviewed image, never a moved tag.
 
     Returns:
         The deployment config dict (also written as ``deployment.json``).
@@ -110,9 +110,12 @@ def prepare(output, models, wheels, image_uri):
     # The control Lambda only needs the contract, controller, stage cache and
     # release helpers - no pandas/XGBoost code.
     zip_sources(output / 'control.zip', ['__init__.py', 'ingest_contract.py', 'ingest_control.py', 'stage_cache.py', 'release.py'], minimal=True)
-    for name in ['curate_transactions.py', 'score_transactions.py']:
+    for name in ['curate_transactions.py', 'score_transactions.py', 'pipeline_stage.py']:
         shutil.copyfile(ROOT / 'jobs' / name, output / name)
     shutil.copyfile(wheels, output / 'runtime.gluewheels.zip')
+    (output / 'dashboard').mkdir()
+    for name in ['index.html', 'dashboard.js', 'dashboard.css']:
+        shutil.copyfile(ROOT / 'dashboard' / name, output / 'dashboard' / name)
     (output / 'model').mkdir()
     # Model files to deploy: the four JSON companions plus whichever model
     # file selection.json names as the selected candidate.
@@ -127,12 +130,10 @@ def prepare(output, models, wheels, image_uri):
     hashes = {p.relative_to(output).as_posix(): digest(p) for p in output.rglob('*') if p.is_file()}
     prefix = 'pipeline/deployments/' + sha({'files': hashes, 'image_uri': image_uri})
     # Deployment config read by ingest.py, the control Lambda and processing
-    # jobs: where artifacts live, which model/image to trust, the IAM role
-    # SageMaker processing jobs assume, and the CloudFront distribution/URL of
+    # jobs: where artifacts live, which model/image to trust, and the CloudFront distribution/URL of
     # the dashboard that the publish step updates.
     config = {'schema_version': 1, 'artifact_prefix': prefix, 'model_prefix': prefix + '/model',
         'model_manifest_sha256': model_hash, 'image_uri': image_uri,
-        'processing_role_arn': f'arn:aws:iam::{ACCOUNT}:role/is459-g3-ingest-processing',
         'distribution_id': 'EU1WB6XM4GKHQ', 'dashboard_url': 'https://d1n61tlw9pcrog.cloudfront.net/'}
     # Stage versions feed the stage cache key (bda_pipeline.stage_cache): if
     # the curate/score code, package, wheels or Glue runtime change, the

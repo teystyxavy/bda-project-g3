@@ -1,0 +1,39 @@
+{
+  "date": "2026-11-01",
+  "status": "implemented-locally-not-deployed",
+  "aws_resources_modified": false,
+  "paid_aws_jobs_started": false,
+  "glue_5_offline_non_spark_suite": {
+    "passed": 244,
+    "skipped": 3,
+    "seconds": 17.0,
+    "network": "disabled",
+    "project_mount": "read-only",
+    "command": "scripts/validation/test-glue-stages-local.ps1"
+  },
+  "terraform_ingestion": {
+    "validate": "passed",
+    "mock_tests_passed": 2,
+    "mock_tests_failed": 0,
+    "backend": "disabled",
+    "provider": "cached hashicorp/aws 6.67.0",
+    "aws_provider_mocked": true
+  },
+  "coverage": [
+    "HI-Small and HI-Medium source-to-release numerical fixtures",
+    "real baseline computations through paginated simulated S3 transfer",
+    "candidate verification and no automatic model promotion",
+    "tampered source/score rejection and failed-upload commit safety",
+    "four Glue stages tracked by cancellation and recovery",
+    "training-only SageMaker workflow and infrastructure permissions"
+  ],
+  "architecture": {
+    "editable_sources_updated": true,
+    "three_png_exports_rendered_and_visually_reviewed": true
+  },
+  "limitations": [
+    "No deployment or AWS acceptance run performed.",
+    "Full-population Glue driver memory, scratch disk, timings and costs need cloud acceptance.",
+    "Baseline/export calculations remain independent Python reference implementations on the Glue driver."
+  ]
+}

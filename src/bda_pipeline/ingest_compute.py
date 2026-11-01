@@ -1,35 +1,9 @@
-"""Network-isolated AWS processing: source verification, baseline, reconciliation and release.
+"""Independent reference checks, rule scoring and release export run by Glue.
 
-What this file is
------------------
-The heavy "verify and package" logic that runs inside the SageMaker Processing
-container (image ``config['image_uri']``). ``sagemaker/pipeline_worker.py`` is
-the container entry point and calls one of two stages:
-
-* ``baseline_stage`` - job ``is459-g3-baseline-<run_id>`` (Step Functions
-  state ``Baseline``, after the Glue curate job). Independently re-checks the
-  Glue-curated Parquet against the original raw CSVs and FX rates, then builds
-  the rule-based (non-ML) BQ1 risk ranking and dashboard snapshot.
-* ``export_stage`` - job ``is459-g3-export-<run_id>`` (state ``Export``, after
-  Glue scoring and the Athena corridor query). Re-computes every XGBoost
-  score with the frozen model, reconciles Athena's BQ2 corridor results with
-  an independent pandas computation, optionally verifies a newly trained
-  candidate model, and writes the final dashboard release.
-
-Inputs/outputs
---------------
-SageMaker copies S3 prefixes into ``/opt/ml/processing/input/<name>`` (see
-``ingest_contract.processing_request``) and uploads
-``/opt/ml/processing/output`` to ``pipeline/runs/<run_id>/<stage>/`` when the
-job ends. The container runs with network isolation: it cannot call AWS APIs
-or the internet, so everything it needs must arrive as an input.
-
-Design principle
-----------------
-"Trust, but verify": Glue (Spark) did the bulk work; this code is a second,
-independent implementation (pandas/pyarrow) that must agree with it row by row
-before anything is published. Any mismatch raises, the processing job fails,
-and Step Functions records the failure instead of publishing.
+The numerical functions accept local input/output directories. glue_compute
+stages S3 channels, runs these functions on the Glue driver, uploads successful
+results and writes _SUCCESS last. They remain directly testable without AWS.
+SageMaker is used only for optional candidate training.
 """
 import gc
 import hashlib
@@ -217,7 +191,7 @@ def verify_curated(curated, raw, manifest):
 
 
 def baseline_stage(inputs, output, assets):
-    """SageMaker Processing stage 'baseline': verify curation, build the rule baseline.
+    """Glue stage 'baseline': verify curation, build the rule baseline.
 
     Reads (under ``inputs``): ``run/manifest.json``, ``curated/`` Parquet,
     ``raw/`` CSVs and ``model/deployment.json``.
@@ -235,8 +209,8 @@ def baseline_stage(inputs, output, assets):
       that nothing is trained or promoted by this stage itself.
 
     Args:
-        inputs: ``/opt/ml/processing/input`` (or a local test folder).
-        output: ``/opt/ml/processing/output``.
+        inputs: ``the Glue scratch input directory`` (or a local test folder).
+        output: ``the Glue scratch output directory``.
         assets: Folder with the static dashboard files (``/app/dashboard``).
 
     Returns:
@@ -255,7 +229,7 @@ def baseline_stage(inputs, output, assets):
     # Label where the snapshot was produced, for the dashboard's provenance panel.
     snapshot = output / 'baseline/dashboard/dashboard.json'
     data = json.loads(snapshot.read_text())
-    data['provenance']['scoring_location'] = 'aws-sagemaker-processing rule baseline'
+    data['provenance']['scoring_location'] = 'aws-glue rule baseline'
     snapshot.write_text(json.dumps(data, allow_nan=False))
     (output / 'manifest').mkdir()
     shutil.copyfile(snapshot, output / 'manifest/dashboard.json')
@@ -341,7 +315,7 @@ def verify_scores(reference, scored, model_dir, manifest, output):
 
 
 def export_stage(inputs, output, assets):
-    """SageMaker Processing stage 'export': verify scores + corridors, build the release.
+    """Glue stage 'export': verify scores + corridors, build the release.
 
     Reads (under ``inputs``): ``run/manifest.json``; ``baseline/baseline/
     bq1_scored.parquet`` and ``baseline/manifest/dashboard.json`` (from the
@@ -371,8 +345,8 @@ def export_stage(inputs, output, assets):
     copying files to the public dashboard bucket.
 
     Args:
-        inputs: ``/opt/ml/processing/input``.
-        output: ``/opt/ml/processing/output`` (uploaded to ``.../export/``).
+        inputs: ``the Glue scratch input directory``.
+        output: ``the Glue scratch output directory`` (uploaded to ``.../export/``).
         assets: Static dashboard files folder (``/app/dashboard``).
 
     Returns:
@@ -483,7 +457,7 @@ def export_stage(inputs, output, assets):
             'archive_sha256': digest(archives[0]), 'validation_gate_passed': candidate_ranker.selection['validation_gate_passed']}
         snapshot['pipeline']['training'] = training_proof
     # ---- 6. Build the dashboard site and the release package ----
-    snapshot['provenance']['scoring_location'] = 'AWS Glue scoring, Athena treasury verification and SageMaker Processing export'
+    snapshot['provenance']['scoring_location'] = 'AWS Glue scoring, Athena treasury verification and Glue export'
     snapshot['buildStatus'] = 'complete'
     snapshot['generated_at'] = snapshot['pipeline']['refresh_time']
     # Imported lazily, only at this point of the export stage.

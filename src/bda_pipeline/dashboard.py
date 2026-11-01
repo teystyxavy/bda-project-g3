@@ -17,7 +17,7 @@ Two ways it is used:
    --output ...`` on Parquet files already on disk.
 2. The small helpers (``records``, ``ranked``, ``treasury_view``) are reused
    by ``batch.py`` (full-population streaming export), ``model_dashboard.py``
-   and ``ingest_compute.py`` in the AWS SageMaker Processing path, so every
+   and ``ingest_compute.py`` in the AWS Glue baseline/export path, so every
    route produces the same JSON shape (``schema_version=1``).
 
 Labels (``is_laundering``) are used only to compute evaluation metrics; the

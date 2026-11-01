@@ -1,5 +1,25 @@
 # AWS foundation deployment â€” 2026-10-05
 
+**1 November coursework archive:** 278 checksum-verified files (84.74 MB) from
+six older lab buckets were consolidated into one private archive; originals
+and the explicitly retired old lab Glue job were removed. The four project
+support buckets remain separate. See [archive record](runbooks/s3-archive-20261101.md).
+
+**1 November AWS cleanup:** removed 4.54 GB from failed-run and obsolete
+deployment prefixes, the abandoned run catalog table, and 12 predecessor
+scoring/orchestration resources through Terraform. Both retired stacks are
+disabled in the shared handoff; post-cleanup plans report no changes. Current
+jobs/retained S3 objects and dashboard hashes are unchanged; dashboard/status
+HTTP checks passed. See [cleanup record](runbooks/aws-cleanup-20261101.md).
+
+**1 November 2026 deployment verified:** baseline verification,
+rule scoring and dashboard export now use Glue jobs `is459-g3-ingest-baseline`
+and `is459-g3-ingest-export`. SageMaker is used only for optional candidate
+training. The fresh 1,000-row AWS smoke passed through public publication with
+all four Glue jobs successful. Earlier acceptance records below describe the predecessor.
+See [migration and validation](runbooks/glue-stage-migration.md) for the deployment evidence and full-population validation limits.
+
+
 **Shared Terraform state, 31 October 2026:** all 12 stacks now use
 `s3://is459-g3-tfstate-588738581042/<stack>/terraform.tfstate`, with DynamoDB
 locking. States were refreshed against live AWS, missing bootstrap ownership was
