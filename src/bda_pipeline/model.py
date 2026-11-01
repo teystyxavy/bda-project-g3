@@ -20,15 +20,24 @@ CATEGORICAL = ['payment_format', 'payment_currency', 'receiving_currency']
 INPUT_COLUMNS = ['transaction_id', 'source_row_index', 'timestamp', 'from_bank',
                  'from_account', 'to_bank', 'to_account', 'amount_usd_asof',
                  'is_laundering', 'risk_score', 'risk_reasons', *FEATURES, *CATEGORICAL]
-# Only tree depth is compared; a tiny, pre-declared search limits overfitting to validation.
-CANDIDATES = [{'name': 'hist-depth3', 'max_depth': 3},
-              {'name': 'hist-depth5', 'max_depth': 5}]
+# A tiny, pre-declared grid limits overfitting to validation. ``weight`` is the multiplier on laundering rows: a number, or
+# 'balanced' for negatives/positives (about 1,280 on HI-Small, the setting used before the weight became a candidate).
+# Validation-only sweeps found no weight beating 1 and depths 5-8 equivalent; names must be lowercase letters, digits and hyphens.
+CANDIDATES = [{'name': 'hist-depth5-unweighted', 'max_depth': 5, 'weight': 1},
+              {'name': 'hist-depth5-light', 'max_depth': 5, 'weight': 5},
+              {'name': 'hist-depth5-balanced', 'max_depth': 5, 'weight': 'balanced'}]
 
 
 def digest(path):
     """SHA-256 hex digest of a file, used to verify inputs, models and manifests."""
     with Path(path).open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def positive_weight(candidate, positives, negatives):
+    """The ``scale_pos_weight`` a candidate trains with: its numeric ``weight``, or negatives/positives for 'balanced'."""
+    weight = candidate['weight']
+    return negatives / positives if weight == 'balanced' else float(weight)
 
 
 def fit_encoder(training):
@@ -238,16 +247,17 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
     dvalid = xgb.QuantileDMatrix(xvalid, label=validation.is_laundering, ref=dtrain, nthread=threads)
     del training, xtrain
     gc.collect()
-    # aucpr suits rare positives; scale_pos_weight up-weights laundering rows, so scores are not calibrated probabilities.
+    # aucpr suits rare positives; a scale_pos_weight above 1 up-weights laundering rows, so scores are then not calibrated probabilities.
+    # The weight differs per candidate, so it is recorded with each candidate rather than in these shared parameters.
     params = dict(objective='binary:logistic', tree_method='hist', device='cpu',
                   eval_metric='aucpr', eta=.1, min_child_weight=10, subsample=1,
-                  colsample_bytree=1, seed=459, nthread=threads,
-                  scale_pos_weight=negatives/positives)
+                  colsample_bytree=1, seed=459, nthread=threads)
     candidates = []
     for candidate in CANDIDATES:
-        print(f"Training {candidate['name']} on {train_counts['rows']:,} rows", flush=True)
+        weight = positive_weight(candidate, positives, negatives)
+        print(f"Training {candidate['name']} (scale_pos_weight {weight:.4g}) on {train_counts['rows']:,} rows", flush=True)
         # Stop if validation AUC-PR has not improved for 20 rounds; log every 20.
-        model = xgb.train({**params, 'max_depth': candidate['max_depth']}, dtrain,
+        model = xgb.train({**params, 'max_depth': candidate['max_depth'], 'scale_pos_weight': weight}, dtrain,
                           num_boost_round=rounds, evals=[(dvalid, 'validation')],
                           early_stopping_rounds=20, verbose_eval=20)
         # Slice explicitly: later predictions and saved artifacts use selected trees only.
@@ -256,7 +266,7 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
         metrics = ranking_metrics(rank(validation, predictions))
         path = output / (candidate['name'] + '.ubj')
         model.save_model(path)
-        candidates.append(dict(**candidate, trees=model.num_boosted_rounds(),
+        candidates.append(dict(**candidate, scale_pos_weight=weight, trees=model.num_boosted_rounds(),
                                metrics=metrics, model_file=path.name, sha256=digest(path)))
         print(json.dumps(candidates[-1]), flush=True)
     selected = choose_candidate(candidates)
@@ -306,7 +316,7 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
                   parameters=params, max_rounds=rounds, xgboost_version=xgb.__version__,
                   feature_names=feature_names, selection_sha256=digest(output / 'selection.json'),
                   feature_schema_sha256=digest(output / 'features.json'),
-                  limitations=['Weighted logistic scores are not calibrated probabilities.',
+                  limitations=['Logistic ranking scores (weighted or not) are not calibrated probabilities.',
                                'Exploratory synthetic dataset; prior whole-data EDA limits holdout claims.',
                                'Cold-start account history; timestamps have no verified timezone.',
                                'TreeSHAP explains model margins, not causal laundering evidence.',
