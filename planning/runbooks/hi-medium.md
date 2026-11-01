@@ -1,5 +1,11 @@
 # HI-Medium batch run
 
+**1 November 2026 deployment update:** baseline and export now
+run as separate Glue G.2X jobs; SageMaker is reserved for optional Small training.
+See [migration validation and deployment](glue-stage-migration.md). A 1,000-row HI-Small smoke passed; previous Medium AWS/public-snapshot evidence
+does not establish full-population acceptance of this new Glue runtime.
+
+
 Implementation branch: `feature/larger-dataset`.
 
 ## Source and scope
@@ -60,14 +66,14 @@ can reuse results. Small and Medium stage caches have distinct identities.
 |---|---|---|
 | Glue curate / score | 2 G.1X workers, 10 minutes each | 4 G.1X workers, 30 minutes each |
 | Curation shuffle partitions | 8 | 32 |
-| SageMaker baseline / export | One ml.m5.2xlarge, 30 GB, 30 minutes each | One ml.m5.2xlarge, 150 GB, 60 minutes each |
+| Glue baseline / export | 2 G.2X workers, 30 minutes each | 2 G.2X workers, 60 minutes each |
 | Manifest maximum rows | 5,100,000 | 35,000,000 |
 | Maximum bytes per prepared input | Below 2 billion | Below 4 billion |
 
 The workflow passes bounded worker counts/timeouts per run. Defaults on the Glue
 job definitions remain the Small settings. There are no paid-job retries. The
-workflow deadline is four hours and processing status polling is bounded to
-300 checks at 15-second intervals, including instance startup/output upload.
+workflow deadline is four hours. Glue tasks use synchronous completion; only
+optional SageMaker training uses bounded 15-second polling.
 The existing Athena 1 GiB scan guard remains in force; measure actual scans and
 stop for review if it is exceeded rather than silently lifting it.
 
@@ -84,10 +90,11 @@ Singapore public on-demand rates checked on 29 October 2026:
 
 - Glue 5.0: USD 0.44/DPU-hour. Two jobs using four DPUs for 30 minutes each:
   USD 1.76.
-- SageMaker Processing ml.m5.2xlarge: USD 0.576/hour. Two jobs running for their
-  60-minute runtime limits: USD 1.152.
-- These runtime allowances sum to USD 2.912. This is not an invoice cap:
-  provisioning/transfer billing, EBS, Athena, S3, requests, logs and orchestration
+- Migrated Glue baseline/export: two jobs using four DPUs for 60 minutes each:
+  USD 3.52 at that historical Glue rate.
+- The revised runtime allowances sum to USD 5.28 using the 29 October rate.
+  This is a planning illustration, not measured cost or an invoice cap.
+  Provisioning/transfer billing, Athena, S3, requests, logs and orchestration
   may add charges, and failed/repeated runs also cost money.
 
 Rates: [Glue regional price list](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSGlue/current/ap-southeast-1/index.json),

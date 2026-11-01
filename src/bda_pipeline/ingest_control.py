@@ -19,12 +19,12 @@ Workflow and the ``op`` values handled by ``handle``::
     Curate (Glue)          skipped on a curated cache hit
     PrepareBaseline (op=curated)   register Athena table, return baseline job request
     ScoreAndAnalyze (parallel):
-        Baseline (SageMaker Processing) -> PrepareBranches (op=baseline)
+        Baseline (Glue) -> PrepareBranches (op=baseline)
             -> optional Train (SageMaker Training)
         Score (Glue)                     skipped on a scored cache hit
         Corridors (Athena)
     PrepareExport (op=export)      check Athena result, return export job request
-    Export (SageMaker Processing)
+    Export (Glue)
     Publish (op=publish)           verify release, copy to dashboard bucket,
                                    update pointer, invalidate CloudFront, unlock
     RecordFailure (op=failed)      on any error: record evidence, stop workers
@@ -57,7 +57,7 @@ from urllib.parse import urlsplit
 
 from .ingest_contract import (
     ACCOUNT, REGION, BUCKET, SITE_BUCKET, MACHINE, DATABASE, canonical, sha,
-    valid_run, validate_manifest, paths, processing_request, corridor_query, run_profile, training_job_request,
+    valid_run, validate_manifest, paths, stage_request, corridor_query, run_profile, training_job_request,
 )
 from .release import ASSETS, _inspect, SENSITIVE_TEXT
 from .stage_cache import register, reuse
@@ -156,91 +156,82 @@ def release_lock(s3, run_id):
     s3.delete_object(Bucket=BUCKET, Key='pipeline/lock.json', IfMatch=etag)
 
 
-def no_active_workers(clients, run_id):
-    """Ensure no Glue or SageMaker job belonging to this run is still running.
+GLUE_STAGES = [('curated', 'curate', '--output'), ('scored', 'score', '--OUTPUT'),
+               ('baseline', 'baseline', '--OUTPUT'), ('export', 'export', '--OUTPUT')]
 
-    Used before releasing the lock in ``recover``: releasing it while a paid
-    job still writes into the run's prefixes could let a new run start
-    alongside it. Glue job runs are matched by their output argument
-    (``--output`` for curate, ``--OUTPUT`` for score) because Glue run IDs
-    are random; SageMaker jobs are matched by their deterministic names.
 
-    Args:
-        clients: Dict of boto3 clients (needs ``glue`` and ``sagemaker``).
-        run_id: Run ID.
+def stage_run_id(event):
+    """Read the Glue task result without a fragile ASL field dereference.
 
-    Raises:
-        ValueError: if any matching job is in a non-terminal state.
+    The start API calls this JobRunId; optimized .sync returns the completed
+    JobRun object with Id. Missing IDs fail through the normal caught path.
     """
+    result = event.get('job_result', {})
+    run_id = event.get('job_run_id') or result.get('JobRunId') or result.get('JobRunID') or result.get('Id')
+    if not isinstance(run_id, str) or not run_id:
+        raise ValueError('Missing Glue job run ID')
+    return run_id
+
+
+def assert_glue_stage(glue, s3, run_id, stage, job_run_id, config):
+    """Require the exact successful Glue run and its final encrypted commit marker."""
+    job = glue.get_job_run(JobName=f'is459-g3-ingest-{stage}', RunId=job_run_id)['JobRun']
+    args = job.get('Arguments', {})
+    if (job.get('JobRunState') != 'SUCCEEDED' or args.get('--RUN_ID') != run_id
+            or args.get('--STAGE') != stage or args.get('--DEPLOYMENT_SHA256') != sha(config)
+            or args.get('--OUTPUT') != f"s3://{BUCKET}/{paths(run_id)[stage]}/"):
+        raise ValueError('Unverified Glue stage identity or completion')
+    assert_marker(s3, paths(run_id)[stage])
+
+
+def owned_glue_runs(clients, run_id):
+    """Find exact output-owned workers across all four Glue stages."""
     p = paths(run_id)
-    for job in ['is459-g3-ingest-curate', 'is459-g3-ingest-score']:
-        for page in clients['glue'].get_paginator('get_job_runs').paginate(JobName=job):
-            for run in page['JobRuns']:
-                if (run.get('Arguments', {}).get('--output') == f"s3://{BUCKET}/{p['curated']}/"
-                        or run.get('Arguments', {}).get('--OUTPUT') == f"s3://{BUCKET}/{p['scored']}/"):
-                    if run['JobRunState'] in ['STARTING', 'RUNNING', 'STOPPING', 'WAITING']:
-                        raise ValueError('A Glue worker is still active; preserve the lock')
-    sm = clients['sagemaker']
-    for kind, name in [('processing', f'is459-g3-baseline-{run_id}'),
-                       ('processing', f'is459-g3-export-{run_id}'),
-                       ('training', f'is459-g3-train-{run_id}')]:
-        # Choose the list API and response key for processing vs training jobs.
-        operation, key = ('list_processing_jobs', 'ProcessingJobSummaries') if kind == 'processing' else ('list_training_jobs', 'TrainingJobSummaries')
-        # NameContains is a substring filter, so the exact name is re-checked below.
-        for page in sm.get_paginator(operation).paginate(NameContains=name):
-            for job in page[key]:
-                if job[f'{kind.capitalize()}JobName'] == name and job[f'{kind.capitalize()}JobStatus'] in ['InProgress', 'Stopping']:
-                    raise ValueError('A SageMaker worker is still active; preserve the lock')
+    for stage, suffix, argument in GLUE_STAGES:
+        name = 'is459-g3-ingest-' + suffix
+        for page in clients['glue'].get_paginator('get_job_runs').paginate(JobName=name):
+            for job in page['JobRuns']:
+                if job.get('Arguments', {}).get(argument) == f's3://{BUCKET}/{p[stage]}/':
+                    yield name, job
+
+
+def owned_training_jobs(clients, run_id):
+    name = f'is459-g3-train-{run_id}'
+    for page in clients['sagemaker'].get_paginator('list_training_jobs').paginate(NameContains=name):
+        for job in page['TrainingJobSummaries']:
+            if job['TrainingJobName'] == name:
+                yield job
+
+
+def no_active_workers(clients, run_id):
+    """Never unlock while this run's Glue workers or training job are active."""
+    for _, job in owned_glue_runs(clients, run_id):
+        if job['JobRunState'] in ['STARTING', 'RUNNING', 'STOPPING', 'WAITING']:
+            raise ValueError('A Glue worker is still active; preserve the lock')
+    for job in owned_training_jobs(clients, run_id):
+        if job['TrainingJobStatus'] in ['InProgress', 'Stopping']:
+            raise ValueError('A SageMaker worker is still active; preserve the lock')
 
 
 def stop_owned_workers(clients, run_id):
-    """Request cancellation only for exact run-owned jobs; keep the run lock.
-
-    Called on failure so that paid Glue/SageMaker jobs from a failed or aborted
-    run do not keep running (and costing money). Jobs are identified the same
-    way as in ``no_active_workers``. The lock is *not* released here, because
-    a stop request is asynchronous; ``recover`` releases it later after
-    confirming the jobs have actually stopped.
-
-    Args:
-        clients: Dict of boto3 clients (``glue``, ``sagemaker``).
-        run_id: Run ID.
-
-    Returns:
-        List of stopped Glue job-run IDs and SageMaker job names.
-
-    Raises:
-        ValueError: if Glue rejects the stop request.
-    """
+    """Stop only this run's four Glue stages and optional SageMaker training."""
     stopped = []
-    p = paths(run_id)
-    glue, sm = clients['glue'], clients['sagemaker']
-    for stage, argument in [('curated', '--output'), ('scored', '--OUTPUT')]:
-        name = 'is459-g3-ingest-' + ('curate' if stage == 'curated' else 'score')
-        ids = []
-        for page in glue.get_paginator('get_job_runs').paginate(JobName=name):
-            for job in page['JobRuns']:
-                if (job.get('Arguments', {}).get(argument) == f's3://{BUCKET}/{p[stage]}/'
-                        and job['JobRunState'] in ['STARTING', 'RUNNING', 'WAITING']):
-                    ids.append(job['Id'])
-        if ids:
-            response = glue.batch_stop_job_run(JobName=name, JobRunIds=ids)
-            if response.get('Errors'): raise ValueError('Glue cancellation was rejected; retain lock')
-            stopped.extend(ids)
-    for kind, stage in [('processing', 'baseline'), ('processing', 'export'), ('training', 'train')]:
-        name = f'is459-g3-{stage}-{run_id}'
-        operation, key = ('list_processing_jobs', 'ProcessingJobSummaries') if kind == 'processing' else ('list_training_jobs', 'TrainingJobSummaries')
-        for page in sm.get_paginator(operation).paginate(NameContains=name):
-            for job in page[key]:
-                if job[f'{kind.capitalize()}JobName'] == name and job[f'{kind.capitalize()}JobStatus'] == 'InProgress':
-                    try:
-                        if kind == 'processing': sm.stop_processing_job(ProcessingJobName=name)
-                        else: sm.stop_training_job(TrainingJobName=name)
-                    except sm.exceptions.ValidationException:
-                        # Only tolerate the race where the worker is already terminal/stopping.
-                        current = sm.describe_processing_job(ProcessingJobName=name) if kind == 'processing' else sm.describe_training_job(TrainingJobName=name)
-                        if current[f'{kind.capitalize()}JobStatus'] == 'InProgress': raise
-                    stopped.append(name)
+    for name, job in owned_glue_runs(clients, run_id):
+        if job['JobRunState'] in ['STARTING', 'RUNNING', 'WAITING']:
+            response = clients['glue'].batch_stop_job_run(JobName=name, JobRunIds=[job['Id']])
+            if response.get('Errors'):
+                raise ValueError('Glue cancellation was rejected; retain lock')
+            stopped.append(job['Id'])
+    sm = clients['sagemaker']
+    for job in owned_training_jobs(clients, run_id):
+        if job['TrainingJobStatus'] == 'InProgress':
+            name = job['TrainingJobName']
+            try:
+                sm.stop_training_job(TrainingJobName=name)
+            except sm.exceptions.ValidationException:
+                if sm.describe_training_job(TrainingJobName=name)['TrainingJobStatus'] == 'InProgress':
+                    raise
+            stopped.append(name)
     return stopped
 
 
@@ -307,8 +298,8 @@ def handle(event, config, clients):
         return {'status': 'failed-output-preserved', 'run_id': run_id}
     # ---- processing_failed: SageMaker job failed or exceeded 300 polls ----
     # Raising here sends the workflow into RecordFailure.
-    if op == 'processing_failed':
-        raise ValueError('Processing failed, stopped or exceeded the bounded completion deadline')
+    if op == 'training_failed':
+        raise ValueError('Training failed, stopped or exceeded the bounded completion deadline')
     # All remaining ops work on a validated manifest that matches this
     # deployment and the frozen model.
     manifest, _ = get_json(s3, f"{p['raw']}/manifest.json")
@@ -396,13 +387,13 @@ def handle(event, config, clients):
             existing = glue.get_table(DatabaseName=DATABASE, Name=table)['Table']
             if existing['StorageDescriptor']['Location'] != location:
                 raise ValueError('Existing run table has a different source')
-        # Becomes $.baseline_request; Step Functions passes it to CreateProcessingJob.
-        return processing_request(run_id, 'baseline', config, rows=manifest['rows'])
+        # Becomes $.baseline_request; Step Functions passes it to Glue StartJobRun.
+        return stage_request(run_id, 'baseline', config, subset=manifest['subset'], rows=manifest['rows'])
     # ---- baseline: baseline job done -> optionally build a training job request ----
     if op == 'baseline':
-        job = sm.describe_processing_job(ProcessingJobName=f'is459-g3-baseline-{run_id}')
+        assert_glue_stage(glue, s3, run_id, 'baseline', stage_run_id(event), config)
         proof, _ = get_json(s3, f"{p['baseline']}/proof.json")
-        if job['ProcessingJobStatus'] != 'Completed' or proof['status'] != 'passed' or proof['rows'] != manifest['rows']:
+        if not proof or proof.get('status') != 'passed' or proof.get('rows') != manifest['rows']:
             raise ValueError('Baseline processing is not verified')
         name = 'is459-g3-train-' + run_id
         training = None
@@ -452,16 +443,16 @@ def handle(event, config, clients):
             if trained['TrainingJobStatus'] != 'Completed' or trained['ModelArtifacts']['S3ModelArtifacts'] != f's3://{BUCKET}/{expected}':
                 raise ValueError('Unexpected candidate training output')
             extra['candidate'] = expected
-        # Becomes $.export_request for the Export processing job.
-        return processing_request(run_id, 'export', config, extra, rows=manifest['rows'])
+        # Becomes $.export_request for the Export Glue job.
+        return stage_request(run_id, 'export', config, extra, subset=manifest['subset'], rows=manifest['rows'])
     # ---- publish: verify the release, then make it live on the dashboard ----
     if op == 'publish':
-        job = sm.describe_processing_job(ProcessingJobName=f'is459-g3-export-{run_id}')
+        assert_glue_stage(glue, s3, run_id, 'export', stage_run_id(event), config)
         release, _ = get_json(s3, f"{p['export']}/release/manifest.json")
         # The release must come from a completed export of *this* run, with
         # passed score/corridor (and, if requested, training) verification,
         # and contain exactly the four expected dashboard files.
-        if (job['ProcessingJobStatus'] != 'Completed' or release['pipeline_run_id'] != run_id
+        if (not release or release['pipeline_run_id'] != run_id
                 or release['processing_sha256'] != manifest['processing_sha256']
                 or any(release['verification'][kind]['status'] != 'passed' for kind in ['scores', 'corridors'])
                 or len(release['files']) != len(ASSETS)

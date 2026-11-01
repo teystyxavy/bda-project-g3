@@ -1,27 +1,4 @@
-"""Prepare a small training build context; excludes data, credentials and Terraform state.
-
-Where this sits in the pipeline
--------------------------------
-The SageMaker steps of the batch workflow (XGBoost training, and the
-"baseline" and "export" processing jobs that score, collect evidence and build
-the dashboard release) all run one custom Docker image,
-``is459-g3-training``, stored in ECR. This script assembles that image's
-Docker build context in a fresh folder from an explicit allowlist:
-
-* ``sagemaker/Dockerfile``, ``requirements.txt``, ``train.py`` (training entry
-  point) and ``pipeline_worker.py`` (processing entry point, called as
-  ``python /app/pipeline_worker.py <stage>``);
-* the whole ``src/bda_pipeline`` package (without ``__pycache__``/``.pyc``);
-* the ``dashboard/`` static site files, which the export stage publishes.
-
-It writes ``build-context.json`` with each file's SHA-256 so the exact image
-contents can be reviewed. The image is then built with Docker and pushed by
-``deploy-ingestion.ps1`` / ``update-ingestion.ps1``. No AWS calls here.
-
-Usage
------
-    python scripts/aws/prepare-sagemaker-container.py --output output/training-context
-"""
+"""Prepare the training-only image build context; no AWS calls or datasets."""
 import argparse
 import json
 import shutil
@@ -43,11 +20,10 @@ def main():
         raise ValueError('Use a fresh build directory')
     root = Path(__file__).resolve().parents[2]
     args.output.mkdir(parents=True)
-    for name in ['Dockerfile', 'requirements.txt', 'train.py', 'pipeline_worker.py']:
+    for name in ['Dockerfile', 'requirements.txt', 'train.py']:
         shutil.copyfile(root / 'sagemaker' / name, args.output / name)
     shutil.copytree(root / 'src/bda_pipeline', args.output / 'bda_pipeline',
                     ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-    shutil.copytree(root / 'dashboard', args.output / 'dashboard')
     # digest() is bda_pipeline.model's SHA-256 helper.
     files = {str(path.relative_to(args.output)): digest(path)
              for path in sorted(args.output.rglob('*')) if path.is_file()}

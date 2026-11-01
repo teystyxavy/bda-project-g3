@@ -11,8 +11,8 @@ of running scripts by hand):
   Lambda control API -> Step Functions, which then dispatches Lambda
   acquisition (Kaggle + historical FX) -> S3 raw -> Glue curation -> S3
   curated Parquet, followed by parallel BQ1 Glue scoring, BQ2 Athena corridor
-  SQL and SageMaker Processing baseline verification (plus optional
-  SageMaker Training), all feeding a SageMaker Processing export step.
+  SQL and Glue baseline verification (plus optional
+  SageMaker Training), all feeding a Glue export step.
 * Page 2 "Verification and publication": export -> Lambda publication
   (hash/proof checks, current pointer) -> private S3 dashboard origin ->
   CloudFront -> browser, plus how the live status panel reads Step
@@ -75,7 +75,7 @@ def page(file, name, title, subtitle):
     result = SHAPES.Page(file, name, title, subtitle)
     # XPath-style lookup of the <mxCell id="title"> created by Page.__init__.
     result.root.find("mxCell[@id='title']").set('value',
-        '<b>' + title + '</b><br>Group 3 | 6 October 2026 | UI implementation; deployment pending')
+        '<b>' + title + '</b><br>Group 3 | 1 November 2026 | Glue migration; 1,000-row AWS smoke verified')
     return result
 
 
@@ -97,14 +97,14 @@ def build():
     file = ET.Element('mxfile', host='app.diagrams.net', version='31.7.0')
     # ---------------- Page 1: protected run controls and batch analysis ----------------
     p = page(file, 'Ingestion and analysis', 'Dashboard-controlled batch pipeline: ingestion and parallel analysis',
-             'The dashboard API/sign-in are implemented locally and await deployment. The diagram describes the existing batch workflows, not a new AWS acceptance run.')
+             'Deployed dashboard controls and Glue baseline/export migration. A 1,000-row AWS smoke passed; larger dataset runtime acceptance remains separate.')
     # Control lane: who can start a run and how the request reaches Step Functions.
     # API Gateway checks a JWT (operator sign-in); the Lambda control API gives
     # each submission a stable ID and reserves the launch in DynamoDB so a
     # double-click cannot start two pipelines.
     p.group('control', 'Protected run controls', 40, 220, 1500, 310)
     p.local('ui', 'Dashboard Ingestion tab', 'HI-Small demo/full selection<br>operator sign-in', 55, 115, 'control')
-    p.icon('api', 'API Gateway', 'JWT access token<br>operator-only routes', 410, 120, 'api_gateway', 'control')
+    p.icon('api', 'API Gateway', 'AWS IAM bootstrap<br>operator-only sessions', 410, 120, 'api_gateway', 'control')
     p.icon('api_lambda', 'Lambda control API', 'Stable submission ID<br>DynamoDB launch reservation', 750, 120, 'lambda', 'control')
     p.icon('states', 'Step Functions', 'Acquisition wrapper<br>existing batch state machine', 1090, 120, 'step_functions', 'control')
     # Chain ui -> api -> api_lambda -> states.
@@ -119,9 +119,9 @@ def build():
     p.icon('curated', 'S3 curated', 'Date-partitioned Parquet<br>shared by both business views', 780, 750, 's3', side_label=True)
     p.icon('score', 'Glue scoring', 'BQ1 frozen-model queue<br>S3 scored Parquet', 1120, 750, 'glue', side_label=True)
     p.icon('athena', 'Athena', 'BQ2 corridor SQL<br>S3 via Glue catalog', 1120, 940, 'athena')
-    p.icon('baseline', 'SageMaker Processing', 'Rule baseline verification<br>full-run candidate preparation', 1460, 1190, 'sagemaker', side_label=True)
+    p.icon('baseline', 'AWS Glue', 'Rule baseline verification<br>full-run candidate preparation', 1460, 1190, 'glue', side_label=True)
     p.icon('train', 'SageMaker Training', 'Optional private candidate<br>no automatic promotion', 1800, 1190, 'sagemaker', side_label=True)
-    p.icon('export', 'SageMaker Processing', 'Reconcile and build results<br>then publication (page 2)', 2080, 750, 'sagemaker')
+    p.icon('export', 'AWS Glue', 'Reconcile and build results<br>then publication (page 2)', 2080, 750, 'glue')
     # The export icon sits at the right edge, so move its label to the right
     # of the icon (vertically centred) instead of underneath it.
     export_cell = p.root.find("mxCell[@id='export']")
@@ -151,7 +151,7 @@ def build():
              'Only verified release assets are published. A reused release skips new batch work and keeps the new dashboard shell; no model is promoted by ingestion.')
     # Export builds four release assets (HTML/JS/CSS/JSON); the publication
     # Lambda re-checks hashes and only then moves the "current" pointer.
-    p.icon('export', 'SageMaker Processing', 'Score/FX/corridor reconciliation<br>build four release assets', 160, 520, 'sagemaker')
+    p.icon('export', 'AWS Glue', 'Score/FX/corridor reconciliation<br>build four release assets', 160, 520, 'glue')
     p.icon('publish', 'Lambda publication', 'Verify hashes and proofs<br>commit current pointer', 560, 520, 'lambda')
     p.icon('site', 'S3 dashboard origin', 'Private encrypted bucket<br>immutable HTML/JS/CSS/JSON', 960, 520, 's3')
     p.icon('cdn', 'CloudFront', 'Serve verified business views<br>invalidate root assets', 1360, 520, 'cloudfront', side_label=True)

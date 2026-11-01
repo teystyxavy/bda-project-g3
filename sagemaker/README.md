@@ -1,5 +1,13 @@
 # SageMaker AML training
 
+**1 November 2026 deployment verified:** baseline verification,
+rule scoring and dashboard export now use Glue jobs `is459-g3-ingest-baseline`
+and `is459-g3-ingest-export`. SageMaker is used only for optional candidate
+training. The fresh 1,000-row AWS smoke passed through public publication with
+all four Glue jobs successful. Earlier acceptance records below describe the predecessor.
+See [migration and validation](../planning/runbooks/glue-stage-migration.md) for the deployment evidence and full-population validation limits.
+
+
 Implementation status: the SageMaker foundation is deployed. Baseline and export
 Processing jobs passed both AWS runs. Full training job
 `is459-g3-train-full-20261006-aws1` completed with 159 billable seconds. The verified
@@ -21,7 +29,7 @@ Input is the **verified full baseline export**, not raw CSV or model predictions
 with its `dashboard/dashboard.json` source-hash and evaluation manifest. The
 existing export is `output/cloud-insights-20261005/`. The implemented
 [ingestion workflow](../planning/runbooks/ingestion-runbook.md) produces the same baseline
-contract in a SageMaker Processing stage before invoking this trainer with `-Train`.
+contract in a Glue baseline stage before invoking this trainer with `-Train`.
 That workflow is deployed and passed the AWS smoke.
 
 SageMaker stages two File-mode channels into `/opt/ml/input/data/`: `baseline/`

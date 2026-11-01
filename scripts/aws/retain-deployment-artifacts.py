@@ -17,7 +17,8 @@ from datetime import datetime, timezone
 
 BUCKET = 'is459-g3-588738581042-ap-southeast-1'
 FILES = {'control.zip', 'bda_pipeline.zip', 'runtime.gluewheels.zip',
-         'curate_transactions.py', 'score_transactions.py',
+         'curate_transactions.py', 'score_transactions.py', 'pipeline_stage.py',
+         'dashboard/index.html', 'dashboard/dashboard.js', 'dashboard/dashboard.css',
          *{'model/' + name for name in ['comparison.json', 'selection.json',
                                        'features.json', 'model-manifest.json', 'deployment.json']}}
 

@@ -6,10 +6,10 @@
 #   1. infra/sagemaker  (3 resources): ECR repository is459-g3-training and the
 #      SageMaker training IAM role + policy. After applying it, the worker image
 #      (built from prepare-sagemaker-container.py's context) is pushed to ECR.
-#   2. infra/ingestion  (33 resources at the time of review): S3 artifact
+#   2. infra/ingestion  (41 resources): S3 artifact
 #      uploads and deployment config, the control Lambda, Glue database and
-#      curate/score jobs, IAM roles/policies (Glue, Lambda, SageMaker
-#      processing, Step Functions), log groups, the is459-g3-ingest Step
+#      curate/score/baseline/export jobs, IAM roles/policies (Glue, Lambda,
+#      Step Functions), log groups, the is459-g3-ingest Step
 #      Functions workflow and the EventBridge rule that cancels workers when
 #      an execution fails.
 #
@@ -87,9 +87,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Terraform plan failed' }
         $plan = & $terraform "-chdir=infra/$module" show -json "$privateRoot/deployment.tfplan" | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect deployment plan' }
-        # Reviewed resource counts: 3 for sagemaker, 33 for ingestion. Any other
+        # Reviewed resource counts: 3 for sagemaker, 41 for ingestion. Any other
         # count, or any non-'create' action, means the plan is not the reviewed one.
-        $expected = if ($module -eq 'sagemaker') { 3 } else { 33 }
+        $expected = if ($module -eq 'sagemaker') { 3 } else { 41 }
         $changes = @($plan.resource_changes | Where-Object { ($_.change.actions -join ',') -ne 'no-op' })
         if ($changes.Count -ne $expected -or @($changes | Where-Object { ($_.change.actions -join ',') -ne 'create' }).Count) { throw 'Plan differs from the reviewed additions; stop and review it' }
         # Apply exactly the saved, checked plan.

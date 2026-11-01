@@ -1,5 +1,5 @@
 {
-  "Comment": "Parallel verified full batch; 15-second bounded processing checks; no paid-job retries.",
+  "Comment": "Parallel verified full batch; Glue stages and bounded training checks; no paid-job retries.",
   "StartAt": "Begin",
   "TimeoutSeconds": 43200,
   "States": {
@@ -108,104 +108,24 @@
           "States": {
             "Baseline": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::aws-sdk:sagemaker:createProcessingJob",
+              "Resource": "arn:aws:states:::glue:startJobRun.sync",
               "Parameters": {
-                "ProcessingJobName.$": "$.baseline_request.ProcessingJobName",
-                "RoleArn.$": "$.baseline_request.RoleArn",
-                "AppSpecification.$": "$.baseline_request.AppSpecification",
-                "ProcessingInputs.$": "$.baseline_request.ProcessingInputs",
-                "ProcessingOutputConfig.$": "$.baseline_request.ProcessingOutputConfig",
-                "ProcessingResources.$": "$.baseline_request.ProcessingResources",
-                "StoppingCondition.$": "$.baseline_request.StoppingCondition",
-                "NetworkConfig.$": "$.baseline_request.NetworkConfig",
-                "Tags.$": "$.baseline_request.Tags"
+                "JobName.$": "$.baseline_request.JobName",
+                "Arguments.$": "$.baseline_request.Arguments",
+                "WorkerType.$": "$.baseline_request.WorkerType",
+                "NumberOfWorkers.$": "$.baseline_request.NumberOfWorkers",
+                "Timeout.$": "$.baseline_request.Timeout"
               },
-              "ResultPath": null,
-              "Next": "BaselinePollInit"
-            },
-            "BaselinePollInit": {
-              "Type": "Pass",
-              "Result": {
-                "attempt": 0
-              },
-              "ResultPath": "$.poll",
-              "Next": "BaselineWait"
-            },
-            "BaselineWait": {
-              "Type": "Wait",
-              "Seconds": 15,
-              "Next": "BaselineStatus"
-            },
-            "BaselineStatus": {
-              "Type": "Task",
-              "Resource": "arn:aws:states:::aws-sdk:sagemaker:describeProcessingJob",
-              "Parameters": {
-                "ProcessingJobName.$": "$.baseline_request.ProcessingJobName"
-              },
-              "ResultSelector": {
-                "status.$": "$.ProcessingJobStatus"
-              },
-              "ResultPath": "$.job_status",
-              "Next": "BaselineComplete",
-              "Retry": [
-                {
-                  "ErrorEquals": [
-                    "States.TaskFailed"
-                  ],
-                  "IntervalSeconds": 3,
-                  "MaxAttempts": 2,
-                  "BackoffRate": 2
-                }
-              ]
-            },
-            "BaselineComplete": {
-              "Type": "Choice",
-              "Choices": [
-                {
-                  "Variable": "$.job_status.status",
-                  "StringEquals": "Completed",
-                  "Next": "PrepareBranches"
-                },
-                {
-                  "Or": [
-                    {
-                      "Variable": "$.job_status.status",
-                      "StringEquals": "Failed"
-                    },
-                    {
-                      "Variable": "$.job_status.status",
-                      "StringEquals": "Stopped"
-                    }
-                  ],
-                  "Next": "BaselineFailed"
-                },
-                {
-                  "Variable": "$.poll.attempt",
-                  "NumericGreaterThanEquals": 299,
-                  "Next": "BaselineFailed"
-                }
-              ],
-              "Default": "BaselinePollIncrement"
-            },
-            "BaselinePollIncrement": {
-              "Type": "Pass",
-              "Parameters": {
-                "attempt.$": "States.MathAdd($.poll.attempt, 1)"
-              },
-              "ResultPath": "$.poll",
-              "Next": "BaselineWait"
-            },
-            "BaselineFailed": {
-              "Type": "Fail",
-              "Error": "ProcessingFailedOrDeadline",
-              "Cause": "Processing did not succeed within 300 checks; preserve outputs and stop owned workers."
+              "ResultPath": "$.baseline_job",
+              "Next": "PrepareBranches"
             },
             "PrepareBranches": {
               "Type": "Task",
               "Resource": "${control_arn}",
               "Parameters": {
                 "op": "baseline",
-                "run_id.$": "$.run_id"
+                "run_id.$": "$.run_id",
+                "job_result.$": "$.baseline_job"
               },
               "ResultPath": "$.training",
               "Next": "TrainRequested",
@@ -337,8 +257,8 @@
             },
             "TrainFailed": {
               "Type": "Fail",
-              "Error": "ProcessingFailedOrDeadline",
-              "Cause": "Processing did not succeed within 300 checks; preserve outputs and stop owned workers."
+              "Error": "TrainingFailedOrDeadline",
+              "Cause": "Training did not succeed within 300 checks; preserve outputs and stop owned workers."
             }
           }
         },
@@ -442,134 +362,16 @@
     },
     "Export": {
       "Type": "Task",
-      "Resource": "arn:aws:states:::aws-sdk:sagemaker:createProcessingJob",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
       "Parameters": {
-        "ProcessingJobName.$": "$.export_request.ProcessingJobName",
-        "RoleArn.$": "$.export_request.RoleArn",
-        "AppSpecification.$": "$.export_request.AppSpecification",
-        "ProcessingInputs.$": "$.export_request.ProcessingInputs",
-        "ProcessingOutputConfig.$": "$.export_request.ProcessingOutputConfig",
-        "ProcessingResources.$": "$.export_request.ProcessingResources",
-        "StoppingCondition.$": "$.export_request.StoppingCondition",
-        "NetworkConfig.$": "$.export_request.NetworkConfig",
-        "Tags.$": "$.export_request.Tags"
+        "JobName.$": "$.export_request.JobName",
+        "Arguments.$": "$.export_request.Arguments",
+        "WorkerType.$": "$.export_request.WorkerType",
+        "NumberOfWorkers.$": "$.export_request.NumberOfWorkers",
+        "Timeout.$": "$.export_request.Timeout"
       },
-      "ResultPath": null,
-      "Next": "ExportPollInit",
-      "Catch": [
-        {
-          "ErrorEquals": [
-            "States.ALL"
-          ],
-          "ResultPath": "$.failure",
-          "Next": "RecordFailure"
-        }
-      ]
-    },
-    "ExportPollInit": {
-      "Type": "Pass",
-      "Result": {
-        "attempt": 0
-      },
-      "ResultPath": "$.poll",
-      "Next": "ExportWait"
-    },
-    "ExportWait": {
-      "Type": "Wait",
-      "Seconds": 15,
-      "Next": "ExportStatus"
-    },
-    "ExportStatus": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::aws-sdk:sagemaker:describeProcessingJob",
-      "Parameters": {
-        "ProcessingJobName.$": "$.export_request.ProcessingJobName"
-      },
-      "ResultSelector": {
-        "status.$": "$.ProcessingJobStatus"
-      },
-      "ResultPath": "$.job_status",
-      "Next": "ExportComplete",
-      "Retry": [
-        {
-          "ErrorEquals": [
-            "States.TaskFailed"
-          ],
-          "IntervalSeconds": 3,
-          "MaxAttempts": 2,
-          "BackoffRate": 2
-        }
-      ],
-      "Catch": [
-        {
-          "ErrorEquals": [
-            "States.ALL"
-          ],
-          "ResultPath": "$.failure",
-          "Next": "RecordFailure"
-        }
-      ]
-    },
-    "ExportComplete": {
-      "Type": "Choice",
-      "Choices": [
-        {
-          "Variable": "$.job_status.status",
-          "StringEquals": "Completed",
-          "Next": "Publish"
-        },
-        {
-          "Or": [
-            {
-              "Variable": "$.job_status.status",
-              "StringEquals": "Failed"
-            },
-            {
-              "Variable": "$.job_status.status",
-              "StringEquals": "Stopped"
-            }
-          ],
-          "Next": "ExportFailed"
-        },
-        {
-          "Variable": "$.poll.attempt",
-          "NumericGreaterThanEquals": 299,
-          "Next": "ExportFailed"
-        }
-      ],
-      "Default": "ExportPollIncrement"
-    },
-    "ExportPollIncrement": {
-      "Type": "Pass",
-      "Parameters": {
-        "attempt.$": "States.MathAdd($.poll.attempt, 1)"
-      },
-      "ResultPath": "$.poll",
-      "Next": "ExportWait"
-    },
-    "ExportFailed": {
-      "Type": "Task",
-      "Resource": "${control_arn}",
-      "Parameters": {
-        "op": "processing_failed",
-        "run_id.$": "$.run_id",
-        "stage": "export"
-      },
-      "ResultPath": null,
-      "Next": "RecordFailure",
-      "Retry": [
-        {
-          "ErrorEquals": [
-            "Lambda.ServiceException",
-            "Lambda.AWSLambdaException",
-            "Lambda.SdkClientException",
-            "Lambda.TooManyRequestsException"
-          ],
-          "IntervalSeconds": 3,
-          "MaxAttempts": 2,
-          "BackoffRate": 2
-        }
-      ],
+      "ResultPath": "$.export_job",
+      "Next": "Publish",
       "Catch": [
         {
           "ErrorEquals": [
@@ -585,7 +387,8 @@
       "Resource": "${control_arn}",
       "Parameters": {
         "op": "publish",
-        "run_id.$": "$.run_id"
+        "run_id.$": "$.run_id",
+        "job_result.$": "$.export_job"
       },
       "ResultPath": "$",
       "Next": "Complete",

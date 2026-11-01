@@ -1,5 +1,20 @@
 # Big Data Pipeline Plan — IBM AML Transactions
 
+**1 November AWS cleanup:** the predecessor standalone scoring/orchestration
+stacks were retired through Terraform; the current ingestion stack owns these
+functions. Failed runs and obsolete deployment objects were removed (4.54 GB),
+with current/rollback artifacts and successful evidence retained. Historical
+milestones below do not imply those predecessor resources are still deployed.
+See [cleanup record](runbooks/aws-cleanup-20261101.md).
+
+**1 November 2026 deployment verified:** baseline verification,
+rule scoring and dashboard export now use Glue jobs `is459-g3-ingest-baseline`
+and `is459-g3-ingest-export`. SageMaker is used only for optional candidate
+training. The fresh 1,000-row AWS smoke passed through public publication with
+all four Glue jobs successful. Earlier acceptance records below describe the predecessor.
+See [migration and validation](runbooks/glue-stage-migration.md) for the deployment evidence and full-population validation limits.
+
+
 **EventBridge live acceptance, 7 October 2026:** the opt-in local-upload route
 passed a 1,000-row source-to-publication smoke in 8m27.55s. Re-uploading its marker
 reached `AlreadyStarted` in a second wrapper without creating another batch.

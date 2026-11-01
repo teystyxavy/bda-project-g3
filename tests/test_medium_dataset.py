@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from bda_pipeline.cloud_scores import checked_indices
-from bda_pipeline.ingest_contract import processing_request, sha, validate_manifest
+from bda_pipeline.ingest_contract import stage_request, sha, validate_manifest
 from bda_pipeline.stage_cache import stage_key
 from test_ingestion import config, manifest
 
@@ -57,17 +57,16 @@ def test_subset_identity_cannot_be_mixed():
 
 def test_medium_processing_is_bounded_and_small_settings_preserved():
     for stage in ['baseline', 'export']:
-        small = processing_request('test-run', stage, config())
-        medium = processing_request('test-run', stage, config(), rows=31_898_238)
-        large = processing_request('test-run', stage, config(), rows=179_702_229)
-        assert small['ProcessingResources']['ClusterConfig']['InstanceType'] == 'ml.m5.2xlarge'
-        assert small['StoppingCondition']['MaxRuntimeInSeconds'] == 1800
-        assert medium['ProcessingResources']['ClusterConfig'] == {
-            'InstanceCount': 1, 'InstanceType': 'ml.m5.2xlarge', 'VolumeSizeInGB': 150}
-        assert medium['StoppingCondition']['MaxRuntimeInSeconds'] == 3600
-        assert large['ProcessingResources']['ClusterConfig']['InstanceType'] == 'ml.m5.4xlarge'
-        assert large['StoppingCondition']['MaxRuntimeInSeconds'] == 10800
-        assert medium['NetworkConfig']['EnableNetworkIsolation']
+        small = stage_request('test-run', stage, config())
+        medium = stage_request('test-run', stage, config(), subset='HI-Medium')
+        assert small['WorkerType'] == medium['WorkerType'] == 'G.2X'
+        assert small['NumberOfWorkers'] == medium['NumberOfWorkers'] == 2
+        assert small['Timeout'] == 30
+        assert medium['Timeout'] == 60
+        large = stage_request('test-run', stage, config(), subset='LI-Large', rows=179_702_229)
+        assert large['Timeout'] == 180
+        assert large['WorkerType'] == 'G.2X'
+
 
 
 def test_run_profiles_are_chosen_by_row_count_with_no_ceiling():

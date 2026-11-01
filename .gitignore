@@ -1,8 +1,10 @@
-# Dataset (39GB, downloaded via kaggle-download.py — not committed)
+# Dataset (39GB, downloaded via kaggle-download.py â€” not committed)
 dataset/
 
 # Local pipeline outputs
 output/
+# One-off experiments and exported plans are not maintained source.
+/scratch/
 .terraform/
 *.tfstate
 *.tfstate.*
@@ -56,4 +58,3 @@ Thumbs.db
 
 # pptx files
 *.pptx
-scratch/

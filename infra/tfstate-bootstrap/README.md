@@ -1,6 +1,12 @@
 # Shared Terraform state backend
 
-All 12 stacks use the existing private S3 bucket
+**1 November cleanup:** `scoring` and `orchestration` are retired. Their S3 state
+keys remain, with no managed resources; shared inputs disable their provisioning
+flags. Use those disabled inputs when reviewing the retired stacks. Historical
+snapshots and older enabled settings must not recreate them. See
+[cleanup record](../../planning/runbooks/aws-cleanup-20261101.md).
+
+All 13 stacks, including the coursework archive, use the existing private S3 bucket
 `is459-g3-tfstate-588738581042`, with one `<stack>/terraform.tfstate` key per
 stack. `foundation` maps to `infra/terraform`. The DynamoDB table
 `is459-g3-tfstate-lock` provides locking compatible with the team's Terraform
@@ -31,7 +37,7 @@ terraform -chdir=infra/ingestion plan "-var-file=$inputs"
 
 Other stack names: `hosting`, `scoring`, `sagemaker`, `cloud-ingestion`,
 `orchestration`, `streaming`, `dashboard-status`, `dashboard-control`,
-`eventbridge-trigger`, `foundation`, and `tfstate-bootstrap`.
+`eventbridge-trigger`, `foundation`, `tfstate-bootstrap`, and `archive`.
 The module directory for `foundation` is `infra/terraform`.
 Pass `-Profile your-tools-profile` if the project profile has a different name.
 

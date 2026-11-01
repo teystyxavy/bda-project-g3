@@ -18,7 +18,7 @@ Glue ``--extra-files`` and the ``bda_pipeline`` package via
 
 The output is later checked row by row by
 ``bda_pipeline/cloud_scores.verify_full_scores`` (locally) or
-``ingest_compute.verify_scores`` (SageMaker Processing).
+``ingest_compute.verify_scores`` (Glue baseline/export).
 
 Arguments: ``--INPUT`` (curated Parquet URI), ``--OUTPUT`` (fresh scored
 prefix), ``--MODEL_DIR`` (default ``.`` = files Glue already copied to the

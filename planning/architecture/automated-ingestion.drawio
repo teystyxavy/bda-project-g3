@@ -8,10 +8,10 @@
         <mxCell id="background" value="" style="rounded=0;fillColor=#F5F5F5;strokeColor=none;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="0" y="0" width="2400" height="1400" />
         </mxCell>
-        <mxCell id="title" value="&lt;b&gt;Automated ingestion: sources to a verified dashboard&lt;/b&gt;&lt;br&gt;Group 3 | 6 October 2026 | Verified implementation" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=23;fontColor=#232F3E;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+        <mxCell id="title" value="&lt;b&gt;Automated ingestion: sources to a verified dashboard&lt;/b&gt;&lt;br&gt;Group 3 | 1 November 2026 | Glue migration; 1,000-row AWS smoke verified" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=23;fontColor=#232F3E;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="40" y="30" width="1550" height="60" />
         </mxCell>
-        <mxCell id="subtitle" value="Deployed 6 October 2026. AWS smoke and full training/publication run passed. On-demand batch path; streaming and schedules are separate." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=17;fontColor=#232F3E;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="Deployed 1 November 2026: Glue baseline and export passed a 1,000-row AWS smoke. SageMaker is reserved for optional training; full-scale validation pending." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=17;fontColor=#232F3E;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="40" y="110" width="2220" height="60" />
         </mxCell>
         <mxCell id="acquire" value="Local acquisition and cloud inputs" style="container=1;dropTarget=1;rounded=0;html=1;whiteSpace=wrap;fillColor=none;strokeColor=#8C98A5;strokeWidth=1.5;verticalAlign=top;align=left;spacing=15;fontSize=18;fontStyle=1;" vertex="1" parent="1">
@@ -29,7 +29,7 @@
         <mxCell id="curate" value="&lt;b&gt;Glue curation&lt;/b&gt;&lt;br&gt;String IDs / account joins&lt;br&gt;causal features + partitions" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;whiteSpace=wrap;labelWidth=270;fontSize=12;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.glue;" vertex="1" parent="acquire">
           <mxGeometry as="geometry" x="987" y="135" width="78" height="78" />
         </mxCell>
-        <mxCell id="baseline" value="&lt;b&gt;SageMaker Processing&lt;/b&gt;&lt;br&gt;Verify raw / FX / histories&lt;br&gt;produce rule baseline" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#01A88D;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;whiteSpace=wrap;labelWidth=270;fontSize=12;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sagemaker;" vertex="1" parent="acquire">
+        <mxCell id="baseline" value="&lt;b&gt;AWS Glue&lt;/b&gt;&lt;br&gt;Verify raw / FX / histories&lt;br&gt;produce rule baseline" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;whiteSpace=wrap;labelWidth=270;fontSize=12;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.glue;" vertex="1" parent="acquire">
           <mxGeometry as="geometry" x="650" y="135" width="78" height="78" />
         </mxCell>
         <mxCell id="acquire0" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;exitDx=0;exitDy=0;entryDx=0;entryDy=0;strokeColor=#526273;" edge="1" parent="1" source="source" target="command">
@@ -71,7 +71,7 @@
         <mxCell id="cdn" value="&lt;b&gt;CloudFront + S3&lt;/b&gt;&lt;br&gt;Versioned immutable assets&lt;br&gt;conditional release pointer" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;whiteSpace=wrap;labelWidth=270;fontSize=12;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;" vertex="1" parent="release">
           <mxGeometry as="geometry" x="447" y="130" width="78" height="78" />
         </mxCell>
-        <mxCell id="export" value="&lt;b&gt;SageMaker Processing&lt;/b&gt;&lt;br&gt;Score / corridor reconciliation&lt;br&gt;candidate artifact verification" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#01A88D;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;whiteSpace=wrap;labelWidth=270;fontSize=12;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sagemaker;" vertex="1" parent="release">
+        <mxCell id="export" value="&lt;b&gt;AWS Glue&lt;/b&gt;&lt;br&gt;Score / corridor reconciliation&lt;br&gt;candidate artifact verification" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#8C4FFF;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;whiteSpace=wrap;labelWidth=270;fontSize=12;fontFamily=Helvetica;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.glue;" vertex="1" parent="release">
           <mxGeometry as="geometry" x="1050" y="130" width="78" height="78" />
         </mxCell>
         <mxCell id="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;exitDx=0;exitDy=0;entryDx=0;entryDy=0;strokeColor=#526273;" edge="1" parent="1" source="export" target="cdn">
@@ -89,7 +89,7 @@
         <mxCell id="scope" value="Control-plane branches start all three analysis jobs and wait for completion before export. Unchanged successful manifests return cached results. Lambda manages locks, catalog and publication; SNS catches workflow failures. Scoped IAM, encryption and CloudWatch logs apply throughout." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=16;fontColor=#232F3E;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="1440" y="1090" width="435" height="180" />
         </mxCell>
-        <mxCell id="legend" value="Solid arrows: representative data path. Step Functions also dispatches score, Athena and optional training; export waits for all requested branches. SageMaker service stencil verified in the offline official draw.io library. Older core/streaming diagrams document the previous verified releases." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=14;fontColor=#232F3E;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
+        <mxCell id="legend" value="Solid arrows: representative data path. Step Functions also dispatches score, Athena and optional training; export waits for all requested branches. SageMaker is used only for optional training; Glue runs baseline and export. Older core/streaming diagrams document the previous verified releases." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=14;fontColor=#232F3E;fontFamily=Helvetica;spacing=8;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="65" y="1320" width="2250" height="65" />
         </mxCell>
       </root>

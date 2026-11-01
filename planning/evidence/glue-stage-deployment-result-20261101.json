@@ -1,0 +1,227 @@
+{
+  "date": "2026-11-01",
+  "timezone": "Asia/Singapore",
+  "status": "deployed-and-1000-row-smoke-verified",
+  "account": "588738581042",
+  "region": "ap-southeast-1",
+  "deployment": {
+    "config": {
+      "schema_version": 1,
+      "artifact_prefix": "pipeline/deployments/1435da83ea8e8e59490e4b3c13fd80bec1006e70a9d59aa7e075de5686c47754",
+      "model_prefix": "pipeline/deployments/1435da83ea8e8e59490e4b3c13fd80bec1006e70a9d59aa7e075de5686c47754/model",
+      "model_manifest_sha256": "323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f",
+      "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:c0a5962f3fb31f8c4ef239384a84ee67375168b5fcbcb6d4c0d6a35bb713cde7",
+      "distribution_id": "EU1WB6XM4GKHQ",
+      "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+      "stage_versions": {
+        "curated": "a1ecf2466cdb19cf084632f1149f256342b073f0db37b94efe79f9b1fa56b008",
+        "scored": "36647527dc1b71de3e04ede483025d2f216c67390bcd4eb8646974e49c24afaa"
+      }
+    },
+    "initial_ingestion_apply": {
+      "added": 21,
+      "changed": 9,
+      "deleted": 2,
+      "deleted_resources": [
+        "obsolete SageMaker Processing IAM policy",
+        "obsolete SageMaker Processing IAM role"
+      ]
+    },
+    "compatibility_updates": "Immutable artifacts and six existing resource updates per revision; no further deletions.",
+    "dashboard_status_apply": {
+      "added": 0,
+      "changed": 1,
+      "deleted": 0
+    },
+    "dashboard_control_apply": {
+      "added": 0,
+      "changed": 1,
+      "deleted": 0
+    },
+    "terraform_no_drift": [
+      "ingestion",
+      "dashboard-status",
+      "dashboard-control"
+    ],
+    "private_shared_handoff_inputs_refreshed": true,
+    "final_ingestion_state_serial": 9,
+    "predecessor_artifacts_preserved": true
+  },
+  "smoke": {
+    "run_id": "glue-smoke-20261101-c",
+    "subset": "HI-Small",
+    "rows": 1000,
+    "dataset_version": 8,
+    "rerun": true,
+    "acquisition": "AWS Lambda; verified source cache may be reused",
+    "batch_status": "SUCCEEDED",
+    "cloud_status": "SUCCEEDED",
+    "batch_start": "2026-11-01 11:12:13.353000+08:00",
+    "batch_stop": "2026-11-01 11:19:33.777000+08:00",
+    "batch_seconds": 440.424,
+    "glue_jobs": [
+      {
+        "JobName": "is459-g3-ingest-curate",
+        "Id": "jr_2366f7fd490f67df5f31b6ff62ff85d8ef1e3c4faab8e3256116a9800de153b1",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 104,
+        "StartedOn": "2026-11-01 11:12:18.756000+08:00",
+        "CompletedOn": "2026-11-01 11:14:10.196000+08:00"
+      },
+      {
+        "JobName": "is459-g3-ingest-score",
+        "Id": "jr_21d83f500432e31c7ddb29b58102105da65369ec6b6e5bca2f892b21fc796637",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 68,
+        "StartedOn": "2026-11-01 11:14:26.799000+08:00",
+        "CompletedOn": "2026-11-01 11:15:38.497000+08:00"
+      },
+      {
+        "JobName": "is459-g3-ingest-baseline",
+        "Id": "jr_ccf5cb0d49f6604b6426a21577519ac7a95ad3c74ea1bb0e37f268b36eeb686e",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 116,
+        "StartedOn": "2026-11-01 11:14:26.815000+08:00",
+        "CompletedOn": "2026-11-01 11:16:36.558000+08:00"
+      },
+      {
+        "JobName": "is459-g3-ingest-export",
+        "Id": "jr_0a670899ec64228aa52fcdfce134119363a7a7e80de2d2748d6d44751d5adcab",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 69,
+        "StartedOn": "2026-11-01 11:17:35.496000+08:00",
+        "CompletedOn": "2026-11-01 11:18:50.774000+08:00"
+      }
+    ],
+    "baseline_proof": {
+      "status": "passed",
+      "rows": 1000,
+      "positives": 0,
+      "amount_usd": 1644403430.34,
+      "subset": "HI-Small",
+      "start_date": "2022-09-01",
+      "end_date": "2022-09-01",
+      "raw_identity_comparison": "Every source row: ordered SHA256 fingerprint",
+      "fx_comparison": "All same-day and prior-day valuations",
+      "behaviour_reference_rows": 9,
+      "behaviour_scope": "Complete histories for deterministic label-independent approximately 1% sender and receiver cohorts"
+    },
+    "verification": {
+      "scores": {
+        "status": "passed",
+        "rows": 1000,
+        "max_absolute_score_difference": 0.0,
+        "labels_excluded": true,
+        "model_sha256": "f0dc65ca43901f9f02c57c09605121d48570c64d49991eb952f2d2df6a7e4765"
+      },
+      "corridors": {
+        "status": "passed",
+        "reference_rows": 1000,
+        "corridor_rows": 177,
+        "days": [
+          "2022-09-01"
+        ],
+        "identifiers_preserved": true,
+        "max_absolute_differences": {
+          "transactions": 0.0,
+          "volume_usd": 2.384185791015625e-07,
+          "volume_share": 2.7755575615628914e-16,
+          "daily_hhi": 1.3877787807814457e-16
+        },
+        "volume_rtol": 1e-10,
+        "volume_atol_usd": 0.01
+      }
+    },
+    "public_release": {
+      "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+      "model_promoted": false,
+      "processing_sha256": "fad39421e687dc4066ab8ad6d3184824ce0a4bd6183ca72e5b14e975e82a1fc5",
+      "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/glue-smoke-20261101-c/index.html",
+      "run_id": "glue-smoke-20261101-c",
+      "status": "published",
+      "training_requested": false
+    },
+    "public_files": [
+      {
+        "file": "index.html",
+        "bytes": 22273,
+        "sha256": "e2cd8d448d674c47161e30716182ed1795b28507d2794764d41b740fe1e67494"
+      },
+      {
+        "file": "dashboard.css",
+        "bytes": 10845,
+        "sha256": "d3d55b9bf70b3abccb788a0b1a2c91214f36f05b5e51ad65dff04b6b4b5d9190"
+      },
+      {
+        "file": "dashboard.js",
+        "bytes": 66747,
+        "sha256": "1ad91e207b788f1c9a845a137e49b9595781ad50049ed0549cbf6effdf1b8702"
+      },
+      {
+        "file": "dashboard.json",
+        "bytes": 37100,
+        "sha256": "a78a59403270de980eaf43490136f508ac7e6729d14b483514c0863f5e4c3b3b"
+      }
+    ],
+    "public_release_hashes_verified": true,
+    "root_shell_verified_before_restore": true,
+    "lock_released": true,
+    "sagemaker_training_requested": false,
+    "sagemaker_jobs": [],
+    "sagemaker_processing_tasks_in_workflow": 0,
+    "model_promoted": false
+  },
+  "dashboard_restoration": {
+    "status": "passed",
+    "smoke_run_id": "glue-smoke-20261101-c",
+    "restored_run_id": "20261031-162440-9f5ef3a5",
+    "restored_rows": 5078345,
+    "snapshot_sha256": "4359ae377771999c78f38163763ebde1298627d2332c9117cada6705424a82ef",
+    "invalidation_id": "IDF6BMNU2UMHE9KZL41583H3PA",
+    "new_glue_dashboard_shell_retained": true,
+    "public_pointer_restored": true,
+    "public_snapshot_hash_verified": true,
+    "new_glue_shell_verified": true,
+    "public_smoke_status": "SUCCEEDED"
+  },
+  "validation": {
+    "offline_glue_full_suite": {
+      "passed": 262,
+      "skipped": 3,
+      "includes_spark": true
+    },
+    "final_glue_sdk_and_response_regression_suite": {
+      "passed": 31
+    },
+    "dashboard_javascript_tests": {
+      "passed": 18
+    },
+    "terraform_mock_tests": {
+      "passed": 2
+    }
+  },
+  "issues_fixed": [
+    "Curation read_transactions and curate signatures now accept the subset/date arguments already passed by the entry point.",
+    "Frozen-model predictions and explanations honor the saved feature schema when newer behaviour features are present; model artifacts unchanged.",
+    "The Glue sync completion adapter reads the observed Id field from the completed JobRun response.",
+    "Completion-marker upload uses the bundled Glue boto3 1.34.131 API; ownership remains guarded by the lock, single job concurrency and fresh output prefixes.",
+    "Future updates retain the new stage script/dashboard artifacts and allow updates to all four Glue jobs."
+  ],
+  "earlier_attempts": [
+    {
+      "run_id": "glue-smoke-20261101-a",
+      "status": "FAILED",
+      "reason": "Curation argument mismatch before downstream analysis; lock recovered only after workers stopped."
+    },
+    {
+      "run_id": "glue-smoke-20261101-b",
+      "status": "ABORTED",
+      "reason": "Stopped to correct the observed Glue sync response field before handoff; curation succeeded; scoring/baseline stopped and lock recovered."
+    }
+  ],
+  "scope_limits": [
+    "Cloud acceptance covers 1,000 HI-Small transactions, not full-population runtime or cost.",
+    "Optional SageMaker training was not started.",
+    "No recurring ingestion schedule or streaming resources activated."
+  ]
+}

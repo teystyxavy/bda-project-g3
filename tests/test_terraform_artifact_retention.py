@@ -44,3 +44,17 @@ def test_refuses_to_forget_upload_in_another_bucket():
             {"resources": [resource("deployment_artifact", "pipeline/deployments/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "another-bucket")]},
             "pipeline/deployments/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         )
+
+
+@pytest.mark.parametrize('name', ['pipeline_stage.py', 'dashboard/index.html',
+                                 'dashboard/dashboard.js', 'dashboard/dashboard.css'])
+def test_retains_glue_stage_artifacts_on_future_updates(name):
+    previous = 'pipeline/deployments/' + 'a' * 64
+    current = 'pipeline/deployments/' + 'b' * 64
+    item = resource('deployment_artifact', previous)
+    instance = item['instances'][0]
+    instance['index_key'] = name
+    instance['attributes']['key'] = previous + '/' + name
+    assert module.predecessor_addresses({'resources': [item]}, current) == [
+        'aws_s3_object.deployment_artifact["' + name + '"]']
+    assert module.predecessor_addresses({'resources': [item]}, previous) == []

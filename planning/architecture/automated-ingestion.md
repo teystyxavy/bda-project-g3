@@ -1,5 +1,13 @@
 # Automated source-to-dashboard architecture
 
+**1 November 2026 deployment verified:** baseline verification,
+rule scoring and dashboard export now use Glue jobs `is459-g3-ingest-baseline`
+and `is459-g3-ingest-export`. SageMaker is used only for optional candidate
+training. The fresh 1,000-row AWS smoke passed through public publication with
+all four Glue jobs successful. Earlier acceptance records below describe the predecessor.
+See [migration and validation](../runbooks/glue-stage-migration.md) for the deployment evidence and full-population validation limits.
+
+
 The current full-batch workflow additionally runs baseline verification, frozen
 scoring and Athena together after curation, with verified stage reuse and bounded
 SageMaker completion checks. See the
@@ -19,11 +27,11 @@ core and streaming diagrams with the newly deployed command-driven workflow.
 
 1. `ingest.ps1` acquires or reuses Kaggle files, retrieves required historical FX
    rates, verifies a manifest, and uploads separate encrypted raw inputs.
-2. Step Functions starts Glue curation, then SageMaker Processing verifies complete
+2. Step Functions starts Glue curation, then a separate Glue baseline job verifies complete
    row identities, account joins, historical FX and causal feature histories.
 3. Parallel branches score the frozen model in Glue, query bank/currency corridors
    in Athena, and optionally train a private SageMaker candidate with `-Train`.
-4. Export Processing reconciles all scores and corridor metrics, checks candidate
+4. Glue export reconciles all scores and corridor metrics, checks candidate
    provenance and recalculates its period metrics, then builds both business views.
 5. Lambda verifies the four release assets, uploads immutable versions and commits
    one conditional current pointer. CloudFront serves the selected release.

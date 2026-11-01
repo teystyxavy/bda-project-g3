@@ -55,7 +55,7 @@ SERVICE = {
 }
 for _state, _stage in STATE_STAGE.items():
     if _state.startswith(('Baseline', 'Train', 'Export')):
-        SERVICE.setdefault(_state, 'Amazon SageMaker')
+        SERVICE.setdefault(_state, 'Amazon SageMaker' if _state.startswith('Train') else 'AWS Glue')
 for _state in ['ReuseCurated', 'ReuseScores', 'ScoresReused', 'TrainRequested', 'TrainDone', 'ReuseFrozen']:
     SERVICE[_state] = 'AWS Step Functions'
 

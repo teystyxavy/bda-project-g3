@@ -26,7 +26,7 @@ Functions
     ``load_verified_scores`` used by ``model_dashboard.export_model_dashboard``
                             to load the verified score cache.
     ``checked_indices`` / ``feature_fingerprints`` are also reused by
-                            ``ingest_compute`` inside SageMaker Processing.
+                            ``ingest_compute`` inside Glue baseline/export.
 
 Reads only local files; makes no AWS calls itself.
 """

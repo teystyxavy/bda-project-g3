@@ -1,40 +1,8 @@
-"""Read-only timings and stage-cache evidence for a completed ingestion run.
+"""Read-only timings for the acquisition workflow and Glue baseline/export.
 
-Purpose
--------
-After the dashboard-triggered ingestion pipeline has finished a run, this
-script collects *how long it took* and *which stages were reused from the
-stage cache*, so the team can report performance honestly (e.g. "the second
-run was N% faster because curated data was reused").
-
-Where it sits
--------------
-The cloud ingestion has two Step Functions state machines, both started
-with the same execution name = run ID:
-
-* ``is459-g3-cloud-ingest`` - the outer wrapper (acquisition from Kaggle and
-  FX sources, then it starts the inner workflow);
-* ``is459-g3-ingest`` - the inner batch workflow (curation, scoring, Athena,
-  SageMaker Processing ``Baseline`` and ``Export`` jobs, then ``Publish``).
-
-AWS reads (no writes; IAM needs only Describe/Get/List permissions):
-
-* ``states:DescribeExecution`` for both executions (start/stop timestamps);
-* ``states:GetExecutionHistory`` for the inner run, to find when the states
-  after the processing jobs (``PrepareBranches`` after Baseline, ``Publish``
-  after Export) were entered;
-* ``sagemaker:DescribeProcessingJob`` for ``is459-g3-baseline-<run>`` and
-  ``is459-g3-export-<run>``;
-* ``s3:GetObject`` on ``s3://<BUCKET>/pipeline/runs/<run>/raw/manifest.json``,
-  ``.../evidence/stage-cache.json`` and ``.../evidence/result.json``.
-
-Output: a local JSON report at ``--output``; a summary is printed.
-
-Usage::
-
-    python scripts/benchmarks/benchmark-ingestion.py --run-id <run> \\
-        --output output/bench.json [--previous older-report.json] \\
-        [--profile is459-g3-tools]
+Fetches completed execution histories, owned Glue job timings and S3 verification
+receipts. Writes only a local report. Older reports can be supplied for comparison;
+this collector targets the migrated Glue workflow, not old Processing jobs.
 """
 import argparse
 import json
@@ -96,17 +64,20 @@ def benchmark(run_id, profile, output, previous=None):
             entry = event.get('stateEnteredEventDetails', {})
             if entry.get('name') in ['PrepareBranches', 'Publish']:
                 completed['baseline' if entry['name'] == 'PrepareBranches' else 'export'] = event['timestamp']
-    # Compare each SageMaker Processing job's own start/end time with the
+    # Compare each Glue job's own start/end time with the
     # moment Step Functions moved on. The gap shows orchestration overhead
     # (output upload, status propagation, polling) separately from compute.
-    sm = session.client('sagemaker', config=sdk)
+    glue = session.client('glue', config=sdk)
     for stage, next_time in completed.items():
-        job = sm.describe_processing_job(ProcessingJobName=f'is459-g3-{stage}-{run_id}')
+        jobs = [job for page in glue.get_paginator('get_job_runs').paginate(JobName=f'is459-g3-ingest-{stage}')
+                for job in page['JobRuns'] if job.get('Arguments', {}).get('--RUN_ID') == run_id]
+        if len(jobs) != 1 or jobs[0]['JobRunState'] != 'SUCCEEDED':
+            raise ValueError('Benchmark requires one successful owned Glue stage')
+        job = jobs[0]
         report['processing_completion'][stage] = {
-            'compute_seconds': (job['ProcessingEndTime'] - job['ProcessingStartTime']).total_seconds(),
-            'compute_end_to_next_stage_seconds': (next_time - job['ProcessingEndTime']).total_seconds(),
-            'service_last_modified_to_next_stage_seconds': (next_time - job['LastModifiedTime']).total_seconds(),
-            'note': 'Includes final output upload and service status propagation as well as orchestration detection.'}
+            'compute_seconds': job['ExecutionTime'],
+            'compute_end_to_next_stage_seconds': (next_time - job['CompletedOn']).total_seconds(),
+            'note': 'Glue-reported execution time; completion gap includes orchestration detection.'}
     # Attach the run's own evidence documents (input manifest, which stages
     # were reused from cache, final result). Reading at most 100,001 bytes and
     # rejecting anything larger prevents a huge/unexpected object from being

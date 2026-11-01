@@ -1,5 +1,13 @@
 # Command-driven ingestion infrastructure
 
+**1 November 2026 deployment verified:** baseline verification,
+rule scoring and dashboard export now use Glue jobs `is459-g3-ingest-baseline`
+and `is459-g3-ingest-export`. SageMaker is used only for optional candidate
+training. The fresh 1,000-row AWS smoke passed through public publication with
+all four Glue jobs successful. Earlier acceptance records below describe the predecessor.
+See [migration and validation](../../planning/runbooks/glue-stage-migration.md) for the deployment evidence and full-population validation limits.
+
+
 Read [the deployment review](../../planning/archive/reviews/ingestion-implementation-review-20261006.md)
 and [the ingestion runbook](../../planning/runbooks/ingestion-runbook.md). This separate stack
 adds the cloud path without altering the earlier verified batch workflow.

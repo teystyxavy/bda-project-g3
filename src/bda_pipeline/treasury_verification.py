@@ -19,7 +19,7 @@ If both routes agree, the dashboard's treasury numbers are trustworthy.
 Callers:
     * ``scripts/validation/verify-orchestrated-corridors.py`` (local check of
       a downloaded Athena result plus the ``GetQueryExecution`` report);
-    * ``ingest_compute`` inside SageMaker Processing (before release).
+    * ``ingest_compute`` inside Glue baseline/export (before release).
 
 Bank IDs are compared as the original strings (e.g. leading zeros kept);
 nothing is renamed or masked ("identifiers stay unchanged").

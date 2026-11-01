@@ -1,5 +1,12 @@
 # Reviewed batch workflow
 
+**Retired 1 November 2026 during the user-authorized AWS cleanup.** The earlier
+`is459-g3-reviewed-batch` workflow and its dedicated role/policy were removed
+through Terraform. The current `is459-g3-ingest` workflow provides orchestration.
+Shared inputs now set `provision_orchestration=false`; the shared state has no
+managed resources. The instructions below are historical and do not describe a
+currently deployed demonstration. See [cleanup](../../planning/runbooks/aws-cleanup-20261101.md).
+
 Standard Step Functions coordinates frozen Glue scoring and one Athena treasury
 query over the previously verified curated data. It does not ingest, curate,
 train, export explanations or publish a dashboard. See

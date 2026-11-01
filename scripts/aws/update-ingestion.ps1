@@ -83,13 +83,16 @@ try {
     # Allowlist every planned change by address and action. Anything else
     # (a delete, a replace, an unexpected resource) aborts the update.
     $changes = @($plan.resource_changes | Where-Object { ($_.change.actions -join ',') -ne 'no-op' })
-    $allowedUpdates = @('aws_glue_job.job["curate"]', 'aws_glue_job.job["score"]', 'aws_iam_role_policy.control', 'aws_lambda_function.control', 'aws_s3_object.configuration', 'aws_sfn_state_machine.ingest')
-    $allowedCreates = @('aws_cloudwatch_event_rule.cancel_workers', 'aws_cloudwatch_event_target.cancel_workers', 'aws_lambda_permission.cancel_workers')
+    $allowedUpdates = @('aws_glue_job.job["curate"]', 'aws_glue_job.job["score"]', 'aws_glue_job.job["baseline"]', 'aws_glue_job.job["export"]', 'aws_iam_role.glue', 'aws_iam_role_policy.glue', 'aws_iam_role_policy.workflow', 'aws_iam_role_policy.control', 'aws_lambda_function.control', 'aws_s3_object.configuration', 'aws_sfn_state_machine.ingest')
+    $allowedCreates = @('aws_cloudwatch_event_rule.cancel_workers', 'aws_cloudwatch_event_target.cancel_workers', 'aws_lambda_permission.cancel_workers', 'aws_glue_job.job["baseline"]', 'aws_glue_job.job["export"]', 'aws_cloudwatch_log_group.glue["baseline/error"]', 'aws_cloudwatch_log_group.glue["baseline/output"]', 'aws_cloudwatch_log_group.glue["export/error"]', 'aws_cloudwatch_log_group.glue["export/output"]')
+    # Only obsolete Processing IAM resources may be deleted; never data/jobs.
+    $allowedDeletes = @('aws_iam_role_policy.processing', 'aws_iam_role.processing')
     foreach ($change in $changes) {
         $action = $change.change.actions -join ','
         $address = $change.address
         $valid = ($action -eq 'update' -and $address -in $allowedUpdates) -or
             ($action -eq 'create' -and ($address -in $allowedCreates -or $address.StartsWith('aws_s3_object.deployment_artifact['))) -or
+            ($action -eq 'delete' -and $address -in $allowedDeletes) -or
             ($action -eq 'forget' -and $address.StartsWith('aws_s3_object.artifact['))
         if (-not $valid) { throw "Unreviewed or destructive change: $address $action" }
     }

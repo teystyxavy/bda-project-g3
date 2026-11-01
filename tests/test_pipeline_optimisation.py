@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bda_pipeline.ingest_contract import BUCKET, canonical, paths, processing_request, sha
+from bda_pipeline.ingest_contract import BUCKET, canonical, paths, stage_request, sha
 from bda_pipeline.ingest_control import get_json, put_json, stop_owned_workers
 from bda_pipeline.stage_cache import register, reuse, stage_key
 from test_ingestion import MemoryS3, config, manifest, load_script
@@ -88,20 +88,22 @@ def test_parallel_verification_training_dependency_and_bounded_processing_checks
     assert states['PrepareBaseline']['Next'] == 'ScoreAndAnalyze'
     branches = states['ScoreAndAnalyze']['Branches']
     baseline = branches[0]['States']
-    assert baseline['BaselineComplete']['Choices'][0]['Next'] == 'PrepareBranches'
+    assert baseline['Baseline']['Next'] == 'PrepareBranches'
     assert baseline['PrepareBranches']['Parameters']['op'] == 'baseline'
     assert baseline['PrepareBranches']['Next'] == 'TrainRequested'
-    for name, branch_states in [('Baseline', baseline), ('Train', baseline), ('Export', states)]:
+    for name, branch_states in [('Baseline', baseline), ('Export', states)]:
         assert 'Retry' not in branch_states[name]
-        assert branch_states[name + 'Wait']['Seconds'] == 15
-        assert branch_states[name + 'Complete']['Choices'][-1]['NumericGreaterThanEquals'] == 299
-    inputs = {item['InputName'] for item in processing_request('test-run', 'export', config(), {'athena': 'athena-results/x.csv'})['ProcessingInputs']}
+        assert branch_states[name]['Resource'] == 'arn:aws:states:::glue:startJobRun.sync'
+    assert baseline['TrainWait']['Seconds'] == 15
+    assert baseline['TrainComplete']['Choices'][-1]['NumericGreaterThanEquals'] == 299
+    inputs = set(json.loads(stage_request('test-run', 'export', config(), {'athena': 'athena-results/x.csv'})['Arguments']['--INPUTS_JSON']))
     assert inputs == {'run', 'model', 'baseline', 'baseline_manifest', 'scored', 'athena'}
 
 
 def test_cancellation_never_stops_another_run_or_completed_worker():
     stopped = []
     def glue_pages(JobName):
+        if not JobName.endswith('-curate'): return [{'JobRuns': []}]
         return [{'JobRuns': [
             {'Id': 'owned', 'JobRunState': 'RUNNING', 'Arguments': {'--output': f's3://{BUCKET}/pipeline/runs/test-run/curated/'}},
             {'Id': 'other', 'JobRunState': 'RUNNING', 'Arguments': {'--output': f's3://{BUCKET}/pipeline/runs/other-run/curated/'}}]}]

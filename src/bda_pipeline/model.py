@@ -38,11 +38,19 @@ def fit_encoder(training):
             for column in CATEGORICAL}
 
 
-def encode(frame, vocabulary):
+def encode(frame, vocabulary, feature_names=None):
     """Turns transactions into a float32 feature matrix: log1p amount and behaviour counts, self-transfer and currency-mismatch flags, cyclic hour and one-hot categories.
     Raises ValueError on negative/non-finite numbers or missing categories; column order is deterministic, which ``SavedRanker`` relies on."""
     values = {}
-    for column in ['amount_usd_asof', *FEATURES]:
+    numeric = ['amount_usd_asof', *FEATURES]
+    if feature_names is not None:
+        # Frozen models retain their original feature contract even when the
+        # current pipeline computes additional behaviour features. Never add
+        # new inputs to an old model or fabricate missing feature values.
+        numeric = [name.removeprefix('log1p_') for name in feature_names if name.startswith('log1p_')]
+        if len(numeric) != len(set(numeric)) or set(numeric) - {'amount_usd_asof', *FEATURES}:
+            raise ValueError('Unsupported frozen numeric feature schema')
+    for column in numeric:
         numbers = frame[column].to_numpy(dtype=np.float64)
         # log1p of a negative number would be NaN (or -inf at -1).
         if not np.isfinite(numbers).all() or (numbers < 0).any():
@@ -106,7 +114,7 @@ def explain_queue(model, frame, scores, vocabulary, k=100):
     # selected.index holds positions into frame (thanks to reset_index above).
     queue = frame.iloc[selected.index].copy()
     queue['risk_score'] = selected.risk_score.to_numpy()
-    matrix = encode(queue, vocabulary)
+    matrix = encode(queue, vocabulary, model.feature_names)
     # Shape: (k, n_features + 1); last column is the bias (expected margin).
     contributions = model.predict(xgb.DMatrix(matrix), pred_contribs=True)
     margin = contributions.sum(axis=1)
@@ -162,7 +170,7 @@ class SavedRanker:
         """Encodes ``frame`` and returns model scores (0..1 ranking scores, not calibrated probabilities).
         Raises ValueError if the encoded columns differ from the saved schema."""
         import xgboost as xgb
-        matrix = encode(frame, self.vocabulary)
+        matrix = encode(frame, self.vocabulary, self.feature_names)
         if matrix.columns.tolist() != self.feature_names:
             raise ValueError('Encoded feature schema mismatch')
         return self.model.predict(xgb.DMatrix(matrix, nthread=self.threads))

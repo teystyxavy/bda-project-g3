@@ -8,8 +8,8 @@ several places:
   tests, verification);
 * inside the AWS Lambda images (``cloud_acquisition`` for Kaggle + FX
   acquisition, ``ingest_control`` for the Step Functions control plane);
-* inside the SageMaker Processing container (``ingest_compute`` via
-  ``sagemaker/pipeline_worker.py``) for baseline verification and release export.
+* inside the Glue container (``ingest_compute`` via
+  ``jobs/pipeline_stage.py``) for baseline verification and release export.
 
 Importing the package itself only re-exports the small "core transformation"
 helpers that local scripts and tests use most often:
