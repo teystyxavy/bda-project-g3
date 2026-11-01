@@ -5,7 +5,7 @@ Where this sits in the pipeline
 A monitoring/debugging companion to ``scripts/ingestion/ingest.py``. After a
 run has been started (or has finished) the team runs this to collect, in one
 JSON report, everything AWS knows about that run: the Step Functions state
-history, the Athena corridor queries it ran (BQ2), the Glue curate/score job
+history, any Athena queries it ran (none since BQ2 moved to Glue), the Glue curate/score job
 runs, and the SageMaker baseline/export processing jobs and training job
 (BQ1 scoring). It never starts, stops or changes anything.
 
@@ -14,7 +14,7 @@ Reads
 * Step Functions executions ``is459-g3-ingest:<run_id>`` (batch) and
   ``is459-g3-cloud-ingest:<run_id>`` (cloud acquisition wrapper, if any).
 * Athena ``GetQueryExecution`` for every query ID found in the history.
-* Glue job runs of ``is459-g3-ingest-curate`` and ``is459-g3-ingest-score``.
+* Glue job runs of ``is459-g3-ingest-curate``, ``is459-g3-ingest-score`` and ``is459-g3-ingest-network``.
 * SageMaker jobs ``is459-g3-{baseline,export,train}-<run_id>``.
 * On success, small evidence objects under ``s3://<BUCKET>/pipeline/runs/<run_id>/``.
 
@@ -106,7 +106,7 @@ def inspect(run_id, profile, output):
     # argument: curate writes to .../curated/ (--output) and score to
     # .../scored/ (--OUTPUT). Only runs belonging to this run ID are kept.
     report['glue'] = []
-    for name, argument, directory in [('curate', '--output', 'curated'), ('score', '--OUTPUT', 'scored')]:
+    for name, argument, directory in [('curate', '--output', 'curated'), ('score', '--OUTPUT', 'scored'), ('network', '--OUTPUT', 'network')]:
         for page in glue.get_paginator('get_job_runs').paginate(JobName='is459-g3-ingest-' + name):
             for run in page['JobRuns']:
                 if run.get('Arguments', {}).get(argument) == f"s3://{BUCKET}/{p[directory]}/":
@@ -129,11 +129,11 @@ def inspect(run_id, profile, output):
     output.mkdir(parents=True, exist_ok=True)
     (output / 'progress.json').write_text(json.dumps(report, indent=2, default=str))
     # For a real (non-cached) successful run, copy the small evidence files:
-    # baseline proof, BQ1 score evidence, BQ2 corridor evidence, the dashboard
+    # baseline proof, BQ1 score evidence, BQ2 network evidence, the dashboard
     # release manifest and the final result. A cache hit reused an older run's
     # outputs, so this run ID has no evidence of its own.
     if execution['status'] == 'SUCCEEDED' and not report.get('result', {}).get('cache_hit'):
-        for suffix in ['baseline/proof.json', 'export/evidence/scores.json', 'export/evidence/corridors.json', 'export/release/manifest.json', 'evidence/result.json']:
+        for suffix in ['baseline/proof.json', 'export/evidence/scores.json', 'export/evidence/network.json', 'export/release/manifest.json', 'evidence/result.json']:
             response = s3.get_object(Bucket=BUCKET, Key=f'pipeline/runs/{run_id}/{suffix}')
             # Read at most 1 MB + 1 byte: enough to detect an unexpectedly large file
             # without downloading all of it.

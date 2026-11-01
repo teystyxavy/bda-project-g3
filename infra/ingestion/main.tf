@@ -12,11 +12,13 @@
 #              the stage caches;
 #   Curate     Glue job is459-g3-ingest-curate: CSV + FX -> curated Parquet
 #              (skipped on a curated cache hit);
-#   Prepare    control Lambda registers the run's Athena table run_<id>;
+#   Prepare    control Lambda registers the run's Athena table run_<id>
+#              (kept for ad-hoc queries; the batch itself no longer uses Athena);
 #   Parallel   (a) SageMaker Processing "baseline" verification + optional
 #              SageMaker training of a candidate model, (b) Glue job
 #              is459-g3-ingest-score (frozen model risk scores, BQ1, skipped on
-#              a cache hit), (c) Athena corridor query (BQ2);
+#              a cache hit), (c) Glue job is459-g3-ingest-network (BQ2 mule
+#              networks: hubs, loops and rings);
 #   Export     SageMaker Processing "export" builds the dashboard release;
 #   Publish    control Lambda verifies hashes/contents and copies the release
 #              to the dashboard bucket (infra/hosting), updates current.json,
@@ -54,7 +56,7 @@ variable "pipeline_config" {
 }
 # Fixed names/ARNs reused by the IAM policies:
 #   s3 / site -- data-lake bucket and dashboard bucket ARNs;
-#   machine   -- this workflow; jobs -- the two Glue jobs;
+#   machine   -- this workflow; jobs -- the three Glue jobs;
 #   processing / training -- ARN patterns of the SageMaker jobs it may run;
 #   catalog   -- Glue catalog, the is459_g3_ingest database and run_* tables;
 #   files     -- every artefact file uploaded below (the model files go under
@@ -69,11 +71,13 @@ locals {
   site          = "arn:aws:s3:::is459-g3-dashboard-${local.account}-${local.region}"
   arn           = "arn:aws"
   machine       = "arn:aws:states:${local.region}:${local.account}:stateMachine:is459-g3-ingest"
-  jobs          = [for name in ["curate", "score"] : "arn:aws:glue:${local.region}:${local.account}:job/is459-g3-ingest-${name}"]
+  jobs          = [for name in ["curate", "score", "network"] : "arn:aws:glue:${local.region}:${local.account}:job/is459-g3-ingest-${name}"]
+  # Glue job name suffix -> script uploaded with the deployment artefacts.
+  job_scripts = { curate = "curate_transactions.py", score = "score_transactions.py", network = "network_mules.py" }
   processing    = [for stage in ["baseline", "export"] : "arn:aws:sagemaker:${local.region}:${local.account}:processing-job/is459-g3-${stage}-*"]
   training      = "arn:aws:sagemaker:${local.region}:${local.account}:training-job/is459-g3-train-*"
   catalog       = ["arn:aws:glue:${local.region}:${local.account}:catalog", "arn:aws:glue:${local.region}:${local.account}:database/is459_g3_ingest", "arn:aws:glue:${local.region}:${local.account}:table/is459_g3_ingest/run_*"]
-  files         = toset(concat(["control.zip", "bda_pipeline.zip", "runtime.gluewheels.zip", "curate_transactions.py", "score_transactions.py"], [for name in ["comparison.json", "selection.json", "features.json", "model-manifest.json", "deployment.json", var.model_file] : "model/${name}"]))
+  files         = toset(concat(["control.zip", "bda_pipeline.zip", "runtime.gluewheels.zip", "curate_transactions.py", "score_transactions.py", "network_mules.py"], [for name in ["comparison.json", "selection.json", "features.json", "model-manifest.json", "deployment.json", var.model_file] : "model/${name}"]))
   ecr           = "arn:aws:ecr:${local.region}:${local.account}:repository/is459-g3-training"
   failure_topic = "arn:aws:sns:${local.region}:${local.account}:is459-g3-failures"
 }
@@ -108,8 +112,8 @@ resource "aws_s3_object" "configuration" {
 # Glue database for per-run Athena tables (run_<run_id>), which the control
 # Lambda creates at runtime so each run's curated data can be queried alone.
 resource "aws_glue_catalog_database" "runs" { name = "is459_g3_ingest" }
-# Role for the two ingestion Glue jobs; trusted only for Glue acting on these
-# two jobs in this account.
+# Role for the three ingestion Glue jobs; trusted only for Glue acting on these
+# jobs in this account.
 resource "aws_iam_role" "glue" {
   name               = "is459-g3-ingest-glue"
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "glue.amazonaws.com" }, Action = "sts:AssumeRole", Condition = { StringEquals = { "aws:SourceAccount" = local.account }, ArnLike = { "aws:SourceArn" = local.jobs } } }] })
@@ -120,7 +124,7 @@ resource "aws_iam_role_policy" "glue" {
   policy = jsonencode({ Version = "2012-10-17", Statement = [
     # - bucket region lookup;
     # - list/read only pipeline/* (inputs, artefacts) and tmp/ingest/* (scratch);
-    # - write/delete only a run's curated/ and scored/ output and scratch space
+    # - write/delete only a run's curated/, scored/ and network/ output and scratch space
     #   (delete and multipart actions are needed by Spark's output committer);
     # - the exact "<folder>_$folder$" marker keys EMRFS probes when committing a
     #   directory (kept to these names instead of opening up whole prefixes);
@@ -128,25 +132,26 @@ resource "aws_iam_role_policy" "glue" {
     { Effect = "Allow", Action = ["s3:GetBucketLocation"], Resource = local.s3 },
     { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = ["pipeline/*", "tmp/ingest/*"] } } },
     { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/*", "${local.s3}/tmp/ingest/*"] },
-    { Effect = "Allow", Action = ["s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"], Resource = ["${local.s3}/pipeline/runs/*/curated/*", "${local.s3}/pipeline/runs/*/scored/*", "${local.s3}/tmp/ingest/*"] },
-    { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], Resource = ["${local.s3}/pipeline/runs/*/curated_$folder$", "${local.s3}/pipeline/runs/*/scored_$folder$", "${local.s3}/tmp/ingest/*/curate_$folder$", "${local.s3}/tmp/ingest/*/score_$folder$"] },
+    { Effect = "Allow", Action = ["s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"], Resource = ["${local.s3}/pipeline/runs/*/curated/*", "${local.s3}/pipeline/runs/*/scored/*", "${local.s3}/pipeline/runs/*/network/*", "${local.s3}/tmp/ingest/*"] },
+    { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], Resource = ["${local.s3}/pipeline/runs/*/curated_$folder$", "${local.s3}/pipeline/runs/*/scored_$folder$", "${local.s3}/pipeline/runs/*/network_$folder$", "${local.s3}/pipeline/runs/*/network/*_$folder$", "${local.s3}/tmp/ingest/*/curate_$folder$", "${local.s3}/tmp/ingest/*/score_$folder$", "${local.s3}/tmp/ingest/*/network_$folder$"] },
     { Effect = "Allow", Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"], Resource = "arn:aws:logs:${local.region}:${local.account}:log-group:/aws-glue/is459-g3-ingest*:*" },
     { Effect = "Allow", Action = ["cloudwatch:PutMetricData"], Resource = "*", Condition = { StringEquals = { "cloudwatch:namespace" = "Glue" } } }
   ] })
 }
-# Error/output log groups for both jobs, 14-day retention.
+# Error/output log groups for the three jobs, 14-day retention.
 resource "aws_cloudwatch_log_group" "glue" {
-  for_each          = toset(["curate/error", "curate/output", "score/error", "score/output"])
+  for_each          = toset(["curate/error", "curate/output", "score/error", "score/output", "network/error", "network/output"])
   name              = "/aws-glue/is459-g3-ingest-${each.key}"
   retention_in_days = 14
 }
-# Two Glue jobs from one block (for_each): is459-g3-ingest-curate runs
-# curate_transactions.py, is459-g3-ingest-score runs score_transactions.py.
+# Three Glue jobs from one block (for_each): is459-g3-ingest-curate runs
+# curate_transactions.py, is459-g3-ingest-score runs score_transactions.py and
+# is459-g3-ingest-network runs network_mules.py (BQ2; self-contained PySpark).
 # Same cost controls as elsewhere: 2 x G.1X, 10 min timeout, no retries, one
 # run at a time. Per-run paths (input/output/TempDir, expected rows) are passed
 # by the workflow from the control Lambda's "begin" result.
 resource "aws_glue_job" "job" {
-  for_each          = toset(["curate", "score"])
+  for_each          = local.job_scripts
   name              = "is459-g3-ingest-${each.key}"
   role_arn          = aws_iam_role.glue.arn
   glue_version      = "5.0"
@@ -158,7 +163,7 @@ resource "aws_glue_job" "job" {
   command {
     name            = "glueetl"
     python_version  = "3"
-    script_location = "s3://${local.bucket}/${var.pipeline_config.artifact_prefix}/${each.key == "curate" ? "curate" : "score"}_transactions.py"
+    script_location = "s3://${local.bucket}/${var.pipeline_config.artifact_prefix}/${each.value}"
   }
   # Arguments callers cannot override. Common: no bookmarks, custom log group,
   # and write a _SUCCESS marker so the control Lambda can confirm completion.
@@ -170,6 +175,7 @@ resource "aws_glue_job" "job" {
     # manifest hash to verify, the bda_pipeline package, model side-files and
     # offline wheels installed with --no-index (never from PyPI).
     # Curate job only: --behaviour true adds the rolling behavioural features.
+    # Network job: no extra arguments.
     }, each.key == "score" ? {
     "--MODEL_DIR"                       = "."
     "--MANIFEST_SHA256"                 = var.pipeline_config.model_manifest_sha256
@@ -177,7 +183,7 @@ resource "aws_glue_job" "job" {
     "--extra-files"                     = join(",", [for name in ["comparison.json", "selection.json", "features.json", "model-manifest.json", var.model_file] : "s3://${local.bucket}/${var.pipeline_config.model_prefix}/${name}"])
     "--additional-python-modules"       = "s3://${local.bucket}/${var.pipeline_config.artifact_prefix}/runtime.gluewheels.zip"
     "--python-modules-installer-option" = "--no-index"
-  } : { "--behaviour" = "true" })
+  } : each.key == "curate" ? { "--behaviour" = "true" } : {})
   depends_on = [aws_iam_role_policy.glue, aws_s3_object.deployment_artifact, aws_cloudwatch_log_group.glue]
 }
 # Role for the SageMaker Processing jobs (baseline and export), which run the
@@ -191,14 +197,14 @@ resource "aws_iam_role" "processing" {
 resource "aws_iam_role_policy" "processing" {
   role = aws_iam_role.processing.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
-    # - bucket region; list/read pipeline/*, Athena results (corridor CSV) and
-    #   trained candidate models;
+    # - bucket region; list/read pipeline/* (including the Glue network tables)
+    #   and trained candidate models;
     # - write only the run's baseline/ and export/ outputs;
     # - pull the container image from ECR (+ the account-wide login token call);
     # - write processing logs and publish SageMaker metrics.
     { Effect = "Allow", Action = ["s3:GetBucketLocation"], Resource = local.s3 },
-    { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = ["pipeline/*", "athena-results/*", "sagemaker/outputs/is459-g3-train-*/*"] } } },
-    { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/*", "${local.s3}/athena-results/*", "${local.s3}/sagemaker/outputs/is459-g3-train-*/*"] },
+    { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = ["pipeline/*", "sagemaker/outputs/is459-g3-train-*/*"] } } },
+    { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/*", "${local.s3}/sagemaker/outputs/is459-g3-train-*/*"] },
     { Effect = "Allow", Action = ["s3:PutObject", "s3:AbortMultipartUpload"], Resource = ["${local.s3}/pipeline/runs/*/baseline/*", "${local.s3}/pipeline/runs/*/export/*"] },
     { Effect = "Allow", Action = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"], Resource = local.ecr },
     { Effect = "Allow", Action = ["ecr:GetAuthorizationToken"], Resource = "*" },
@@ -217,14 +223,12 @@ resource "aws_iam_role_policy" "control" {
   role = aws_iam_role.control.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
     # - check whether dashboard/current.json exists in the dashboard bucket;
-    # - read curated output and Athena results (to verify markers and the query);
-    # - write Athena results (it re-runs the reviewed corridor query on export);
+    # - read curated output (to verify markers);
     # - read catalog metadata.
     { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.site, Condition = { StringEquals = { "s3:prefix" = "dashboard/current.json" } } },
     { Effect = "Allow", Action = ["s3:GetBucketLocation"], Resource = local.s3 },
-    { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = ["athena-results/*", "pipeline/runs/*/curated/*"] } } },
-    { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/athena-results/*", "${local.s3}/pipeline/runs/*/curated/*"] },
-    { Effect = "Allow", Action = ["s3:PutObject", "s3:AbortMultipartUpload"], Resource = "${local.s3}/athena-results/*" },
+    { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = ["pipeline/runs/*/curated/*"] } } },
+    { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/runs/*/curated/*"] },
     { Effect = "Allow", Action = ["glue:GetDatabase", "glue:GetPartitions"], Resource = local.catalog },
     # - read anything under pipeline/ (manifests, config, caches, evidence) and the
     #   current dashboard pointer.
@@ -239,7 +243,6 @@ resource "aws_iam_role_policy" "control" {
     # - see and stop this pipeline's Glue runs (cleanup after a failure);
     # - describe/stop/list SageMaker processing and training jobs (cleanup and
     #   verification; List* has no resource-level scope so it needs "*");
-    # - run/inspect Athena queries in the capped workgroup;
     # - check an execution's status (manual "recover" operation);
     # - invalidate the CloudFront cache after publishing;
     # - write its own logs.
@@ -249,7 +252,6 @@ resource "aws_iam_role_policy" "control" {
     { Effect = "Allow", Action = ["sagemaker:StopProcessingJob", "sagemaker:StopTrainingJob"], Resource = concat(local.processing, [local.training]) },
     { Effect = "Allow", Action = ["sagemaker:DescribeProcessingJob", "sagemaker:DescribeTrainingJob"], Resource = concat(local.processing, [local.training]) },
     { Effect = "Allow", Action = ["sagemaker:ListProcessingJobs", "sagemaker:ListTrainingJobs"], Resource = "*" },
-    { Effect = "Allow", Action = ["athena:StartQueryExecution", "athena:GetQueryExecution"], Resource = "arn:aws:athena:${local.region}:${local.account}:workgroup/is459-g3-analysis" },
     { Effect = "Allow", Action = ["states:DescribeExecution"], Resource = "arn:aws:states:${local.region}:${local.account}:execution:is459-g3-ingest:*" },
     { Effect = "Allow", Action = ["cloudfront:CreateInvalidation"], Resource = "arn:aws:cloudfront::${local.account}:distribution/${var.pipeline_config.distribution_id}" },
     { Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents"], Resource = "${aws_cloudwatch_log_group.control.arn}:*" }
@@ -289,25 +291,17 @@ resource "aws_iam_role_policy" "workflow" {
   role = aws_iam_role.workflow.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
     # - invoke the control Lambda;
-    # - start/monitor/stop the two Glue jobs (".sync" integration);
+    # - start/monitor/stop the three Glue jobs (".sync" integration);
     # - create/describe/stop/tag SageMaker processing and training jobs;
     # - pass the processing and training roles, but only to SageMaker;
     # - manage the managed EventBridge rules Step Functions uses to wait for
     #   SageMaker jobs;
-    # - run the Athena corridor query in the capped workgroup, reading the
-    #   catalog, curated data and writing athena-results/;
     # - publish failures to SNS.
     { Effect = "Allow", Action = ["lambda:InvokeFunction"], Resource = aws_lambda_function.control.arn },
     { Effect = "Allow", Action = ["glue:StartJobRun", "glue:GetJobRun", "glue:GetJobRuns", "glue:BatchStopJobRun"], Resource = local.jobs },
     { Effect = "Allow", Action = ["sagemaker:CreateProcessingJob", "sagemaker:DescribeProcessingJob", "sagemaker:StopProcessingJob", "sagemaker:CreateTrainingJob", "sagemaker:DescribeTrainingJob", "sagemaker:StopTrainingJob", "sagemaker:AddTags", "sagemaker:ListTags"], Resource = concat(local.processing, [local.training]) },
     { Effect = "Allow", Action = ["iam:PassRole"], Resource = [aws_iam_role.processing.arn, "arn:aws:iam::${local.account}:role/is459-g3-sagemaker-training"], Condition = { StringEquals = { "iam:PassedToService" = "sagemaker.amazonaws.com" } } },
     { Effect = "Allow", Action = ["events:PutRule", "events:PutTargets", "events:DescribeRule"], Resource = [for name in ["StepFunctionsGetEventsForSageMakerProcessingJobsRule", "StepFunctionsGetEventsForSageMakerTrainingJobsRule"] : "arn:aws:events:${local.region}:${local.account}:rule/${name}"] },
-    { Effect = "Allow", Action = ["athena:StartQueryExecution", "athena:GetQueryExecution", "athena:StopQueryExecution", "athena:GetQueryResults"], Resource = "arn:aws:athena:${local.region}:${local.account}:workgroup/is459-g3-analysis" },
-    { Effect = "Allow", Action = ["glue:GetDatabase", "glue:GetTable", "glue:GetPartitions"], Resource = local.catalog },
-    { Effect = "Allow", Action = ["s3:GetBucketLocation"], Resource = local.s3 },
-    { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = ["pipeline/runs/*/curated/*", "athena-results/*"] } } },
-    { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/runs/*/curated/*", "${local.s3}/athena-results/*"] },
-    { Effect = "Allow", Action = ["s3:PutObject", "s3:AbortMultipartUpload"], Resource = "${local.s3}/athena-results/*" },
     { Effect = "Allow", Action = ["sns:Publish"], Resource = local.failure_topic }
   ] })
 }

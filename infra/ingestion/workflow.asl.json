@@ -376,18 +376,17 @@
           }
         },
         {
-          "StartAt": "Corridors",
+          "StartAt": "Network",
           "States": {
-            "Corridors": {
+            "Network": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+              "Resource": "arn:aws:states:::glue:startJobRun.sync",
               "Parameters": {
-                "QueryString.$": "$.work.query",
-                "ClientRequestToken.$": "$.work.query_token",
-                "WorkGroup": "is459-g3-analysis",
-                "QueryExecutionContext": {
-                  "Database": "is459_g3_ingest"
-                }
+                "JobName": "is459-g3-ingest-network",
+                "Arguments.$": "$.work.network_arguments",
+                "WorkerType": "G.1X",
+                "NumberOfWorkers.$": "$.work.glue_workers",
+                "Timeout.$": "$.work.glue_timeout"
               },
               "ResultPath": null,
               "End": true

@@ -8,7 +8,7 @@ Anti-Money-Laundering "HI-Small" transactions + accounts files, attaches daily
 historical FX rates (so every amount can later be converted to USD for BQ2),
 uses AWS Lambda acquisition by default, or uploads locally prepared inputs
 with ``--local-acquisition``. Step Functions then coordinates Glue curation
-and frozen XGBoost scoring, Athena corridor SQL, SageMaker verification and
+and frozen XGBoost scoring, the Glue BQ2 mule-network job, SageMaker verification and
 dashboard publication. Optional SageMaker training creates a private candidate;
 it does not replace the frozen model automatically.
 

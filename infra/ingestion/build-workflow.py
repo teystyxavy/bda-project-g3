@@ -29,13 +29,13 @@ Workflow shape (see ``workflow()``)::
            1. Baseline (SageMaker Processing) -> PrepareBranches
               -> optional Train (SageMaker Training)
            2. Score (Glue, skipped on a scored cache hit)
-           3. Corridors (Athena BQ2 query)
+           3. Network (Glue BQ2 mule-network job)
       -> PrepareExport -> Export (SageMaker Processing) -> Publish -> Complete
     any failure -> RecordFailure -> NotifyFailure (SNS) -> Failed
 
 Design rules encoded here ("bounded", "no compute retries"):
 
-* Paid compute (Glue, SageMaker, Athena) is never retried automatically; a
+* Paid compute (Glue, SageMaker) is never retried automatically; a
   failure stops the run and keeps its outputs for inspection.
 * Only cheap, idempotent calls are retried: Lambda service errors and the
   read-only ``Describe*Job`` polls.
@@ -180,8 +180,8 @@ def workflow():
 
     The execution input must contain ``run_id`` (all control calls pass it to
     the Lambda). Intermediate results are kept in the execution state:
-    ``$.work`` (cache flags, job arguments and the corridor query from
-    ``begin``), ``$.baseline_request``, ``$.training``, ``$.export_request``
+    ``$.work`` (cache flags and job arguments from ``begin``),
+    ``$.baseline_request``, ``$.training``, ``$.export_request``
     and, after an error, ``$.failure``.
 
     Returns:
@@ -193,12 +193,11 @@ def workflow():
     # ends (and fail if the run fails). No Retry: a paid job is not re-run.
     score = {'Type': 'Task', 'Resource': 'arn:aws:states:::glue:startJobRun.sync',
              'Parameters': {'JobName': 'is459-g3-ingest-score', 'Arguments.$': '$.work.score_arguments', 'WorkerType': 'G.1X', 'NumberOfWorkers.$': '$.work.glue_workers', 'Timeout.$': '$.work.glue_timeout'}, 'ResultPath': None, 'End': True}
-    # BQ2 corridors: run the corridor SQL built by 'begin' in the cost-capped
-    # workgroup against the per-run ingest database. ClientRequestToken makes
-    # the start idempotent (the same token cannot start a second query), and
-    # the control Lambda later checks the query used exactly this SQL.
-    athena = {'Type': 'Task', 'Resource': 'arn:aws:states:::athena:startQueryExecution.sync',
-              'Parameters': {'QueryString.$': '$.work.query', 'ClientRequestToken.$': '$.work.query_token', 'WorkGroup': 'is459-g3-analysis', 'QueryExecutionContext': {'Database': 'is459_g3_ingest'}}, 'ResultPath': None, 'End': True}
+    # BQ2 mule networks: the Glue network job reads the curated Parquet and
+    # writes the hub/loop/ring tables; the export stage recomputes and checks
+    # them. Same cost controls as scoring and no Retry.
+    network = {'Type': 'Task', 'Resource': 'arn:aws:states:::glue:startJobRun.sync',
+               'Parameters': {'JobName': 'is459-g3-ingest-network', 'Arguments.$': '$.work.network_arguments', 'WorkerType': 'G.1X', 'NumberOfWorkers.$': '$.work.glue_workers', 'Timeout.$': '$.work.glue_timeout'}, 'ResultPath': None, 'End': True}
     # Branch 1 of the Parallel state: independent baseline verification, then
     # optional training. The dict union operator "|" (Python 3.9+) merges the
     # generated state dictionaries.
@@ -232,8 +231,8 @@ def workflow():
                 # Skip scoring if identical scores were already produced earlier.
                 'ReuseScores': {'Type': 'Choice', 'Choices': [{'Variable': '$.work.scored_cache_hit', 'BooleanEquals': True, 'Next': 'ScoresReused'}], 'Default': 'Score'},
                 'Score': score, 'ScoresReused': {'Type': 'Pass', 'End': True}}},
-            {'StartAt': 'Corridors', 'States': {'Corridors': athena}}], 'ResultPath': None, 'Next': 'PrepareExport', 'Catch': CATCH},
-        # Verify scores, baseline proof, query and any candidate model, then
+            {'StartAt': 'Network', 'States': {'Network': network}}], 'ResultPath': None, 'Next': 'PrepareExport', 'Catch': CATCH},
+        # Check scores, baseline proof, network output and any candidate model, then
         # build the export Processing request ($.work is passed to the Lambda).
         'PrepareExport': control('export', '$.export_request', 'Export', **{'work.$': '$.work'}),
         # Export processing job builds the dashboard release files.

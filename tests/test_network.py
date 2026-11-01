@@ -136,3 +136,14 @@ def test_glue_job_constants_match_reference():
     assert values['LOOP_WINDOW_DAYS'] == network.LOOP_WINDOW.days
     assert values['MIN_RING_ACCOUNTS'] == network.MIN_RING_ACCOUNTS
     assert values['TABLE_NAMES'] == list(network.TABLES)
+
+
+def test_small_run_without_structures_still_builds_a_section():
+    frame = network_frame()
+    quiet = frame[frame.from_account.isin(['P', 'Q', 'U', 'V'])].reset_index(drop=True)
+    result = analyse_network(factory(quiet, parts=2))
+    assert result['ring_members'].empty and result['loops'].empty and len(result['pairs']) == 1
+    section = dashboard_section(result)
+    json.dumps(section, allow_nan=False)
+    assert section['rings']['rings'] == 0 and section['ring_list'] == [] and section['graphs'] == {}
+    assert compare_network(result, {name: result[name] for name in network.TABLES}, len(quiet))['status'] == 'passed'

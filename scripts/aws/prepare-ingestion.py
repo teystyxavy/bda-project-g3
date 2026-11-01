@@ -14,7 +14,9 @@ Produces in ``--output``
 * ``bda_pipeline.zip`` - all of ``src/bda_pipeline/*.py`` for the Glue jobs.
 * ``control.zip`` - only the modules the control Lambda needs
   (``ingest_contract``, ``ingest_control``, ``stage_cache``, ``release``).
-* ``curate_transactions.py`` / ``score_transactions.py`` - Glue job scripts.
+* ``curate_transactions.py`` / ``score_transactions.py`` / ``network_mules.py`` - Glue job scripts
+  (the network job is BQ2 and is never stage-cached: it always reruns, so a
+  new deployment can never serve old BQ2 output).
 * ``runtime.gluewheels.zip`` - copied from ``--wheels`` (see
   ``bundle-scoring-wheels.py``).
 * ``model/`` - the frozen XGBoost model and its JSON companions, after
@@ -110,7 +112,7 @@ def prepare(output, models, wheels, image_uri):
     # The control Lambda only needs the contract, controller, stage cache and
     # release helpers - no pandas/XGBoost code.
     zip_sources(output / 'control.zip', ['__init__.py', 'ingest_contract.py', 'ingest_control.py', 'stage_cache.py', 'release.py'], minimal=True)
-    for name in ['curate_transactions.py', 'score_transactions.py']:
+    for name in ['curate_transactions.py', 'score_transactions.py', 'network_mules.py']:
         shutil.copyfile(ROOT / 'jobs' / name, output / name)
     shutil.copyfile(wheels, output / 'runtime.gluewheels.zip')
     (output / 'model').mkdir()

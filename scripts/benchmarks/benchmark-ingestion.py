@@ -14,7 +14,7 @@ with the same execution name = run ID:
 
 * ``is459-g3-cloud-ingest`` - the outer wrapper (acquisition from Kaggle and
   FX sources, then it starts the inner workflow);
-* ``is459-g3-ingest`` - the inner batch workflow (curation, scoring, Athena,
+* ``is459-g3-ingest`` - the inner batch workflow (curation, scoring, network analysis,
   SageMaker Processing ``Baseline`` and ``Export`` jobs, then ``Publish``).
 
 AWS reads (no writes; IAM needs only Describe/Get/List permissions):

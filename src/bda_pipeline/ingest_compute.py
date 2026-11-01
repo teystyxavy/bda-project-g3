@@ -11,10 +11,10 @@ the container entry point and calls one of two stages:
   Glue-curated Parquet against the original raw CSVs and FX rates, then builds
   the rule-based (non-ML) BQ1 risk ranking and dashboard snapshot.
 * ``export_stage`` - job ``is459-g3-export-<run_id>`` (state ``Export``, after
-  Glue scoring and the Athena corridor query). Re-computes every XGBoost
-  score with the frozen model, reconciles Athena's BQ2 corridor results with
-  an independent pandas computation, optionally verifies a newly trained
-  candidate model, and writes the final dashboard release.
+  Glue scoring and the Glue network job). Re-computes every XGBoost score with
+  the frozen model, reconciles the Glue BQ2 mule-network tables with an
+  independent pandas computation (``network.py``), optionally verifies a newly
+  trained candidate model, and writes the final dashboard release.
 
 Inputs/outputs
 --------------
@@ -53,7 +53,7 @@ from .model import INPUT_COLUMNS, SavedRanker, digest, rank
 from .release import prepare_release
 from .splits import run_splits
 from .transform import TRANSACTION_COLUMNS, IDENTIFIER_DTYPES
-from .treasury_verification import expected_corridors, compare_corridors
+from .network import COLUMNS as NETWORK_COLUMNS, analyse_network, compare_network, dashboard_section, read_tables
 
 
 def raw_fingerprints(frame):
@@ -341,21 +341,21 @@ def verify_scores(reference, scored, model_dir, manifest, output):
 
 
 def export_stage(inputs, output, assets):
-    """SageMaker Processing stage 'export': verify scores + corridors, build the release.
+    """SageMaker Processing stage 'export': verify scores + mule network, build the release.
 
     Reads (under ``inputs``): ``run/manifest.json``; ``baseline/baseline/
     bq1_scored.parquet`` and ``baseline/manifest/dashboard.json`` (from the
     baseline stage); ``scored/`` (Glue scoring); ``model/`` (frozen model and
-    ``deployment.json``); ``athena/`` (the corridor query CSV); and, if
+    ``deployment.json``); ``network/`` (the Glue network tables); and, if
     ``manifest['train']``, ``candidate/model.tar.gz`` from SageMaker training.
 
     Steps:
 
     1. ``verify_scores`` - all model scores reproduced (BQ1).
-    2. Corridor reconciliation (BQ2): recompute daily bank/currency corridor
-       counts, USD volumes, shares and HHI in pandas
-       (``treasury_verification.expected_corridors``) and compare with the
-       single Athena CSV (``compare_corridors``).
+    2. Network reconciliation (BQ2): recompute hubs, loops and rings in pandas
+       (``network.analyse_network``) and compare with every Glue network
+       table (``network.compare_network``); the dashboard's ``network``
+       section is built from the verified result.
     3. For each evaluation period in ``snapshot['splits']`` (every window after
        train): ranking metrics (precision/recall/lift at K=100, average
        precision) and the top-100 explained review queue for the dashboard.
@@ -385,19 +385,18 @@ def export_stage(inputs, output, assets):
     output.mkdir(parents=True, exist_ok=True)
     # ---- 1. BQ1: model scores ----
     scores, score_proof = verify_scores(reference, inputs / 'scored', inputs / 'model', manifest, output / 'evidence')
-    # ---- 2. BQ2: Athena corridors vs independent pandas recomputation ----
-    csv_files = list((inputs / 'athena').rglob('*.csv'))
-    if len(csv_files) != 1: raise ValueError('Require exactly one Athena result CSV')
-    # Key columns as strings so bank IDs like '010' keep their leading zeros.
-    actual = pd.read_csv(csv_files[0], dtype={column: 'string' for column in ['corridor_type', 'txn_date', 'from_node', 'to_node']})
+    # ---- 2. BQ2: Glue network tables vs independent pandas recomputation ----
+    if not (inputs / 'network/_SUCCESS').exists(): raise ValueError('Require the complete Glue network output')
     dataset = ds.dataset(reference, format='parquet')
-    # Generator of 100k-row batches with only the columns the corridor maths needs.
-    batches = (batch.to_pandas().assign(txn_date=lambda frame: frame.txn_date.astype(str))
-               for batch in dataset.to_batches(columns=['txn_date', 'from_bank', 'to_bank',
-                    'payment_currency', 'receiving_currency', 'amount_usd'], batch_size=100_000))
-    corridor_proof = compare_corridors(expected_corridors(batches, manifest['rows'], start=manifest['start_date'], end=manifest['end_date']), actual, manifest['rows'])
+
+    def network_batches():
+        # Two passes (links, then candidate-loop payment times) over only the needed columns.
+        for batch in dataset.to_batches(columns=NETWORK_COLUMNS, batch_size=200_000):
+            yield batch.to_pandas()
+    network_result = analyse_network(network_batches)
+    network_proof = compare_network(network_result, read_tables(inputs / 'network'), manifest['rows'])
     (output / 'evidence/scores.json').write_text(json.dumps(score_proof, allow_nan=False))
-    (output / 'evidence/corridors.json').write_text(json.dumps(corridor_proof, allow_nan=False))
+    (output / 'evidence/network.json').write_text(json.dumps(network_proof, allow_nan=False))
     # ---- 3. Per-period metrics and review queues ----
     ranker = SavedRanker(inputs / 'model')
     snapshot = json.loads((inputs / 'baseline/manifest/dashboard.json').read_text())
@@ -483,12 +482,17 @@ def export_stage(inputs, output, assets):
             'archive_sha256': digest(archives[0]), 'validation_gate_passed': candidate_ranker.selection['validation_gate_passed']}
         snapshot['pipeline']['training'] = training_proof
     # ---- 6. Build the dashboard site and the release package ----
-    snapshot['provenance']['scoring_location'] = 'AWS Glue scoring, Athena treasury verification and SageMaker Processing export'
+    snapshot['provenance']['scoring_location'] = 'AWS Glue scoring and mule-network analysis, SageMaker Processing verification and export'
+    # BQ2 is the verified mule-network section; the retired treasury views are removed.
+    snapshot['network'] = dashboard_section(network_result)
+    snapshot['network']['verification'] = network_proof
+    for key in ['treasury', 'treasury_daily']:
+        snapshot.pop(key, None)
     snapshot['buildStatus'] = 'complete'
     snapshot['generated_at'] = snapshot['pipeline']['refresh_time']
     # Imported lazily, only at this point of the export stage.
     from .dashboard_exploration import enrich_snapshot
-    enrich_snapshot(snapshot, dataset, scores, ranker)
+    enrich_snapshot(snapshot, dataset, scores, ranker, treasury=False)
     site = output / 'dashboard'
     site.mkdir()
     (site / 'dashboard.json').write_text(json.dumps(snapshot, allow_nan=False))
@@ -498,7 +502,7 @@ def export_stage(inputs, output, assets):
     release = prepare_release(site, output / 'release')
     release['pipeline_run_id'] = manifest['run_id']
     release['processing_sha256'] = manifest['processing_sha256']
-    release['verification'] = {'scores': score_proof, 'corridors': corridor_proof}
+    release['verification'] = {'scores': score_proof, 'network': network_proof}
     if training_proof: release['verification']['training'] = training_proof
     (output / 'release/manifest.json').write_text(json.dumps(release, allow_nan=False))
     return release

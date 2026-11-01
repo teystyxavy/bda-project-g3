@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 
 from bda_pipeline.acquisition import HEADER, acquire_dataset, prepare_inputs, validate_fx
-from bda_pipeline.ingest_contract import sha, canonical, paths, processing_request, validate_manifest, corridor_query
+from bda_pipeline.ingest_contract import sha, canonical, paths, processing_request, validate_manifest
 from bda_pipeline.ingest_control import handle, BUCKET, SITE_BUCKET, release_lock
 from bda_pipeline.ingest_compute import baseline_stage, export_stage
 from bda_pipeline.analytics import add_behaviour
@@ -22,7 +22,7 @@ from bda_pipeline.transform import read_transactions, read_accounts, build_curat
 from bda_pipeline.inference import SCORING_COLUMNS, prepare_inference
 from bda_pipeline.model import compare_models, SavedRanker, digest
 from bda_pipeline.sagemaker_training import train_channels
-from bda_pipeline.treasury_verification import expected_corridors
+from bda_pipeline.network import COLUMNS as NETWORK_COLUMNS, TABLES as NETWORK_TABLES, analyse_network
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -103,14 +103,12 @@ def test_manifest_identity_and_sdk_shapes():
     validate_manifest(value, sha(config()))
     for changed in [dict(value, rows=321), dict(value, run_id='x; DROP TABLE y')]:
         with pytest.raises(ValueError): validate_manifest(changed, sha(config()))
-    request = processing_request('test-run', 'export', config(), {'athena': 'athena-results/q.csv'})
+    request = processing_request('test-run', 'export', config(), {'network': paths('test-run')['network'] + '/'})
     client = boto3.client('sagemaker', region_name='ap-southeast-1', aws_access_key_id='fixture', aws_secret_access_key='fixture')
     validate_parameters(request, client.meta.service_model.operation_model('CreateProcessingJob').input_shape)
     assert request['NetworkConfig']['EnableNetworkIsolation']
     assert request['StoppingCondition']['MaxRuntimeInSeconds'] == 1800
-    assert 'run_test_run' in corridor_query('test-run', value['start_date'], value['end_date'])
-    with pytest.raises(ValueError, match='ISO'):
-        corridor_query('test-run', '2022-09-01', "2022-09-12' OR '1'='1")
+    assert paths('test-run')['network'] == 'pipeline/runs/test-run/network'
 
 
 class MemoryS3:
@@ -172,7 +170,7 @@ def publication_inputs():
     assets = {'index.html': b'<html>fixture</html>', 'dashboard.js': b'console.log(1);', 'dashboard.css': b'body {}',
               'dashboard.json': canonical({'pipeline': {'run_id': 'test-run'}, 'buildStatus': 'complete'})}
     release = dict(pipeline_run_id='test-run', processing_sha256=manifest()['processing_sha256'],
-        verification={'scores': {'status': 'passed'}, 'corridors': {'status': 'passed'}},
+        verification={'scores': {'status': 'passed'}, 'network': {'status': 'passed'}},
         files=[dict(file=name, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()) for name, data in assets.items()])
     s3.put_object(Bucket=BUCKET, Key=p['export']+'/release/manifest.json', Body=canonical(release))
     for name, data in assets.items(): s3.put_object(Bucket=BUCKET, Key=p['export']+'/release/site/'+name, Body=data)
@@ -229,7 +227,7 @@ def staged_run(tmp_path, subset, **updates):
 
 
 def serve_inputs(tmp_path, inputs, baseline, value):
-    """Stands in for the deployed model, Glue scoring and the Athena corridor query; returns the reference file and Glue's scores."""
+    """Stands in for the deployed model, Glue scoring and the Glue network job; returns the reference file and Glue's scores."""
     reference = baseline / 'baseline/bq1_scored.parquet'
     model = tmp_path / 'model'
     compare_models(reference, baseline / 'manifest/dashboard.json', model, rounds=3, threads=1)
@@ -245,9 +243,12 @@ def serve_inputs(tmp_path, inputs, baseline, value):
     cloud = scored[SCORING_COLUMNS].assign(model_score=ranker.predict(scored), txn_date=scored.txn_date)
     (inputs / 'scored').mkdir()
     cloud.to_parquet(inputs / 'scored/data.parquet', index=False)
-    (inputs / 'athena').mkdir()
-    expected = expected_corridors([scored.assign(txn_date=scored.txn_date.astype(str))], 320)
-    expected.to_csv(inputs / 'athena/result.csv', index=False)
+    # Glue network job stand-in: one Parquet folder per table plus the root _SUCCESS marker.
+    tables = analyse_network(lambda: [scored[NETWORK_COLUMNS]])
+    for name in NETWORK_TABLES:
+        (inputs / 'network' / name).mkdir(parents=True)
+        tables[name].to_parquet(inputs / 'network' / name / 'part-0.parquet', index=False)
+    (inputs / 'network/_SUCCESS').write_text('')
     return reference, cloud
 
 
@@ -263,6 +264,20 @@ def test_source_to_release_and_tamper_rejected(tmp_path, subset):
     public = json.loads((tmp_path / 'export/release/site/dashboard.json').read_text())
     assert public['pipeline']['run_id'] == 'test-run'
     assert all('is_laundering' not in row for view in public['model']['views'].values() for row in view['queue'])
+    # BQ2 is the verified mule-network section; the retired treasury views are gone.
+    assert result['verification']['network']['status'] == 'passed'
+    assert public['network']['totals']['rows'] == 320 and 'treasury' not in public and 'treasury' not in public['exploration']
+    assert json.loads((tmp_path / 'export/evidence/network.json').read_text())['status'] == 'passed'
+    # A Glue network table that disagrees with the recomputation blocks the release.
+    pairs = pd.read_parquet(inputs / 'network/pairs/part-0.parquet')
+    pd.concat([pairs, pd.DataFrame([{'a': '1:X', 'b': '2:Y'}])]).to_parquet(inputs / 'network/pairs/part-0.parquet', index=False)
+    with pytest.raises(ValueError, match='Network table size differs: pairs'):
+        export_stage(inputs, tmp_path / 'tampered-network', ROOT / 'dashboard')
+    pairs.to_parquet(inputs / 'network/pairs/part-0.parquet', index=False)
+    (inputs / 'network/_SUCCESS').unlink()
+    with pytest.raises(ValueError, match='complete Glue network output'):
+        export_stage(inputs, tmp_path / 'incomplete-network', ROOT / 'dashboard')
+    (inputs / 'network/_SUCCESS').write_text('')
     if subset == 'HI-Medium':
         assert public['pipeline']['subset'] == subset
         assert 'Transfer evaluation' in public['model']['evaluation_scope']
@@ -310,3 +325,75 @@ def test_training_run_splits_by_row_share_and_verifies_the_candidate(tmp_path):
     cloud.loc[0, 'model_score'] = 0.987654321
     cloud.to_parquet(inputs / 'scored/data.parquet', index=False)
     with pytest.raises(AssertionError): export_stage(inputs, tmp_path / 'bad-export', ROOT / 'dashboard')
+
+
+class StageS3(MemoryS3):
+    """MemoryS3 plus head_object, enough for the begin/export control steps."""
+    def head_object(self, Bucket, Key):
+        if (Bucket, Key) not in self.data: raise self.Missing()
+        body = self.data[Bucket, Key]
+        if Key.endswith('/_SUCCESS'): return {'ContentLength': len(body), 'ServerSideEncryption': 'AES256'}
+        return {'ContentLength': len(body), 'Metadata': {'sha256': 'c'*64}}
+
+
+def test_begin_starts_the_glue_network_job_instead_of_athena():
+    s3 = StageS3()
+    p = paths('test-run')
+    s3.put_object(Bucket=BUCKET, Key=p['raw']+'/manifest.json', Body=canonical(manifest()))
+    for name in ['transactions.csv', 'accounts.csv', 'fx.csv']:
+        s3.put_object(Bucket=BUCKET, Key=f"{p['raw']}/{name}", Body=b'x')
+    work = handle({'op': 'begin', 'run_id': 'test-run'}, config(), clients(s3))
+    assert 'query' not in work and 'query_token' not in work
+    assert work['network_arguments'] == {
+        '--INPUT': f"s3://{BUCKET}/{p['curated']}/", '--OUTPUT': f"s3://{BUCKET}/{p['network']}/",
+        '--EXPECTED_ROWS': '320', '--SHUFFLE_PARTITIONS': work['curate_arguments']['--shuffle_partitions'],
+        '--TempDir': f's3://{BUCKET}/tmp/ingest/test-run/network/'}
+    # An existing network output is never overwritten by a new run.
+    s3.data.pop((BUCKET, 'pipeline/lock.json'))
+    s3.put_object(Bucket=BUCKET, Key=p['network']+'/loops/part-0.parquet', Body=b'x')
+    with pytest.raises(ValueError, match='Output already exists'):
+        handle({'op': 'begin', 'run_id': 'test-run'}, config(), clients(s3))
+
+
+def test_export_requires_the_network_marker_and_passes_its_tables():
+    s3 = StageS3()
+    p = paths('test-run')
+    s3.put_object(Bucket=BUCKET, Key='pipeline/lock.json', Body=canonical({'run_id': 'test-run'}))
+    s3.put_object(Bucket=BUCKET, Key=p['raw']+'/manifest.json', Body=canonical(manifest()))
+    s3.put_object(Bucket=BUCKET, Key=p['scored']+'/_SUCCESS', Body=b'')
+    s3.put_object(Bucket=BUCKET, Key=p['baseline']+'/proof.json', Body=canonical({'status': 'passed', 'rows': 320}))
+    event = {'op': 'export', 'run_id': 'test-run', 'work': {}}
+    with pytest.raises(MemoryS3.Missing):
+        handle(event, config(), clients(s3))
+    s3.put_object(Bucket=BUCKET, Key=p['network']+'/_SUCCESS', Body=b'')
+    request = handle(event, config(), clients(s3))
+    sources = {item['InputName']: item['S3Input']['S3Uri'] for item in request['ProcessingInputs']}
+    assert sources['network'] == f"s3://{BUCKET}/{p['network']}/" and 'athena' not in sources
+
+
+def test_cleanup_stops_this_runs_network_job():
+    stopped = []
+    def glue_pages(JobName):
+        if JobName != 'is459-g3-ingest-network': return [{'JobRuns': []}]
+        return [{'JobRuns': [
+            {'Id': 'network-owned', 'JobRunState': 'RUNNING', 'Arguments': {'--OUTPUT': f's3://{BUCKET}/pipeline/runs/test-run/network/'}},
+            {'Id': 'network-other', 'JobRunState': 'RUNNING', 'Arguments': {'--OUTPUT': f's3://{BUCKET}/pipeline/runs/other-run/network/'}}]}]
+    glue = SimpleNamespace(get_paginator=lambda op: SimpleNamespace(paginate=glue_pages),
+                           batch_stop_job_run=lambda **kw: stopped.append(kw) or {})
+    sm = SimpleNamespace(get_paginator=lambda op: SimpleNamespace(paginate=lambda NameContains: []))
+    from bda_pipeline.ingest_control import no_active_workers, stop_owned_workers
+    assert stop_owned_workers({'glue': glue, 'sagemaker': sm}, 'test-run') == ['network-owned']
+    assert stopped == [{'JobName': 'is459-g3-ingest-network', 'JobRunIds': ['network-owned']}]
+    with pytest.raises(ValueError, match='Glue worker is still active'):
+        no_active_workers({'glue': glue, 'sagemaker': sm}, 'test-run')
+
+
+def test_publish_rejects_a_release_without_network_verification():
+    s3, aws, old, invalidations = publication_inputs()
+    key = paths('test-run')['export'] + '/release/manifest.json'
+    release = json.loads(s3.data[BUCKET, key])
+    release['verification'] = {'scores': {'status': 'passed'}, 'corridors': {'status': 'passed'}}
+    s3.data[BUCKET, key] = canonical(release)
+    with pytest.raises(ValueError, match='Unverified'):
+        handle({'op': 'publish', 'run_id': 'test-run'}, config(), aws)
+    assert s3.data[SITE_BUCKET, 'dashboard/current.json'] == old and not invalidations

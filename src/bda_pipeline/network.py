@@ -324,7 +324,8 @@ def analyse_network(batches_factory):
     sizes = pd.Series(label).value_counts()
     keep = {node for node, root in label.items() if sizes[root] >= MIN_RING_ACCOUNTS}
     loop_members = set(loops.a) | set(loops.b) | set(loops.c)
-    members = pd.DataFrame({'account': sorted(keep)})
+    # object dtype even when empty (small demo runs often have no rings).
+    members = pd.DataFrame({'account': pd.Series(sorted(keep), dtype=object)})
     members['ring_id'] = members.account.map(label)
     members['role'] = np.where(members.account.isin(hubs), 'hub',
                                np.where(members.account.isin(loop_members), 'loop', 'counterparty'))
