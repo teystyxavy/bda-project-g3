@@ -592,6 +592,12 @@ start();
   const eventTime=value=>value?value.replace('T',' ').slice(0,16):'Not started';
   const clock=value=>new Date(value).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const parties=row=>`${row.from_bank} ${row.from_account} → ${row.to_bank} ${row.to_account}`;
+  // Optional snapshot fields: older snapshots lack them, so each card or column appears only when well formed.
+  const review=data=>{const value=data.review;
+    return value && Number.isFinite(value.cutoff) && Number.isSafeInteger(value.capacity) && Number.isSafeInteger(value.flagged)?value:null;};
+  const parity=data=>{const value=data.verification;
+    return value && value.features_exact===true && Number.isSafeInteger(value.transactions) &&
+      Number.isFinite(value.max_absolute_score_difference) && typeof value.verified_on==='string'?value:null;};
   element('incoming-tab').hidden=true;
 
   function valid(data) {
@@ -610,10 +616,14 @@ start();
       paused:'The Kinesis consumer is disabled, so nothing new is arriving. Scores committed so far are shown.',
       completed:`All ${integer(data.expected)} replayed transactions and ${integer(data.senders.expected)} sender histories reconcile with the reviewed replay input.`,
       failed:'The streaming consumer reported record failures. Committed scores are shown; later events may be held back until the failure is resolved.'}[data.state];
+    const cutoff=review(data), verified=parity(data);
     cards('incoming-kpis',[['Transactions scored',`${integer(data.processed)} / ${integer(data.expected)}`,`${(share*100).toFixed(1)}% of the replay cohort`],
       ['Complete sender histories',`${integer(data.senders.complete)} / ${integer(data.senders.expected)}`,'Rolling features need each sender’s full history'],
       ['Highest ranking score',data.max_score==null?'—':Number(data.max_score).toFixed(4),'Uncalibrated · not a probability'],
-      ['Replay position',eventTime(data.replay_position),'Historical event time · September 2022']]);
+      ['Replay position',eventTime(data.replay_position),'Historical event time · September 2022'],
+      ...(cutoff?[['Review now',`${integer(cutoff.flagged)} / ${integer(data.processed)}`,`Score ≥ ${cutoff.cutoff.toFixed(4)} · batch top-${integer(cutoff.capacity)} cutoff`]]:[]),
+      ...(verified?[['Matches batch model',`${integer(verified.transactions)} / ${integer(verified.transactions)}`,
+        `Max score difference ${verified.max_absolute_score_difference.toExponential(1)} · recorded ${verified.verified_on}`]]:[])]);
     const bar=element('incoming-progressbar');
     bar.setAttribute('aria-valuenow',String(data.processed));bar.setAttribute('aria-valuemax',String(data.expected));
     bar.innerHTML=`<i style="width:${(share*100).toFixed(1)}%"></i>`;
@@ -621,12 +631,15 @@ start();
     const step=Math.ceil(data.progress.length/24), points=data.progress.filter((point,index,all)=>index%step===0||index===all.length-1);
     chartLines('incoming-progress',[{name:'Transactions scored',color:'#14786f',rows:points.map(point=>({x:Date.parse(point.at),y:point.processed,
       label:clock(point.at)}))}],Math.max(1,data.expected),null,`Time scored · ${new Date(points[0].at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`,integer);
-    table('incoming-latest',['Event time','Scored at','Transaction','Sender → receiver','Ranking score','Payment','Prior-day USD'],
-      data.latest.map(row=>[eventTime(row.timestamp),row.scored_at?clock(row.scored_at):'—',row.transaction_id,parties(row),Number(row.model_score).toFixed(4),row.payment_format,dollars(row.amount_usd_asof)]));
+    // Review column only when the snapshot carries the batch cutoff.
+    const flag=row=>cutoff?[row.review_now===true?'Review now':'Below cutoff']:[];
+    table('incoming-latest',['Event time','Scored at','Transaction','Sender → receiver','Ranking score',...(cutoff?['Review']:[]),'Payment','Prior-day USD'],
+      data.latest.map(row=>[eventTime(row.timestamp),row.scored_at?clock(row.scored_at):'—',row.transaction_id,parties(row),Number(row.model_score).toFixed(4),...flag(row),row.payment_format,dollars(row.amount_usd_asof)]));
     if(!data.latest.length) element('incoming-latest').textContent='No transactions scored yet.';
-    element('incoming-queue-note').textContent=`Top ${integer(data.queue.length)} of ${integer(data.processed)} transactions scored so far; ties use event time then source row. Scores rank review priority and are not probabilities.`;
-    table('incoming-queue',['Rank','Transaction','Event time','Sender → receiver','Ranking score','Payment / currency','Prior-day USD','Sender transactions 1h / 24h / 7d','Counterparties 24h / 7d'],
-      data.queue.map(row=>[row.rank,row.transaction_id,eventTime(row.timestamp),parties(row),Number(row.model_score).toFixed(4),`${row.payment_format} / ${row.payment_currency}`,dollars(row.amount_usd_asof),
+    const reviewNote=cutoff?` ${cutoff.flagged?`${integer(cutoff.flagged)} reach`:'None reach'} the batch top-${integer(cutoff.capacity)} review cutoff (score ≥ ${cutoff.cutoff.toFixed(4)}, set on ${cutoff.period} validation days).`:'';
+    element('incoming-queue-note').textContent=`Top ${integer(data.queue.length)} of ${integer(data.processed)} transactions scored so far; ties use event time then source row. Scores rank review priority and are not probabilities.${reviewNote}`;
+    table('incoming-queue',['Rank','Transaction','Event time','Sender → receiver','Ranking score',...(cutoff?['Review']:[]),'Payment / currency','Prior-day USD','Sender transactions 1h / 24h / 7d','Counterparties 24h / 7d'],
+      data.queue.map(row=>[row.rank,row.transaction_id,eventTime(row.timestamp),parties(row),Number(row.model_score).toFixed(4),...flag(row),`${row.payment_format} / ${row.payment_currency}`,dollars(row.amount_usd_asof),
         `${row.txn_count_1h} / ${row.txn_count_24h} / ${row.txn_count_7d}`,`${row.distinct_counterparties_24h} / ${row.distinct_counterparties_7d}`]));
     if(!data.queue.length) element('incoming-queue').textContent='The queue fills as transactions are scored.';
     element('incoming-provenance').textContent=JSON.stringify({run_id:data.run_id,generated_at:data.generated_at,last_progress_at:data.last_progress_at,

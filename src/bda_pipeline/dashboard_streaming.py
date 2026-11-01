@@ -16,6 +16,10 @@ payment format, currencies, banks) are joined from the reviewed replay events.
 Wall-clock scoring times come from the audit copies' S3 write times: the
 consumer writes each one right after its DynamoDB commit.
 
+Each scored transaction is marked ``review_now`` when it reaches the batch
+reviewer cutoff (``REVIEW``), and a run with recorded cloud acceptance carries
+its batch-parity result (``VERIFIED``).
+
 A snapshot is written only after every committed item validates against those
 events. On any failure the previous snapshot stays in place and the browser
 labels it stale. Account identifiers are masked; labels never exist here.
@@ -52,6 +56,19 @@ WINDOW_SECONDS = 50
 SENDER_FEATURES = ['txn_count_1h', 'txn_count_24h', 'txn_count_7d',
                    'distinct_counterparties_24h', 'distinct_counterparties_7d']
 SCORE_MEANING = 'ranking-score-not-calibrated-probability'
+# Batch reviewer capacity for the same frozen model: the lowest score in the
+# HI-Small validation top-100 queue (release opt-full-20261006-aws1). It was set
+# on validation days, so it is a capacity, not an invented threshold; labels
+# are never used here. Both records below hold only for this model manifest
+# (model 'f0dc65ca…'), so a run serving another model publishes neither.
+REVIEW = {'cutoff': 0.9937289953, 'capacity': 100, 'period': '2022-09-07 to 2022-09-08',
+          'source_run': 'opt-full-20261006-aws1',
+          'model_manifest_sha256': '323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f'}
+# Recorded cloud acceptance per replay run: every committed score was compared
+# with the frozen batch reference for the same transaction.
+VERIFIED = {'stream-smoke-20261006': {
+    'transactions': 884, 'features_exact': True, 'max_absolute_score_difference': 2.9103830456733704e-11,
+    'verified_on': '2026-10-06', 'evidence': 'planning/evidence/streaming-deployment-result-20261006.json'}}
 
 
 def canonical(value):
@@ -185,11 +202,12 @@ def run_state(processed, expected, senders, versions, consumer_enabled, alarm):
     return ('running' if consumer_enabled else 'paused'), False
 
 
-def display(result, event, scored_at, rank=None):
-    """Allowlisted public fields for one scored transaction."""
+def display(result, event, scored_at, rank=None, cutoff=None):
+    """Allowlisted public fields for one scored transaction; ``review_now`` is None without a cutoff for this model."""
     txn = event['transaction']
     return {'rank': rank, 'transaction_id': txn['transaction_id'], 'timestamp': txn['timestamp'],
-            'scored_at': scored_at, 'model_score': result['model_score'], 'amount_usd_asof': txn['amount_usd_asof'],
+            'scored_at': scored_at, 'model_score': result['model_score'],
+            'review_now': None if cutoff is None else result['model_score'] >= cutoff, 'amount_usd_asof': txn['amount_usd_asof'],
             'payment_format': txn['payment_format'], 'payment_currency': txn['payment_currency'],
             'receiving_currency': txn['receiving_currency'], 'from_bank': txn['from_bank'],
             'from_account': mask(txn['from_account']), 'to_bank': txn['to_bank'],
@@ -220,6 +238,8 @@ def build_snapshot(items, run_id, events, senders, *, now, consumer_enabled, ala
     """``committed`` maps audit object names to their S3 write times (see ``commit_times``)."""
     rows, versions = collect(items, run_id, events, senders)
     scored = {transaction_id: committed.get(audit_name(run_id, transaction_id)) for transaction_id in rows}
+    same_model = model_sha256 == REVIEW['model_manifest_sha256']
+    cutoff = REVIEW['cutoff'] if same_model else None
 
     def position(pair):
         """Replay order: event time, then source row (the batch queue's tie policy)."""
@@ -227,7 +247,7 @@ def build_snapshot(items, run_id, events, senders, *, now, consumer_enabled, ala
 
     def public(pair, rank=None):
         moment = scored[pair[0]['transaction_id']]
-        return display(*pair, iso(moment) if moment else None, rank)
+        return display(*pair, iso(moment) if moment else None, rank, cutoff)
     ranked = sorted(rows.values(), key=lambda pair: (-pair[0]['model_score'], *position(pair)))
     latest = sorted(rows.values(), key=position, reverse=True)[:LATEST]
     state, reconciled = run_state(len(rows), len(events), senders, versions, consumer_enabled, alarm)
@@ -244,6 +264,9 @@ def build_snapshot(items, run_id, events, senders, *, now, consumer_enabled, ala
             'top_k': TOP_K, 'queue': [public(pair, rank) for rank, pair in enumerate(ranked[:TOP_K], 1)],
             'latest': [public(pair) for pair in latest],
             'last_progress_at': iso(max(times)) if times else None, 'progress': points,
+            'review': {**REVIEW, 'flagged': sum(result['model_score'] >= cutoff for result, _ in rows.values())}
+                      if same_model else None,
+            'verification': VERIFIED.get(run_id) if same_model else None,
             'model': {'manifest_sha256': model_sha256, 'score_meaning': SCORE_MEANING}}
 
 
