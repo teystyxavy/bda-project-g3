@@ -57,3 +57,8 @@ Thumbs.db
 # pptx files
 *.pptx
 scratch/
+# Local model-investigation notes and scripts, not committed for now
+/planning/model-improvements.md
+/scripts/analysis/
+/scripts/benchmarks/benchmark-training-scale.py
+/scripts/validation/summarise-run.py
