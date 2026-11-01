@@ -22,7 +22,7 @@ Workflow and the ``op`` values handled by ``handle``::
         Baseline (SageMaker Processing) -> PrepareBranches (op=baseline)
             -> optional Train (SageMaker Training)
         Score (Glue)                     skipped on a scored cache hit
-        Network (Glue)                   BQ2 mule-network tables
+        Network (Glue)                   BQ2 mule-network tables; skipped on a network cache hit
     PrepareExport (op=export)      check the network output, return export job request
     Export (SageMaker Processing)
     Publish (op=publish)           verify release, copy to dashboard bucket,
@@ -61,6 +61,8 @@ from .ingest_contract import (
 from .release import ASSETS, _inspect, SENSITIVE_TEXT
 from .stage_cache import register, reuse
 
+# Glue stages whose verified outputs can be reused by an identical later run.
+CACHED_STAGES = ['curated', 'scored', 'network']
 
 def get_json(s3, key, bucket=BUCKET):
     """Read a small JSON control document from S3.
@@ -332,7 +334,7 @@ def handle(event, config, clients):
             if s3.list_objects_v2(Bucket=BUCKET, Prefix=prefix + '/', MaxKeys=1).get('KeyCount', 0):
                 raise ValueError('Output already exists; preserve it and use a new run')
         # Try to reuse verified Glue outputs from an identical earlier run.
-        cached = {stage: reuse(s3, stage, manifest, config, get_json) for stage in ['curated', 'scored']}
+        cached = {stage: reuse(s3, stage, manifest, config, get_json) for stage in CACHED_STAGES}
         put_json(s3, p['evidence'] + '/stage-cache.json', cached)
         # Stored as $.work in the state machine; drives the cache Choice states
         # and the Glue job arguments.
@@ -341,6 +343,7 @@ def handle(event, config, clients):
             'glue_workers': profile['glue_workers'],
             'glue_timeout': profile['glue_timeout'],
             'curated_cache_hit': cached['curated']['hit'], 'scored_cache_hit': cached['scored']['hit'],
+            'network_cache_hit': cached['network']['hit'],
             'curate_arguments': {'--transactions': f"s3://{BUCKET}/{p['raw']}/transactions.csv",
                 '--accounts': f"s3://{BUCKET}/{p['raw']}/accounts.csv", '--fx': f"s3://{BUCKET}/{p['raw']}/fx.csv",
                 '--output': f"s3://{BUCKET}/{p['curated']}/", '--expected_rows': str(manifest['rows']),
@@ -361,7 +364,7 @@ def handle(event, config, clients):
     if op == 'publish':
         completed, _ = get_json(s3, f"{p['evidence']}/result.json")
         if completed and completed.get('status') == 'published':
-            for stage in ['curated', 'scored']:
+            for stage in CACHED_STAGES:
                 register(s3, stage, manifest, config, get_json, put_json)
             lock, _ = get_json(s3, 'pipeline/lock.json')
             if lock and lock.get('run_id') == run_id: release_lock(s3, run_id)
@@ -505,7 +508,7 @@ def handle(event, config, clients):
         # stage-cache receipts, and finally release the lock.
         put_json(s3, f"pipeline/cache/{manifest['processing_sha256']}.json", result)
         put_json(s3, f"{p['evidence']}/result.json", result)
-        for stage in ['curated', 'scored']:
+        for stage in CACHED_STAGES:
             register(s3, stage, manifest, config, get_json, put_json)
         release_lock(s3, run_id)
         return result

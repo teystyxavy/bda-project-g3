@@ -29,7 +29,7 @@ Workflow shape (see ``workflow()``)::
            1. Baseline (SageMaker Processing) -> PrepareBranches
               -> optional Train (SageMaker Training)
            2. Score (Glue, skipped on a scored cache hit)
-           3. Network (Glue BQ2 mule-network job)
+           3. Network (Glue BQ2 mule-network job, skipped on a network cache hit)
       -> PrepareExport -> Export (SageMaker Processing) -> Publish -> Complete
     any failure -> RecordFailure -> NotifyFailure (SNS) -> Failed
 
@@ -231,7 +231,11 @@ def workflow():
                 # Skip scoring if identical scores were already produced earlier.
                 'ReuseScores': {'Type': 'Choice', 'Choices': [{'Variable': '$.work.scored_cache_hit', 'BooleanEquals': True, 'Next': 'ScoresReused'}], 'Default': 'Score'},
                 'Score': score, 'ScoresReused': {'Type': 'Pass', 'End': True}}},
-            {'StartAt': 'Network', 'States': {'Network': network}}], 'ResultPath': None, 'Next': 'PrepareExport', 'Catch': CATCH},
+            {'StartAt': 'ReuseNetwork', 'States': {
+                # Skip the network job if identical network tables were already produced
+                # earlier; the export stage still recomputes and checks them.
+                'ReuseNetwork': {'Type': 'Choice', 'Choices': [{'Variable': '$.work.network_cache_hit', 'BooleanEquals': True, 'Next': 'NetworkReused'}], 'Default': 'Network'},
+                'Network': network, 'NetworkReused': {'Type': 'Pass', 'End': True}}}], 'ResultPath': None, 'Next': 'PrepareExport', 'Catch': CATCH},
         # Check scores, baseline proof, network output and any candidate model, then
         # build the export Processing request ($.work is passed to the Lambda).
         'PrepareExport': control('export', '$.export_request', 'Export', **{'work.$': '$.work'}),

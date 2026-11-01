@@ -75,7 +75,7 @@ of 572; top 50 → 67.3% of 654 touch laundering.
 ```
 Glue curate ─▶ ScoreAndAnalyze (parallel)
                 ├─ Glue score (BQ1)
-                ├─ Glue network  ◀── BQ2 (was: Athena corridor query)
+                ├─ Glue network  ◀── BQ2 (was: Athena corridor query; skipped on a cache hit)
                 └─ SageMaker baseline (+ optional training)
              ─▶ SageMaker export: recompute network in pandas, compare every
                 Glue table (exact keys/counts, USD ≤ 1 cent), build dashboard
@@ -83,8 +83,34 @@ Glue curate ─▶ ScoreAndAnalyze (parallel)
 ```
 
 Output: `s3://…/pipeline/runs/<run>/network/{totals,candidates,pairs,loops,ring_members,ring_edges}/`
-plus a root `_SUCCESS`. The network stage is never stage-cached, and a new
-deployment changes `deployment_sha256`, so a rerun cannot serve old treasury output.
+plus a root `_SUCCESS`.
+
+### Speed, cost and resilience
+
+- **Stage cache.** Like curate and score, the network stage is reused when an
+  identical earlier run was fully verified and published
+  ([`stage_cache.py`](../../src/bda_pipeline/stage_cache.py)). Its key is the
+  run's input identity + the curated version + the network job version (a hash
+  of `network_mules.py`, which holds every threshold). A model change does
+  **not** invalidate it, because the network job never reads scores. On a hit,
+  Step Functions takes `ReuseNetwork → NetworkReused` and no Glue job starts;
+  the export stage still recomputes and checks every table, so a bad cache entry
+  cannot be published. A deployment without a `network` stage version (older
+  config) always recomputes. Old treasury output cannot be reused: it never had
+  a network receipt.
+- **One input read.** The Glue job checks the row count first (Parquet footers),
+  then validates every row and counts self-transfers in a single aggregation
+  that also fills the cache the link aggregation reads.
+- **Export check cost.** `network.analyse_network` on full HI-Small: 23.5 s on a
+  laptop (10.5 s building links, the rest under 3 s per step). It grows roughly
+  linearly with rows, so HI-Medium (~6×) is a few minutes, well inside the
+  export job's 60-minute limit.
+- **`localCheckpoint()` trade-off.** It keeps Spark plans short and fast, but
+  a lost executor fails the job (there is no reliable copy to recompute from).
+  That is acceptable because Glue jobs here run on standard capacity with no
+  retries and a failed run is rerun deliberately. If the job ever moves to Glue
+  Flex (cheaper, but executors can be reclaimed), switch to `checkpoint()` with
+  an S3 checkpoint directory.
 
 ## Run it locally
 

@@ -201,6 +201,14 @@ def test_parallel_progress_and_cache_reuse_are_reported():
     assert result['train'] == 'skipped' and result['export'] == 'pending'
 
 
+def test_network_cache_hit_is_reported_as_reused():
+    events = entries(['Acquire', 'Begin', 'ReuseCurated', 'PrepareBaseline', 'ReuseScores', 'Score',
+                      'ReuseNetwork', 'NetworkReused', 'BaselineWait'])
+    result = statuses(api.stage_progress({'status': 'RUNNING'}, {'status': 'RUNNING'}, events, False))
+    assert result['network'] == 'reused'
+    assert result['score'] == result['baseline'] == 'running'
+
+
 def test_failed_worker_is_failed_and_other_active_stages_stopped():
     events = entries(['Curate', 'Score', 'Network'])
     events.extend([{'id': 4, 'previousEventId': 2, 'type': 'TaskScheduled', 'timestamp': NOW},

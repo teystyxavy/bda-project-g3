@@ -31,8 +31,11 @@ class CacheS3(MemoryS3):
         self.copied.append(Key)
 
 
+NETWORK_FILES = ['candidates/part-0.parquet', 'loops/part-0.parquet', 'ring_members/part-0.parquet']
+
+
 def prepared():
-    cfg = config() | {'stage_versions': {'curated': 'curate-v1', 'scored': 'score-v1'}}
+    cfg = config() | {'stage_versions': {'curated': 'curate-v1', 'scored': 'score-v1', 'network': 'network-v1'}}
     original = manifest() | {'deployment_sha256': sha(cfg)}
     identity_fields = ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train']
     original['processing_sha256'] = sha({key: original[key] for key in identity_fields})
@@ -46,6 +49,13 @@ def prepared():
         s3.put_object(Bucket=BUCKET, Key=p[stage] + '/txn_date=2022-09-01/data.parquet', Body=b'fixture')
         s3.put_object(Bucket=BUCKET, Key=p[stage] + '/_SUCCESS', Body=b'')
         register(s3, stage, original, cfg, get_json, put_json)
+    # The network job writes one folder per table (each with Spark's own
+    # _SUCCESS) and a root _SUCCESS once every table exists.
+    for name in NETWORK_FILES:
+        s3.put_object(Bucket=BUCKET, Key=f"{p['network']}/{name}", Body=b'network-' + name.encode())
+        s3.put_object(Bucket=BUCKET, Key=f"{p['network']}/{name.split('/')[0]}/_SUCCESS", Body=b'')
+    s3.put_object(Bucket=BUCKET, Key=p['network'] + '/_SUCCESS', Body=b'')
+    register(s3, 'network', original, cfg, get_json, put_json)
     return s3, cfg, original
 
 
@@ -80,6 +90,47 @@ def test_rerun_bypasses_stage_cache_and_identical_scores_can_be_reused():
     assert not reuse(s3, 'scored', original | {'run_id': 'next-run', 'rerun': True}, cfg, get_json)['hit']
     assert reuse(s3, 'scored', original | {'run_id': 'next-run', 'train': True}, cfg, get_json)['hit']
     assert s3.copied[-1].endswith('/_SUCCESS')
+
+
+def test_network_cache_survives_model_change_and_copies_every_table_marker_last():
+    s3, cfg, original = prepared()
+    changed = original | {'run_id': 'next-run', 'train': True, 'model_manifest_sha256': 'd' * 64}
+    result = reuse(s3, 'network', changed, cfg, get_json)
+    assert result['hit'] and result['objects'] == len(NETWORK_FILES) + 1
+    destination = paths('next-run')['network']
+    assert sorted(s3.copied[:-1]) == [f'{destination}/{name}' for name in NETWORK_FILES]
+    assert s3.copied[-1] == destination + '/_SUCCESS'
+    # Per-table Spark markers are not part of the inventory, so are never copied.
+    assert not any(key.endswith('/candidates/_SUCCESS') for key in s3.copied)
+
+
+def test_network_cache_key_follows_curated_and_network_versions_only():
+    _, cfg, original = prepared()
+    key = stage_key('network', original, cfg)
+    versions = cfg['stage_versions']
+    assert key != stage_key('network', original, cfg | {'stage_versions': versions | {'network': 'network-v2'}})
+    assert key != stage_key('network', original, cfg | {'stage_versions': versions | {'curated': 'curate-v2'}})
+    assert key == stage_key('network', original, cfg | {'stage_versions': versions | {'scored': 'score-v2'}})
+    assert key == stage_key('network', original | {'model_manifest_sha256': 'd' * 64}, cfg)
+    assert key not in {stage_key(stage, original, cfg) for stage in ['curated', 'scored']}
+
+
+def test_deployment_without_network_version_always_recomputes_network():
+    s3, cfg, original = prepared()
+    older = cfg | {'stage_versions': {'curated': 'curate-v1', 'scored': 'score-v1'}}
+    assert stage_key('network', original, older) is None
+    assert reuse(s3, 'network', original | {'run_id': 'next-run'}, older, get_json) == {'hit': False, 'reason': 'bypassed'}
+    assert not s3.copied
+
+
+def test_network_branch_skips_glue_only_on_a_cache_hit():
+    branch = load_script('infra/ingestion/build-workflow.py').workflow()['States']['ScoreAndAnalyze']['Branches'][2]
+    assert branch['StartAt'] == 'ReuseNetwork'
+    choice = branch['States']['ReuseNetwork']
+    assert choice['Choices'] == [{'Variable': '$.work.network_cache_hit', 'BooleanEquals': True, 'Next': 'NetworkReused'}]
+    assert choice['Default'] == 'Network'
+    assert branch['States']['NetworkReused'] == {'Type': 'Pass', 'End': True}
+    assert 'Retry' not in branch['States']['Network']
 
 
 def test_parallel_verification_training_dependency_and_bounded_processing_checks():
