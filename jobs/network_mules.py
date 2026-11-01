@@ -50,24 +50,42 @@ def account_key(bank, account):
     return F.concat(normalized_bank(F.col(bank)), F.lit(":"), F.col(account))
 
 
+def fresh(frame):
+    """Same columns with new attribute IDs.
+
+    ``localCheckpoint()`` keeps a plan's attribute IDs, so joining a
+    checkpointed table back onto the lineage it came from gives Spark two
+    columns with one ID; Spark 3.5.2 then fails with "Failure when resolving
+    conflicting references in Join". Re-aliasing the right-hand side avoids it.
+    """
+    return frame.select([F.col(name).alias(name) for name in frame.columns])
+
+
 def within_window(later, earlier):
     """``earlier <= later <= earlier + LOOP_WINDOW_DAYS`` on timestamps (inclusive at both ends)."""
     return (F.col(later) >= F.col(earlier)) & (F.col(later) <= F.col(earlier) + F.expr(f"INTERVAL {LOOP_WINDOW_DAYS} DAYS"))
 
 
 def build_links(curated):
-    """Directed account links and the self-transfer count (self-transfers are dropped)."""
+    """Directed account links and the self-transfer count (self-transfers are dropped).
+
+    The input is read once: a single aggregation both validates every row and
+    counts self-transfers, and in doing so fills the cache that the link
+    aggregation then reads.
+    """
     tx = curated.select(account_key("from_bank", "from_account").alias("src"),
                         account_key("to_bank", "to_account").alias("dst"),
                         F.col("timestamp").alias("ts"), F.col("amount_usd").cast("double").alias("usd"),
                         F.col("is_laundering").cast("long").alias("lab"))
-    bad = tx.filter(F.col("src").isNull() | F.col("dst").isNull() | F.col("ts").isNull() | F.col("usd").isNull()
-                    | F.col("lab").isNull() | ~F.col("lab").isin(0, 1) | (F.col("usd") < 0)
-                    | F.isnan("usd") | (F.col("usd") == float("inf"))).limit(1).count()
-    if bad:
-        raise ValueError("Missing or invalid network input value")
+    invalid = (F.col("src").isNull() | F.col("dst").isNull() | F.col("ts").isNull() | F.col("usd").isNull()
+               | F.col("lab").isNull() | ~F.col("lab").isin(0, 1) | (F.col("usd") < 0)
+               | F.isnan("usd") | (F.col("usd") == float("inf")))
     tx = tx.persist(StorageLevel.MEMORY_AND_DISK)
-    self_transfers = tx.filter(F.col("src") == F.col("dst")).count()
+    checks = tx.agg(F.sum(F.when(invalid, 1).otherwise(0)).alias("invalid"),
+                    F.sum(F.when(F.col("src") == F.col("dst"), 1).otherwise(0)).alias("self_transfers")).first()
+    if checks["invalid"]:
+        raise ValueError("Missing or invalid network input value")
+    self_transfers = int(checks["self_transfers"] or 0)
     tx = tx.filter(F.col("src") != F.col("dst"))
     links = tx.groupBy("src", "dst").agg(F.count(F.lit(1)).alias("txns"), F.sum("usd").alias("usd"),
                                          F.min("ts").alias("first_ts"), F.max("ts").alias("last_ts"),
@@ -149,11 +167,13 @@ def connected_components(edges, spark):
 
 def analyse(curated, spark, expected_rows):
     """Return ``{table name: DataFrame}`` matching ``bda_pipeline.network.analyse_network``."""
-    tx, links, self_transfers = build_links(curated)
-    accounts = account_table(links)
+    # Fail fast on the wrong input before any shuffle; a column-free count of
+    # Parquet is answered mostly from file footers, so it is cheap.
     rows = curated.count()
     if rows != expected_rows:
         raise ValueError(f"Expected {expected_rows} curated rows, received {rows}")
+    tx, links, self_transfers = build_links(curated)
+    accounts = account_table(links)
     totals = spark.createDataFrame([(rows, self_transfers, accounts.count(), links.count(),
                                      accounts.filter("touches_laundering").count())],
                                    "rows long, self_transfers long, accounts long, links long, laundering_accounts long")
@@ -173,7 +193,7 @@ def analyse(curated, spark, expected_rows):
     loop_edges = reduce(lambda left, right: left.unionByName(right), [
         loop_candidates.select(F.col(s).alias("src"), F.col(d).alias("dst")) for s, d in [("a", "b"), ("b", "c"), ("c", "a")]])
     needed = pair_edges.unionByName(loop_edges).distinct()
-    times = tx.select("src", "dst", "ts").join(needed, ["src", "dst"], "left_semi").localCheckpoint()
+    times = tx.select("src", "dst", "ts").join(fresh(needed), ["src", "dst"], "left_semi").localCheckpoint()
     pairs = timed_pairs(times).localCheckpoint()
     loops = timed_loops(loop_candidates, times).localCheckpoint()
 
@@ -183,7 +203,7 @@ def analyse(curated, spark, expected_rows):
                  .unionByName(ordinary_links.join(hubs.withColumnRenamed("account", "dst"), "dst", "left_semi").select("src", "dst")))
     loop_links = reduce(lambda left, right: left.unionByName(right), [
         loops.select(F.col(s).alias("src"), F.col(d).alias("dst")) for s, d in [("a", "b"), ("b", "c"), ("c", "a")]])
-    ring_links = hub_links.unionByName(loop_links).distinct().join(links, ["src", "dst"]).localCheckpoint()
+    ring_links = hub_links.unionByName(loop_links).distinct().join(fresh(links), ["src", "dst"]).localCheckpoint()
 
     labels = connected_components(ring_links, spark)
     sizes = labels.groupBy("ring_id").agg(F.count(F.lit(1)).alias("size"))
