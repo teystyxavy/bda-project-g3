@@ -25,8 +25,8 @@ worth now, which is a different question.
   reproduce the dashboard exactly.
 - Dataset rates: derived from HI-Small's 72,170 cross-currency rows. Each
   currency's rate is fixed up to rounding (Euro 0.8534 and Yen 105.4 per USD).
-  The same rates are assumed for HI-Medium, which comes from the same
-  generator; this has not been checked against the HI-Medium raw file.
+  The run's own HI-Medium file (485,144 cross-currency rows) gives the same
+  rates; the largest difference is 0.0002% (Bitcoin).
 
 ## Results
 
@@ -65,8 +65,9 @@ volume. That day's HHI falls from 0.084 to 0.039 at dataset rates.
 
 ## BQ1
 
-Barely affected: none of the 72,170 cross-currency rows in HI-Small is
-laundering, so currency choice does not change which rows are positive.
+Barely affected: none of the cross-currency rows is laundering (0 of 72,170 in
+HI-Small, 0 of 485,144 in HI-Medium), so currency choice does not change which
+rows are positive.
 
 ## Reproduce
 
