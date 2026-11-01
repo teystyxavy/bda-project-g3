@@ -289,8 +289,8 @@ resource "aws_lambda_function" "publisher" {
   role                           = aws_iam_role.publisher[0].arn
   runtime                        = "python3.12"
   handler                        = "dashboard_streaming.handler"
-  filename                       = var.publisher_zip_path
-  source_code_hash               = filebase64sha256(var.publisher_zip_path)
+  filename                       = var.lambda_zip_path
+  source_code_hash               = filebase64sha256(var.lambda_zip_path)
   memory_size                    = 256
   timeout                        = 60
   reserved_concurrent_executions = 1

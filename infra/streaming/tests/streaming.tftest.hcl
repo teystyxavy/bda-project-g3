@@ -94,7 +94,7 @@ run "publisher_reads_scores_and_writes_one_snapshot" {
   variables {
     provision_streaming  = true
     provision_publisher  = true
-    publisher_zip_path   = "versions.tf"
+    lambda_zip_path      = "versions.tf"
     replay_events_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   }
   assert {
@@ -120,7 +120,7 @@ run "publisher_requires_reviewed_events" {
   variables {
     provision_streaming = true
     provision_publisher = true
-    publisher_zip_path  = "versions.tf"
+    lambda_zip_path     = "versions.tf"
   }
   expect_failures = [var.provision_publisher]
 }
@@ -129,7 +129,7 @@ run "publisher_schedule_needs_fixed_end" {
   variables {
     provision_streaming  = true
     provision_publisher  = true
-    publisher_zip_path   = "versions.tf"
+    lambda_zip_path      = "versions.tf"
     replay_events_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     enable_publisher     = true
   }
@@ -140,7 +140,7 @@ run "armed_publisher_stops_at_end_time" {
   variables {
     provision_streaming  = true
     provision_publisher  = true
-    publisher_zip_path   = "versions.tf"
+    lambda_zip_path      = "versions.tf"
     replay_events_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     enable_publisher     = true
     publisher_end_time   = "2026-11-06T12:00:00"

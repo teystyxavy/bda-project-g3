@@ -90,12 +90,14 @@ variable "provision_publisher" {
   type    = bool
   default = false
   validation {
-    condition     = !var.provision_publisher || (var.provision_streaming && var.publisher_zip_path != null && var.replay_events_sha256 != null)
+    condition     = !var.provision_publisher || (var.provision_streaming && var.lambda_zip_path != null && var.replay_events_sha256 != null)
     error_message = "The publisher needs the streaming stack, its packaged zip and the reviewed replay events digest."
   }
 }
-# publisher_zip_path: local artifact from scripts/aws/prepare-dashboard-streaming.py.
-variable "publisher_zip_path" {
+# lambda_zip_path: the publisher's zip, from scripts/aws/prepare-dashboard-streaming.py.
+# Named like dashboard-status's input so scripts/aws/get-terraform-inputs.ps1 can
+# fill it with the deployed package on another machine.
+variable "lambda_zip_path" {
   type    = string
   default = null
 }

@@ -32,8 +32,20 @@ Park it again by applying without `-var provision_stream=true`.
 
 ## Incoming AML dashboard view
 
-Status, 1 November 2026: implemented and tested locally; **not deployed**. Committed
-streaming scores now have a serving path to the dashboard, following the
+Status, 1 November 2026: **publisher deployed; dashboard tab not yet published.**
+Steps 1–3 and 5 below are done: 9 resources added, 0 changed, 0 destroyed; schedule
+disabled. One publication returned `completed`, 884/884, all 32 sender histories
+reconciled. CloudFront serves the snapshot with `Cache-Control: no-store` (edge miss).
+Steps 4 and 6 (public tab, live window) are pending team approval; plan them for
+4–5 November with the processing-image rebuild.
+
+The input `events.jsonl` (SHA-256 `8f5e2aee…e296f`) was rebuilt from the verified
+6 October curated data, because the original package was not in AWS. All 884 events
+hash to the `input_sha256` the consumer stored when scoring them. To plan this stack
+on another machine, run `scripts/aws/get-terraform-inputs.ps1 -Stack streaming`; a plan
+with only its `-var-file` should report no changes.
+
+Committed streaming scores now have a serving path to the dashboard, following the
 [proposal](../planning/proposals/kinesis-dashboard-improvements.md):
 
 ```text
@@ -63,7 +75,7 @@ Deployment (requires explicit authorization; all steps use existing names):
    `s3://is459-g3-588738581042-ap-southeast-1/streaming/<run_id>/input/events.jsonl`.
    Its SHA-256 must equal `events_sha256` in that package's `verification.json`.
 3. Plan and apply `infra/streaming` with the saved variables plus
-   `-var provision_publisher=true -var publisher_zip_path=<absolute zip path> -var replay_events_sha256=<events_sha256>`.
+   `-var provision_publisher=true -var lambda_zip_path=<absolute zip path> -var replay_events_sha256=<events_sha256>`.
    This adds the publisher, its role, log group, disabled schedule and error alarm;
    check the plan changes nothing else. Review the `publisher_policy` output.
 4. Publish the `publisher_configuration` output as `dashboard/streaming-config.json`
