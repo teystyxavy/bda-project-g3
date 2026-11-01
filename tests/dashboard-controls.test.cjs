@@ -360,15 +360,20 @@ test('mule-network tab renders hubs, loops, rings and the ring node graph from t
   assert.match(h.el('network-kpis').innerHTML,/Mule-sized hubs \(10\+ in and out\)/);
   assert.match(h.el('threshold-table').innerHTML,/10\+ \(rings\)/);
   assert.match(h.el('ring-list').innerHTML,/10:A/);
-  assert.match(h.el('network-context').textContent,/Glue tables matched an independent recomputation/);
+  assert.match(h.el('network-context').innerHTML,/✓ Verified.*Glue tables matched an independent recomputation/);
   const svg=h.el('ring-graph').innerHTML;
   assert.match(svg,/<svg id="ring-svg"/);
   assert.equal((svg.match(/class="ring-node/g)||[]).length,4);
-  assert.equal((svg.match(/ring-loop-link/g)||[]).length,2);
+  assert.equal((svg.match(/ring-link-loop/g)||[]).length,2);
   assert.match(svg,/marker-end="url\(#ring-arrow-loop\)"/);
   // The deterministic layout keeps every account inside the drawing area.
   const layout=vm.runInContext("ringLayouts['10:A']",h.context);
-  for(const point of Object.values(layout)) {assert.ok(point.x>=48&&point.x<=772);assert.ok(point.y>=48&&point.y<=492);}
+  for(const point of Object.values(layout)) {assert.ok(point.x>=48&&point.x<=812);assert.ok(point.y>=48&&point.y<=512);}
+  // Hub rings read left to right: senders left of the hub, receivers right of it.
+  assert.equal(layout['10:H'].x,430);assert.ok(layout['20:R1'].x>430);
+  assert.deepEqual(vm.runInContext("JSON.stringify(flowRoles(snapshot.network.graphs['10:A']))",h.context),JSON.stringify({'10:H':'hub','10:A':'loop','10:B':'loop','20:R1':'receiver'}));
+  assert.match(h.el('ring-rail').innerHTML,/data-ring="10:A"/);assert.match(h.el('ring-title').textContent,/Ring #1 · lead account 10:H/);
+  assert.match(h.el('ring-kpis').innerHTML,/9<\/strong> payments/);
   assert.deepEqual(vm.runInContext("JSON.stringify(layoutRing(snapshot.network.graphs['10:A']))",h.context),JSON.stringify(layout));
   vm.runInContext("findAccount('20:r1')",h.context);
   assert.match(h.el('ring-search-result').textContent,/20:R1 is in ring #1/);

@@ -202,7 +202,7 @@ async function start(snapshotSource=null) {
     }
     if(snapshot.pipeline) {
       const p=snapshot.pipeline;
-      element('status').textContent=`Run ${p.run_id} · ${integer(snapshot.full_rows)} transactions · ${p.start_date} to ${p.end_date} · Dataset version ${p.dataset_version??'unrecorded local copy'} · Refreshed ${p.refresh_time}`;
+      element('status').textContent=`Run ${p.run_id} · ${integer(snapshot.full_rows)} transactions · ${p.start_date} to ${p.end_date} · Dataset version ${p.dataset_version??'unrecorded local copy'} · Refreshed ${String(p.refresh_time).slice(0,16).replace("T"," ")} UTC`;
       const scope=p.source_scope==='smoke-prefix' ? 'Demonstration sample' : `Selected ${p.subset || 'HI-Small'} population`;
       element('method-scope').textContent=`${scope}. Both views use the same verified transaction run. ${snapshot.model?.evaluation_scope || 'Optional training creates a candidate for separate review.'}`;
       document.querySelector('footer').textContent='Group 3 · Verified batch analysis';
@@ -686,13 +686,29 @@ function showDetail(row) {
 
 // ---- BQ2: mule networks (hubs, loops, rings) and the ring node graph ----
 let networkReady=false, selectedRing=null, selectedAccount=null;
-const ringLayouts={};
-const GRAPH={width:820,height:540,margin:48};
-const ROLE={hub:{label:'Hub',color:'#b3402f',radius:13},loop:{label:'Loop account',color:'#7c5cb0',radius:9},counterparty:{label:'Counterparty',color:'#2b6c9a',radius:6}};
+const ringLayouts={}, ringLayoutShape={};
+// Wide canvas on desktop; a taller, narrower one on phones so nodes stay legible.
+const graphShape = () => (window.innerWidth||1200)<760 ? {width:520,height:620,margin:40} : {width:860,height:560,margin:48};
+let GRAPH=graphShape();
+// Display roles: counterparties are split by the direction of their money within the ring.
+const ROLE={hub:{label:'Hub',color:'#b3402f',radius:14},loop:{label:'Loop account',color:'#7c5cb0',radius:9},
+  sender:{label:'Sends money in',color:'#2b6c9a',radius:6},receiver:{label:'Receives money out',color:'#c98a1b',radius:6},
+  both:{label:'Both directions',color:'#6b7f8e',radius:6}};
 const share = value => value==null ? 'Unavailable' : `${(value*100).toFixed(1)}%`;
 const times = value => value==null ? 'Unavailable' : `${value.toFixed(1)}×`;
+const plural = (count,word) => `${integer(count)} ${word}${count===1?'':'s'}`;
 const shortAccount = id => {const [bank,account='']=String(id).split(':');return account.length>9?`${bank}:…${account.slice(-5)}`:String(id);};
 const dateRange = (first,last) => `${monthDay(first.slice(0,10))} → ${monthDay(last.slice(0,10))}`;
+const ringRow = id => snapshot.network.ring_list.find(item=>item.ring_id===id);
+// The account investigators start from: the busiest hub, else the busiest loop account.
+const leadAccount = id => snapshot.network.graphs[id].nodes[0]?.id || id;
+
+// Within-ring direction of each account: hub/loop, or a counterparty that only sends, only receives, or both.
+function flowRoles(graph) {
+  const sends=new Set(graph.links.map(link=>link.source)), receives=new Set(graph.links.map(link=>link.target));
+  return Object.fromEntries(graph.nodes.map(node=>[node.id,node.role!=='counterparty'?node.role:
+    sends.has(node.id)&&!receives.has(node.id)?'sender':receives.has(node.id)&&!sends.has(node.id)?'receiver':'both']));
+}
 
 function renderNetwork() {
   const data=snapshot?.network;
@@ -704,8 +720,8 @@ function renderNetwork() {
   }
   const t=data.totals, p=data.parameters, headline=data.thresholds.find(row=>row.headline)||data.thresholds[0];
   const three=data.loops.three_account, rings=data.rings;
-  element('network-question').textContent=`${data.question} Audience: ${data.audience}.`;
-  element('network-context').textContent=`${integer(t.rows)} transactions · ${integer(t.accounts)} accounts · ${integer(t.links)} account links after merging repeat payments · ${integer(t.self_transfers)} self-transfers excluded · Source ${snapshot.pipeline?.run_id||'verified batch'} · ${data.verification?.status==='passed'?'Glue tables matched an independent recomputation':'Local analysis'}`;
+  element('network-question').textContent=data.question;
+  element('network-context').innerHTML=`${data.verification?.status==='passed'?'<span class="verified-chip">✓ Verified</span> Glue tables matched an independent recomputation · ':''}${escapeText(integer(t.accounts))} accounts · ${escapeText(integer(t.links))} account links after merging repeat payments · ${escapeText(integer(t.self_transfers))} self-transfers excluded`;
   cards('network-kpis',[
     ['Rings to investigate',integer(rings.rings),`${integer(rings.accounts)} accounts · largest ${integer(rings.largest)}`],
     ['Ring accounts touching laundering',share(rings.laundering_rate),`${times(rings.lift)} the ${share(t.laundering_rate)} base rate`],
@@ -714,16 +730,18 @@ function renderNetwork() {
   table('threshold-table',['Cut-off','Hubs','Hubs · laundering','High-volume · laundering','Fan-in only','Fan-out only'],
     data.thresholds.map(row=>[`${row.threshold}+${row.headline?' (rings)':''}`,integer(row.hubs.accounts),`${integer(row.hubs.laundering_accounts)} · ${share(row.hubs.laundering_rate)}`,
       `${integer(row.high_volume.accounts)} · ${share(row.high_volume.laundering_rate)}`,`${integer(row.fan_in_only.accounts)} · ${share(row.fan_in_only.laundering_rate)}`,`${integer(row.fan_out_only.accounts)} · ${share(row.fan_out_only.laundering_rate)}`]));
-  element('threshold-note').textContent=`A hub has at least this many distinct senders and receivers, and at most ${p.max_links} links in total. The cut-off is our choice, so three are shown.`;
+  element('threshold-note').textContent=`A hub has at least this many distinct senders and receivers, and at most ${p.max_links} links in total. The cut-off is our choice, so three are shown. High-volume accounts pass the cut-off but have more than ${p.max_links} links.`;
   const signals=[
-    ['All accounts (base rate)',{accounts:t.accounts,laundering_accounts:t.laundering_accounts,laundering_rate:t.laundering_rate,lift:1}],
+    ['All accounts (base rate)',{accounts:t.accounts,laundering_accounts:t.laundering_accounts,laundering_rate:t.laundering_rate,lift:1},'base'],
     [`Fan-out ${p.headline_threshold}+ only`,headline.fan_out_only],[`Fan-in ${p.headline_threshold}+ only`,headline.fan_in_only],
     ['Two-account back-and-forth',data.loops.two_account],['Three-account loops',three],
-    ['Ring accounts',{accounts:rings.accounts,laundering_accounts:rings.laundering_accounts,laundering_rate:rings.laundering_rate,lift:rings.lift}],
-    [`Mule-sized hubs (${p.headline_threshold}+)`,headline.hubs]];
-  bars('signal-bars',signals.map(([label,row])=>({label,value:row.laundering_rate??0})),row=>row.label,'value',share);
+    ['Ring accounts',{accounts:rings.accounts,laundering_accounts:rings.laundering_accounts,laundering_rate:rings.laundering_rate,lift:rings.lift},'ring'],
+    [`Mule-sized hubs (${p.headline_threshold}+)`,headline.hubs,'ring']];
+  signals.sort((a,b)=>(a[2]==='base'?-1:0)-(b[2]==='base'?-1:0)||(a[1].laundering_rate??0)-(b[1].laundering_rate??0));
+  const top=Math.max(...signals.map(([,row])=>row.laundering_rate||0),.01);
+  element('signal-bars').innerHTML=`<div class="signal-bars">${signals.map(([label,row,kind])=>`<div class="signal-row${kind?` signal-${kind}`:''}"><span>${escapeText(label)}<small>${escapeText(integer(row.accounts))} accounts</small></span><div class="bar-track"><div class="bar-fill" style="width:${(row.laundering_rate||0)/top*100}%"></div></div><strong>${escapeText(share(row.laundering_rate))}<small>${kind==='base'?'base':escapeText(times(row.lift))}</small></strong></div>`).join('')}</div>`;
   table('signal-table',['Signal','Accounts','Touching laundering','Rate','Against base'],signals.map(([label,row])=>[label,integer(row.accounts),integer(row.laundering_accounts),share(row.laundering_rate),times(row.lift)]));
-  table('top-rings',['Rings reviewed','Accounts reviewed','Accounts touching laundering','Rings with any laundering'],data.top_rings.map(row=>[`Top ${integer(row.rings)}`,integer(row.accounts),share(row.laundering_rate),`${integer(row.rings_with_laundering)} of ${integer(row.rings)}`]));
+  table('top-rings',['Rings reviewed','Accounts','Touching laundering','Rings with any'],data.top_rings.map(row=>[`Top ${integer(row.rings)}`,integer(row.accounts),share(row.laundering_rate),`${integer(row.rings_with_laundering)} of ${integer(row.rings)}`]));
   element('network-terms').innerHTML=Object.entries(data.definitions).map(([term,text])=>`<dt>${escapeText(term.replace('_',' '))}</dt><dd>${escapeText(text)}</dd>`).join('');
   element('network-verification').textContent=data.verification?JSON.stringify(data.verification,null,2):'';
   renderRingList(data);
@@ -735,34 +753,38 @@ function renderNetwork() {
     element('export-rings').onclick=()=>download(snapshot.network.ring_list,'mule-network-rings.csv');
   }
   const ids=data.ring_list.map(row=>row.ring_id);
-  if(!ids.length) {
-    element('ring-explorer').hidden=true;
-    element('ring-list').textContent='No rings were found in this run. Small demonstration runs usually contain too few payments for hubs or loops.';
-    return;
-  }
-  element('ring-explorer').hidden=false;
-  selectOptions('ring-picker',ids,id=>{const row=data.ring_list.find(item=>item.ring_id===id);return `#${row.rank} · ${row.accounts} accounts · ${row.hubs} hub${row.hubs===1?'':'s'}, ${row.loops} loop${row.loops===1?'':'s'}`;});
+  element('ring-explorer').hidden=!ids.length;
+  if(!ids.length) {element('ring-list').textContent='No rings were found in this run. Small demonstration runs usually contain too few payments for hubs or loops.';return;}
+  selectOptions('ring-picker',ids,id=>{const row=ringRow(id);return `#${row.rank} · ${shortAccount(leadAccount(id))} · ${row.accounts} accounts`;});
   selectRing(ids.includes(selectedRing)?selectedRing:ids[0]);
 }
 
 function renderRingList(data) {
-  element('ring-list-note').textContent=`Top ${data.ring_list.length} of ${integer(data.rings.rings)} rings. ${data.definitions.ranking} The last column is a check against labels, not an input.`;
-  table('ring-list',['Rank','Ring (smallest account)','Accounts','Hubs','Loops','Payments','USD','Active','Accounts touching laundering'],
-    data.ring_list.map(row=>[row.rank,row.ring_id,integer(row.accounts),integer(row.hubs),integer(row.loops),integer(row.txns),dollars(row.usd),dateRange(row.first_seen,row.last_seen),share(row.laundering_rate)]));
+  element('ring-list-note').textContent=`Top ${data.ring_list.length} of ${integer(data.rings.rings)} rings. ${data.definitions.ranking}`;
+  element('ring-rail').innerHTML=`<ol>${data.ring_list.map(row=>`<li><button type="button" data-ring="${escapeText(row.ring_id)}" title="Ring ${escapeText(row.ring_id)}"><span class="rail-rank">#${row.rank}</span><span class="rail-main"><strong>${escapeText(shortAccount(leadAccount(row.ring_id)))}</strong><span>${row.hubs?`<b class="flag flag-hub">${plural(row.hubs,'hub')}</b>`:''}${row.loops?`<b class="flag flag-loop">${plural(row.loops,'loop')}</b>`:''}</span><small>${integer(row.accounts)} accounts · ${dollars(row.usd)}</small></span></button></li>`).join('')}</ol>`;
+  element('ring-rail').querySelectorAll?.('[data-ring]').forEach(button=>{button.onclick=()=>selectRing(button.dataset.ring);});
+  table('ring-list',['Rank','Lead account','Ring ID (smallest account)','Accounts','Hubs','Loops','Payments','USD','Active','Accounts touching laundering'],
+    data.ring_list.map(row=>[row.rank,leadAccount(row.ring_id),row.ring_id,integer(row.accounts),integer(row.hubs),integer(row.loops),integer(row.txns),dollars(row.usd),dateRange(row.first_seen,row.last_seen),share(row.laundering_rate)]));
   element('ring-list').querySelectorAll('tbody tr').forEach((tr,index)=>{
     const row=data.ring_list[index], button=document.createElement('button');
-    button.textContent=row.ring_id;button.onclick=()=>{selectRing(row.ring_id);element('ring-explorer').scrollIntoView?.({behavior:'smooth'});};
+    button.textContent=leadAccount(row.ring_id);button.onclick=()=>{selectRing(row.ring_id);element('ring-explorer').scrollIntoView?.({behavior:'smooth'});};
     tr.children?.[1]?.replaceChildren?.(button);
   });
 }
 
 function selectRing(id,account=null) {
-  selectedRing=id;selectedAccount=account;element('ring-picker').value=id;
-  const row=snapshot.network.ring_list.find(item=>item.ring_id===id), graph=snapshot.network.graphs[id];
-  element('ring-summary').textContent=`Rank ${row.rank}. ${row.hubs?`${row.hubs} hub${row.hubs===1?'':'s'} with ${integer(row.accounts-row.hubs)} linked accounts`:'Accounts linked by loops'}; ${integer(row.loops)} timed loop${row.loops===1?'':'s'}. Treat the ring as one case.`;
-  cards('ring-kpis',[['Accounts',integer(row.accounts),graph.truncated?`${graph.shown_accounts} drawn · hubs and loops always shown`:'All drawn'],
-    ['Red flags',`${row.hubs} · ${row.loops}`,'Hubs · timed loops'],['Payments',integer(row.txns),`${integer(row.links)} account links · ${dollars(row.usd)}`],
-    ['Active',dateRange(row.first_seen,row.last_seen),`${share(row.laundering_rate)} of accounts touch laundering (check only)`]]);
+  selectedRing=id;selectedAccount=account||leadAccount(id);element('ring-picker').value=id;
+  const row=ringRow(id), graph=snapshot.network.graphs[id], roles=flowRoles(graph);
+  const senders=Object.values(roles).filter(role=>role==='sender').length, receivers=Object.values(roles).filter(role=>role==='receiver').length;
+  element('ring-rail').querySelectorAll?.('[data-ring]').forEach(button=>{
+    const current=button.dataset.ring===id;button.setAttribute('aria-current',String(current));
+    if(current) button.scrollIntoView?.({block:'nearest'});
+  });
+  element('ring-title').textContent=`Ring #${row.rank} · lead account ${leadAccount(id)}`;
+  element('ring-summary').textContent=row.hubs?`${plural(row.hubs,'hub')} collecting from ${plural(senders,'sender')} and paying ${plural(receivers,'receiver')}${row.loops?`, plus ${plural(row.loops,'timed loop')}`:''}. Treat it as one case.`
+    :`${plural(row.loops,'timed loop')} linking ${plural(row.accounts,'account')}: money comes back to where it started within seven days. Treat it as one case.`;
+  element('ring-kpis').innerHTML=[[integer(row.accounts),graph.truncated?`accounts (${graph.shown_accounts} drawn)`:'accounts'],[integer(row.txns),'payments'],[dollars(row.usd),'USD'],
+    [dateRange(row.first_seen,row.last_seen),'active'],[share(row.laundering_rate),'touch laundering (check)']].map(([value,label])=>`<span><strong>${escapeText(value)}</strong> ${escapeText(label)}</span>`).join('');
   renderRing();
 }
 
@@ -776,19 +798,26 @@ function findAccount(text) {
   element('ring-search-result').textContent='No drawn ring contains that account. Only the listed rings are searchable here.';
 }
 
-// Deterministic force-directed layout (Fruchterman–Reingold): accounts repel
-// each other, links pull them together, a weak pull keeps the ring centred.
+// Deterministic force-directed layout (Fruchterman–Reingold). Accounts repel,
+// links attract and, in hub rings, senders drift left and receivers right so
+// the picture reads "money in → hub → money out".
 function layoutRing(graph) {
   const {width,height,margin}=GRAPH, n=graph.nodes.length, cx=width/2, cy=height/2;
+  const roles=flowRoles(graph), hasHub=graph.nodes.some(node=>node.role==='hub');
+  const side=graph.nodes.map(node=>hasHub?({sender:-1,receiver:1}[roles[node.id]]||0):0);
   const index=new Map(graph.nodes.map((node,i)=>[node.id,i]));
-  const order=graph.nodes.map((node,i)=>i).sort((a,b)=>({hub:0,loop:1,counterparty:2}[graph.nodes[a].role]-{hub:0,loop:1,counterparty:2}[graph.nodes[b].role])||a-b);
-  const pos=new Array(n);
-  order.forEach((i,rank)=>{const ring=graph.nodes[i].role==='hub'?.15:graph.nodes[i].role==='loop'?.45:.85, angle=rank*2.399963;
-    pos[i]={x:cx+Math.cos(angle)*ring*(width/2-margin),y:cy+Math.sin(angle)*ring*(height/2-margin)};});
+  const counts={'-1':0,'0':0,'1':0}, totals={'-1':side.filter(v=>v===-1).length,'0':side.filter(v=>v===0).length,'1':side.filter(v=>v===1).length};
+  const pos=graph.nodes.map((node,i)=>{
+    const s=side[i], k=counts[s]++, total=Math.max(totals[s],1);
+    if(s) {const angle=(k+.5)/total*Math.PI-Math.PI/2;return {x:cx+s*Math.cos(angle)*(width/2-margin)*.85,y:cy+Math.sin(angle)*(height/2-margin)};}
+    const angle=k*2.399963, radius=node.role==='hub'?.12:hasHub?.3:.6;
+    return {x:cx+Math.cos(angle)*radius*(width/2-margin),y:cy+Math.sin(angle)*radius*(height/2-margin)};
+  });
   const edges=graph.links.map(link=>[index.get(link.source),index.get(link.target)]).filter(([a,b])=>a!=null&&b!=null);
-  const k=Math.sqrt((width-2*margin)*(height-2*margin)/Math.max(n,1))*.75;
+  // Hub rings are wide fans; loop rings need more spacing between their tightly linked accounts.
+  const k=Math.sqrt((width-2*margin)*(height-2*margin)/Math.max(n,1))*(hasHub?.7:.92);
   let temperature=width/8;
-  for(let step=0;step<320;step++) {
+  for(let step=0;step<340;step++) {
     const move=pos.map(()=>({x:0,y:0}));
     for(let a=0;a<n;a++) for(let b=a+1;b<n;b++) {
       let dx=pos[a].x-pos[b].x, dy=pos[a].y-pos[b].y, d=Math.hypot(dx,dy)||.01;
@@ -801,10 +830,14 @@ function layoutRing(graph) {
       move[a].x-=dx*force;move[a].y-=dy*force;move[b].x+=dx*force;move[b].y+=dy*force;
     }
     for(let i=0;i<n;i++) {
-      move[i].x+=(cx-pos[i].x)*.02*k/10;move[i].y+=(cy-pos[i].y)*.02*k/10;
+      // Hubs are pinned to the centre column; senders and receivers to their own side.
+      const pinned=side[i]!==0||(hasHub&&graph.nodes[i].role==='hub'), targetX=cx+side[i]*(width/2-margin)*.82;
+      move[i].x+=(targetX-pos[i].x)*(pinned?.45:.06)*k/10;move[i].y+=(cy-pos[i].y)*.03*k/10;
       const length=Math.hypot(move[i].x,move[i].y)||1, limited=Math.min(length,temperature);
       pos[i].x=Math.min(width-margin,Math.max(margin,pos[i].x+move[i].x/length*limited));
       pos[i].y=Math.min(height-margin,Math.max(margin,pos[i].y+move[i].y/length*limited));
+      // Hubs stay on the centre column so money visibly enters on the left and leaves on the right.
+      if(hasHub&&graph.nodes[i].role==='hub') pos[i].x=cx;
     }
     temperature*=.985;
   }
@@ -814,20 +847,35 @@ function layoutRing(graph) {
 function renderRing() {
   const graph=snapshot.network.graphs[selectedRing];
   if(!graph) return;
+  GRAPH=graphShape();
+  if(ringLayoutShape[selectedRing]!==GRAPH.width) {delete ringLayouts[selectedRing];ringLayoutShape[selectedRing]=GRAPH.width;}
   const layout=ringLayouts[selectedRing]||(ringLayouts[selectedRing]=layoutRing(graph));
+  const roles=flowRoles(graph), hasHub=graph.nodes.some(node=>node.role==='hub');
   const byId=new Map(graph.nodes.map(node=>[node.id,node]));
-  const maxTxns=Math.max(1,...graph.links.map(link=>link.txns));
-  const linkMarkup=graph.links.map((link,i)=>`<line data-link="${i}" class="ring-link${link.loop?' ring-loop-link':''}" stroke-width="${(1+3*Math.log1p(link.txns)/Math.log1p(maxTxns)).toFixed(2)}" marker-end="url(#ring-arrow${link.loop?'-loop':''})"><title>${escapeText(link.source)} → ${escapeText(link.target)}: ${integer(link.txns)} payment${link.txns===1?'':'s'}, ${dollars(link.usd)}${link.loop?' · part of a timed loop':''}</title></line>`).join('');
-  const nodeMarkup=graph.nodes.map(node=>{const role=ROLE[node.role];return `<g class="ring-node${node.id===selectedAccount?' ring-node-selected':''}" data-node="${escapeText(node.id)}" tabindex="0" role="button" aria-label="${escapeText(role.label)} ${escapeText(node.id)}, ${integer(node.fan_in)} senders, ${integer(node.fan_out)} receivers"><circle r="${role.radius}" fill="${role.color}"/>${node.role==='counterparty'?'':`<text y="${-role.radius-5}" text-anchor="middle">${escapeText(shortAccount(node.id))}</text>`}<title>${escapeText(node.id)} · ${escapeText(role.label)} · ${integer(node.fan_in)} senders, ${integer(node.fan_out)} receivers</title></g>`;}).join('');
-  element('ring-graph').innerHTML=`<svg id="ring-svg" viewBox="0 0 ${GRAPH.width} ${GRAPH.height}" role="img" aria-label="Money flows between ${graph.shown_accounts} accounts of the selected ring"><defs>
-<marker id="ring-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8aa1b1"/></marker>
-<marker id="ring-arrow-loop" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#7c5cb0"/></marker></defs><g>${linkMarkup}</g><g>${nodeMarkup}</g></svg>`;
-  element('ring-graph-note').textContent=`${graph.truncated?`Showing ${graph.shown_accounts} of ${graph.total_accounts} accounts: every hub and loop account, then counterparties by payment volume. `:''}Drag accounts to rearrange. Select an account for its details.`;
-  placeRing(graph,layout,byId);
+  const maxTxns=Math.max(1,...graph.links.map(link=>link.txns)), maxUsd=Math.max(1,...graph.nodes.map(node=>node.in_usd+node.out_usd));
+  const radius=node=>node.role==='counterparty'?ROLE[roles[node.id]].radius+4*Math.sqrt((node.in_usd+node.out_usd)/maxUsd):ROLE[node.role].radius;
+  const tone=link=>link.loop?'loop':roles[link.source]==='sender'?'in':roles[link.target]==='receiver'?'out':'other';
+  const linkMarkup=graph.links.map((link,i)=>`<line data-link="${i}" class="ring-link ring-link-${tone(link)}" stroke-width="${(1+3*Math.log1p(link.txns)/Math.log1p(maxTxns)).toFixed(2)}" marker-end="url(#ring-arrow-${tone(link)})"><title>${escapeText(link.source)} → ${escapeText(link.target)}: ${integer(link.txns)} payment${link.txns===1?'':'s'}, ${dollars(link.usd)}${link.loop?' · part of a timed loop':''}</title></line>`).join('');
+  const nodeMarkup=graph.nodes.map(node=>{const role=ROLE[roles[node.id]], r=radius(node);return `<g class="ring-node ring-node-${roles[node.id]}${node.id===selectedAccount?' ring-node-selected':''}" data-node="${escapeText(node.id)}" tabindex="0" role="button" aria-label="${escapeText(role.label)} ${escapeText(node.id)}, ${integer(node.fan_in)} senders, ${integer(node.fan_out)} receivers"><circle r="${r.toFixed(1)}" fill="${role.color}"/>${node.role==='counterparty'?'':`<text y="${(node.role==='hub'?r+16:-r-6).toFixed(1)}" text-anchor="middle">${escapeText(shortAccount(node.id))}</text>`}<title>${escapeText(node.id)} · ${escapeText(role.label)} · ${integer(node.fan_in)} senders, ${integer(node.fan_out)} receivers overall</title></g>`;}).join('');
+  const marker=(name,color)=>`<marker id="ring-arrow-${name}" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${color}"/></marker>`;
+  const lanes=hasHub?`<text class="ring-lane" x="${GRAPH.margin-10}" y="22">← MONEY IN</text><text class="ring-lane" x="${GRAPH.width-GRAPH.margin+10}" y="22" text-anchor="end">MONEY OUT →</text>`:'';
+  const crowded=graph.nodes.filter(node=>node.role==='loop').length>8;
+  element('ring-graph').innerHTML=`<svg id="ring-svg" class="${crowded?'ring-crowded':''}" viewBox="0 0 ${GRAPH.width} ${GRAPH.height}" role="img" aria-label="Money flows between ${graph.shown_accounts} accounts of the selected ring"><defs>${marker('in','#7fa3bf')}${marker('out','#d6a85a')}${marker('other','#9aabb7')}${marker('loop','#7c5cb0')}</defs>${lanes}<g>${linkMarkup}</g><g>${nodeMarkup}</g></svg>`;
+  element('ring-graph-note').textContent=`${graph.truncated?`Showing ${graph.shown_accounts} of ${graph.total_accounts} accounts: every hub and loop account, then counterparties by payment volume. `:''}Arrows show direction; thicker links carry more payments; larger dots moved more money. ${crowded?'Loop-account names appear on hover. ':''}Hover to trace an account, drag to rearrange.`;
+  placeRing(graph,layout,byId,radius);
   const svg=element('ring-svg');
+  const neighbours=id=>new Set([id,...graph.links.filter(link=>link.source===id||link.target===id).flatMap(link=>[link.source,link.target])]);
+  const highlight=id=>{
+    if(!svg?.classList) return;
+    svg.classList.toggle('ring-dim',Boolean(id));
+    const keep=id?neighbours(id):new Set();
+    svg.querySelectorAll('[data-node]').forEach(mark=>mark.classList.toggle('ring-hl',keep.has(mark.dataset.node)));
+    svg.querySelectorAll('[data-link]').forEach(line=>{const link=graph.links[Number(line.dataset.link)];line.classList.toggle('ring-hl',Boolean(id)&&(link.source===id||link.target===id));});
+  };
   svg?.querySelectorAll?.('[data-node]').forEach(mark=>{
     const id=mark.dataset.node, activate=()=>{selectedAccount=id;showAccount(id);svg.querySelectorAll('[data-node]').forEach(other=>other.classList.toggle('ring-node-selected',other.dataset.node===id));};
     mark.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activate();}};
+    mark.onpointerenter=()=>highlight(id);mark.onpointerleave=()=>highlight(null);mark.onfocus=()=>highlight(id);mark.onblur=()=>highlight(null);
     let drag=null;
     mark.onpointerdown=event=>{drag={x:event.clientX,y:event.clientY,moved:false};mark.setPointerCapture?.(event.pointerId);};
     mark.onpointermove=event=>{
@@ -837,7 +885,7 @@ function renderRing() {
       const point=svg.createSVGPoint();point.x=event.clientX;point.y=event.clientY;
       const local=point.matrixTransform(svg.getScreenCTM().inverse());
       layout[id]={x:Math.min(GRAPH.width-GRAPH.margin,Math.max(GRAPH.margin,local.x)),y:Math.min(GRAPH.height-GRAPH.margin,Math.max(GRAPH.margin,local.y))};
-      placeRing(graph,layout,byId);
+      placeRing(graph,layout,byId,radius);
     };
     mark.onpointerup=()=>{const click=drag&&!drag.moved;drag=null;if(click) activate();};
   });
@@ -846,13 +894,13 @@ function renderRing() {
 }
 
 // Moves nodes and trims each link to stop at the edge of its target circle.
-function placeRing(graph,layout,byId) {
+function placeRing(graph,layout,byId,radius) {
   const svg=element('ring-svg');
   if(!svg?.querySelectorAll) return;
   svg.querySelectorAll('[data-node]').forEach(mark=>{const p=layout[mark.dataset.node];mark.setAttribute('transform',`translate(${p.x.toFixed(1)},${p.y.toFixed(1)})`);});
   svg.querySelectorAll('[data-link]').forEach(line=>{
     const link=graph.links[Number(line.dataset.link)], a=layout[link.source], b=layout[link.target];
-    const d=Math.hypot(b.x-a.x,b.y-a.y)||1, from=ROLE[byId.get(link.source).role].radius+1, to=ROLE[byId.get(link.target).role].radius+3;
+    const d=Math.hypot(b.x-a.x,b.y-a.y)||1, from=radius(byId.get(link.source))+1, to=radius(byId.get(link.target))+3;
     line.setAttribute('x1',(a.x+(b.x-a.x)*from/d).toFixed(1));line.setAttribute('y1',(a.y+(b.y-a.y)*from/d).toFixed(1));
     line.setAttribute('x2',(b.x-(b.x-a.x)*to/d).toFixed(1));line.setAttribute('y2',(b.y-(b.y-a.y)*to/d).toFixed(1));
   });
@@ -861,7 +909,10 @@ function placeRing(graph,layout,byId) {
 function showAccount(id) {
   const graph=snapshot.network.graphs[selectedRing], node=graph.nodes.find(item=>item.id===id);
   if(!node) return;
+  const role=flowRoles(graph)[id];
   const out=graph.links.filter(link=>link.source===id).sort((a,b)=>b.usd-a.usd), inn=graph.links.filter(link=>link.target===id).sort((a,b)=>b.usd-a.usd);
-  const list=(links,key,arrow)=>links.length?`<ul class="ring-flows">${links.slice(0,6).map(link=>`<li>${arrow} ${escapeText(link[key])} · ${integer(link.txns)} payment${link.txns===1?'':'s'} · ${dollars(link.usd)}</li>`).join('')}${links.length>6?`<li>…and ${links.length-6} more in this ring</li>`:''}</ul>`:'<p class="field-help">None in this ring.</p>';
-  element('ring-node').innerHTML=`<h3>${escapeText(node.id)}</h3><p><span class="role-chip" style="background:${ROLE[node.role].color}">${escapeText(ROLE[node.role].label)}</span></p><div class="evidence-facts ring-facts"><span><small>Distinct senders</small>${integer(node.fan_in)}</span><span><small>Distinct receivers</small>${integer(node.fan_out)}</span><span><small>Received (all payments)</small>${dollars(node.in_usd)}</span><span><small>Sent (all payments)</small>${dollars(node.out_usd)}</span></div><h3>Money in, within this ring</h3>${list(inn,'source','←')}<h3>Money out, within this ring</h3>${list(out,'target','→')}<p class="field-help">Sender, receiver and USD counts cover the whole dataset.${node.role==='hub'?' Restricting this hub cuts the most flows in its ring.':''}</p>`;
+  const list=(links,key,arrow)=>links.length?`<ul class="ring-flows">${links.slice(0,6).map(link=>`<li><span title="${escapeText(link[key])}">${arrow} ${escapeText(link[key])}</span><span>${plural(link.txns,'payment')} · ${dollars(link.usd)}</span></li>`).join('')}${links.length>6?`<li class="more">…and ${links.length-6} more in this ring</li>`:''}</ul>`:'<p class="field-help">None in this ring.</p>';
+  const action={hub:'Collects from many accounts and pays many others. Restricting it cuts the most flows in this ring.',loop:'Part of a timed loop: money it sends comes back within seven days.',
+    sender:'Pays money into the ring.',receiver:'Receives money paid out of the ring.',both:'Both pays into and receives from the ring.'}[role];
+  element('ring-node').innerHTML=`<span class="role-chip" style="background:${ROLE[role].color}">${escapeText(ROLE[role].label)}</span><h3 class="account-id">${escapeText(node.id)}</h3><p>${escapeText(action)}</p><div class="ring-facts"><span><small>Distinct senders</small>${integer(node.fan_in)}</span><span><small>Distinct receivers</small>${integer(node.fan_out)}</span><span><small>Received</small>${dollars(node.in_usd)}</span><span><small>Sent</small>${dollars(node.out_usd)}</span></div><h4>Money in, within this ring</h4>${list(inn,'source','←')}<h4>Money out, within this ring</h4>${list(out,'target','→')}<p class="field-help">Sender, receiver and USD figures cover the whole dataset.</p>`;
 }
