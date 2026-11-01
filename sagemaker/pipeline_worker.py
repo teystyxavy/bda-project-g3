@@ -11,7 +11,7 @@ entrypoint with ``python /app/pipeline_worker.py <stage>``:
   Parquet against the raw CSVs and FX rates, then scores the full population
   with the rule baseline (``batch.export_verified_batch``).
 * ``export``: ``ingest_compute.export_stage`` verifies the Glue model scores
-  and the Athena corridor result, builds ``dashboard.json`` and prepares the
+  and the Glue mule-network tables, builds ``dashboard.json`` and prepares the
   release (``release.prepare_release``).
 
 SageMaker copies the S3 inputs to ``/opt/ml/processing/input`` before the

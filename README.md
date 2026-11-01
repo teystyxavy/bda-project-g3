@@ -7,16 +7,20 @@ It answers two separate questions:
 
 - **Compliance:** which transactions should investigators review first? A frozen
   XGBoost model produces a ranked queue with explanations and a rule baseline.
-- **Treasury:** which bank and currency corridors dominate USD-equivalent volume,
-  and how does concentration change? High volume does not imply suspiciousness.
+- **Mule networks (BQ2):** which accounts collect money from many sources and
+  quickly pass it on, or move it in loops, so investigators know which accounts
+  to restrict and which alerts belong to the same case? A Glue Spark job finds
+  hubs, timed loops and rings; the dashboard shows each ring as a node graph.
+  See [BQ2: mule networks](planning/runbooks/bq2-mule-networks.md). (BQ2 was a
+  treasury-corridor question until 25 Oct 2026.)
 
 [Open dashboard](https://d1n61tlw9pcrog.cloudfront.net/) ·
 [Script guide](scripts/README.md) ·
 [Documentation index](planning/README.md) ·
 [Demonstration runbook](planning/delivery/final-demo-runbook.md)
 
-The dashboard includes expanded BQ1 investigation/evaluation and BQ2 corridor
-exploration; see [coverage and limits](planning/runbooks/dashboard-exploration.md).
+The dashboard includes expanded BQ1 investigation/evaluation and the BQ2 ring
+explorer; see [coverage and limits](planning/runbooks/dashboard-exploration.md).
 Its **Ingestion** tab has a deployed, public **read-only** AWS status feed showing
 the latest workflow and recent runs without sign-in. See the
 [status deployment and verification](infra/dashboard-status/README.md).
@@ -43,7 +47,7 @@ python -m pip install -e ".[cloud]"
 The setup helper requires AWS CLI v2 and opens browser sign-in. The default launcher
 uses the deployed AWS acquisition workflow; no local dataset or Kaggle credential
 is needed. Kaggle and historical FX retrieval run in AWS, followed by Glue,
-SageMaker verification, Athena corridor analysis and dashboard publication.
+SageMaker verification, Glue mule-network analysis and dashboard publication.
 
 ```powershell
 # Submit and let AWS continue after the terminal closes.
@@ -61,7 +65,7 @@ SageMaker verification, Athena corridor analysis and dashboard publication.
 
 Unchanged verified inputs return their existing release. Compatible new runs can
 reuse verified curated/scored stages. Every new publication retains complete
-score parity, source/FX checks and corridor reconciliation. An uncached run starts
+score parity, source/FX checks and network reconciliation. An uncached run starts
 paid AWS jobs. See the [ingestion runbook](planning/runbooks/ingestion-runbook.md)
 for source controls, smoke runs, failure recovery and deployment prerequisites.
 
@@ -140,7 +144,7 @@ are rankings rather than calibrated laundering probabilities.
 | `dashboard/` | Static HTML, CSS and JavaScript assets |
 | `scripts/` | Commands grouped by purpose; see the script guide below |
 | `notebooks/` | Exploratory analysis notebooks |
-| `sql/` | Athena analysis and reconciliation queries |
+| `sql/` | Athena queries (legacy corridor analysis and reconciliation) |
 | `tests/` | Python unit/integration checks and separate Spark parity tests |
 | `planning/` | Current design, runbooks, diagrams, evidence and archived milestones |
 | `dataset/`, `output/` | Ignored local data, artifacts, tools and run outputs |
