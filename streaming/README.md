@@ -30,9 +30,63 @@ Then follow the replay steps below. A restored stream starts empty, so a demo ne
 fresh replay. Keep the same `run_id`: changing it renames every streaming resource.
 Park it again by applying without `-var provision_stream=true`.
 
-Next proposed improvement: [connect committed Kinesis scores to an automatically
-refreshing Incoming AML dashboard](../planning/proposals/kinesis-dashboard-improvements.md).
-This serving path is proposed; the verified consumer remains disabled.
+## Incoming AML dashboard view
+
+Status, 1 November 2026: implemented and tested locally; **not deployed**. Committed
+streaming scores now have a serving path to the dashboard, following the
+[proposal](../planning/proposals/kinesis-dashboard-improvements.md):
+
+```text
+DynamoDB committed results (consistent scan) + reviewed events.jsonl (pinned SHA-256)
+  -> publisher Lambda (src/bda_pipeline/dashboard_streaming.py), every 15 s while scheduled
+  -> s3://is459-g3-dashboard-.../dashboard/streaming/<run_id>/snapshot.json (no-store)
+  -> CloudFront /streaming/<run_id>/snapshot.json -> "Incoming AML · live" tab (polls every 10 s)
+```
+
+The publisher is separate from the consumer: it cannot score, replay or change
+sender state. It writes a snapshot only after every committed result matches the
+reviewed replay input (identity, input digest, five sender features, score range);
+otherwise the last good snapshot stays and the browser labels it stale after two
+minutes. Completion requires every event and every sender's final version, not counts.
+Wall-clock scoring times come from the S3 write times of the audit copies, which the
+consumer writes right after each commit. A single publication of a finished run
+therefore still shows its whole timeline. The 6 Oct replay shows 884 scores between
+00:11:14 and 00:28:20 UTC.
+States: waiting, running, paused (consumer disabled), completed, failed (record-failure
+alarm). Accounts are masked; labels are never used. The tab is hidden until
+`streaming-config.json` is published, so the batch views are unchanged without it.
+
+Deployment (requires explicit authorization; all steps use existing names):
+
+1. Package: `python scripts/aws/prepare-dashboard-streaming.py --output output/dashboard-streaming-package`.
+2. Upload the reviewed package's `events.jsonl` unchanged to
+   `s3://is459-g3-588738581042-ap-southeast-1/streaming/<run_id>/input/events.jsonl`.
+   Its SHA-256 must equal `events_sha256` in that package's `verification.json`.
+3. Plan and apply `infra/streaming` with the saved variables plus
+   `-var provision_publisher=true -var publisher_zip_path=<absolute zip path> -var replay_events_sha256=<events_sha256>`.
+   This adds the publisher, its role, log group, disabled schedule and error alarm;
+   check the plan changes nothing else. Review the `publisher_policy` output.
+4. Publish the `publisher_configuration` output as `dashboard/streaming-config.json`
+   (content type `application/json`, cache control `no-store,max-age=0`) and invalidate
+   `/streaming-config.json`. Publish the updated `index.html`, `dashboard.js` and
+   `dashboard.css` and update the processing image's bundled assets, exactly as in
+   [dashboard-status](../infra/dashboard-status/README.md) steps 3–4.
+5. Show the existing replay without any Kinesis cost: invoke the publisher once with
+   payload `{"once": true}`. The retained 884 results should publish as completed.
+6. For a live demo window, also apply `-var enable_publisher=true -var publisher_end_time=<UTC YYYY-MM-DDTHH:MM:SS>`
+   with the stream and consumer restored. The schedule stops at the end time; park it
+   again by applying without `enable_publisher`.
+
+The snapshot relies on its `no-store` object header and the distribution's zero minimum
+TTL to bypass edge caching, the same mechanism `current.json` uses; the hosting stack is
+unchanged. Planning cost for a 20-minute window: about 80 snapshot writes, scans of
+under 1,000 items and audit listings, plus about 120 browser polls per viewer. These are estimates, not
+measured charges.
+
+Replaying the same cohort into the same `run_id` adds nothing new: results are
+idempotent, so the queue would show 884 of 884 at once. Seeing the queue grow live
+needs a fresh replay namespace. A new `run_id` renames every resource in this stack,
+and the retained table is deletion-protected, so plan that change separately.
 
 Fourteen resources and the reviewed image were deployed; the stream and its
 mapping are now parked (above). The one approved replay passed all 884 result

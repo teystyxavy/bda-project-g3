@@ -62,7 +62,9 @@ async function harness({configured=true,authenticated=true,stored={},search='',h
     expires_at:Date.now()+3600000,client_id:configuration.client_id}));
   const calls=[],timers=new Map(),listeners={};let timerId=0;
   const doc={hidden:false,getElementById:el,createElement:()=>new Element(),
-    querySelector:()=>new Element(),querySelectorAll:()=>[],addEventListener:(name,fn)=>listeners[name]=fn};
+    querySelector:()=>new Element(),querySelectorAll:()=>[],
+    // Like a browser, every registered listener runs (ingestion and incoming views both pause on hide).
+    addEventListener:(name,fn)=>{const previous=listeners[name];listeners[name]=previous?()=>{previous();fn();}:fn;}};
   const location={origin:'https://example.cloudfront.net',pathname:'/',search,hash,assign:url=>{location.destination=url;}};
   const context={document:doc,location,window:{},console,TextEncoder,TextDecoder,Intl,URL,URLSearchParams,Date,Number,String,Array,Math,JSON,Boolean,
     crypto:webcrypto,AbortController,Blob,btoa:binary=>Buffer.from(binary,'binary').toString('base64'),
@@ -332,4 +334,128 @@ test('scoring coverage hides unsupported or inconsistent populations',async()=>{
     vm.runInContext('snapshot='+JSON.stringify(data)+';renderScoringCoverage()',h.context);
     assert.equal(h.el('scoring-coverage').hidden,true);
   }
+});
+
+const STREAM_CONFIG={schema_version:1,run_id:'stream-smoke-20261006',snapshot_url:'/streaming/stream-smoke-20261006/snapshot.json'};
+const streamRow=(rank,id,score)=>({rank,transaction_id:id,timestamp:'2022-09-05T14:32:00',scored_at:rank===1?null:'2026-10-06T00:20:00Z',model_score:score,amount_usd_asof:1234.5,
+  payment_format:'ACH',payment_currency:'US Dollar',receiving_currency:'US Dollar',from_bank:'001',from_account:'••••BD30',to_bank:'030',to_account:'••••ABCD',
+  txn_count_1h:2,txn_count_24h:5,txn_count_7d:9,distinct_counterparties_24h:3,distinct_counterparties_7d:4});
+function streamSnapshot(overrides={}) {
+  const now=new Date().toISOString();
+  return {schema_version:1,run_id:STREAM_CONFIG.run_id,generated_at:now,state:'running',reconciled:false,consumer_enabled:true,cohort:'fixture',
+    expected:884,processed:412,senders:{expected:32,started:20,complete:10},replay_position:'2022-09-05T14:32:00',max_score:.9731,top_k:100,
+    queue:[streamRow(1,'HI-Small:7',.9731),streamRow(2,'HI-Small:<img src=x>',.5)],latest:[streamRow(null,'HI-Small:9',.1)],last_progress_at:now,
+    progress:[{at:new Date(Date.now()-30000).toISOString(),processed:300},{at:now,processed:412}],
+    model:{manifest_sha256:'f'.repeat(64),score_meaning:'ranking-score-not-calibrated-probability'},...overrides};
+}
+const streamHook=(body,{config=STREAM_CONFIG}={})=>async url=>{
+  if(url==='/streaming-config.json') return respond(config);
+  if(url===STREAM_CONFIG.snapshot_url) return typeof body==='function'?body():respond(body);
+};
+const snapshotCalls=h=>h.calls.filter(call=>call.url===STREAM_CONFIG.snapshot_url);
+
+test('incoming view stays hidden and unfetched without streaming configuration',async()=>{
+  const h=await harness({configured:false,authenticated:false});
+  assert.equal(h.el('incoming-tab').hidden,true);
+  assert.equal(h.calls.some(call=>call.url.startsWith('/streaming/')),false);
+});
+
+test('incoming view renders committed scores and polls only while open and visible',async()=>{
+  const h=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot())});
+  assert.equal(h.el('incoming-tab').hidden,false);
+  assert.equal(snapshotCalls(h).length,0);
+  h.el('incoming-tab').onclick();await settle();
+  assert.equal(h.el('incoming').hidden,false);assert.equal(h.el('status').hidden,true);
+  assert.equal(h.el('incoming-state').textContent,'Live · scoring');
+  assert.match(h.el('incoming-kpis').innerHTML,/412 \/ 884/);
+  assert.match(h.el('incoming-queue').innerHTML,/HI-Small:7/);
+  assert.match(h.el('incoming-queue').innerHTML,/HI-Small:&lt;img src=x&gt;/);
+  assert.doesNotMatch(h.el('incoming-queue').innerHTML,/<img/);
+  assert.match(h.el('incoming-latest').innerHTML,/HI-Small:9/);
+  assert.match(h.el('incoming-latest').innerHTML,/<th scope="col">Scored at<\/th>/);
+  assert.match(h.el('incoming-latest').innerHTML,new RegExp(new Date('2026-10-06T00:20:00Z').toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'})));
+  assert.match(h.el('incoming-progressbar').innerHTML,/width:46\.6%/);
+  assert.equal(h.el('incoming-progressbar').attributes['aria-valuenow'],'412');
+  assert.equal(snapshotCalls(h).every(call=>call.init.cache==='no-store' && !call.init.method && call.init.headers===undefined),true);
+  assert.ok([...h.timers.values()].some(timer=>timer.ms===10000));
+  const seen=snapshotCalls(h).length;
+  h.doc.hidden=true;h.listeners.visibilitychange();assert.equal(h.timers.size,0);
+  h.doc.hidden=false;h.listeners.visibilitychange();await settle();
+  assert.equal(snapshotCalls(h).length,seen+1);
+  // Leaving the view: pending timers fire without fetching and do not reschedule.
+  h.el('aml-tab').onclick();
+  for(const timer of [...h.timers.values()]) await timer.fn();
+  await settle();
+  assert.equal(snapshotCalls(h).length,seen+1);
+  assert.equal(h.calls.some(call=>call.init.method==='POST'),false);
+});
+
+test('stale snapshots and failed refreshes keep the last published scores',async()=>{
+  let fail=false;
+  const old=streamSnapshot({generated_at:new Date(Date.now()-300000).toISOString()});
+  const h=await harness({configured:false,authenticated:false,fetchHook:streamHook(()=>fail?respond({},503):respond(old))});
+  h.el('incoming-tab').onclick();await settle();
+  assert.equal(h.el('incoming-state').textContent,'Stale');
+  assert.equal(h.el('incoming-state').dataset.state,'failed');
+  assert.match(h.el('incoming-message').textContent,/No successful update for 5 min/);
+  fail=true;await h.el('incoming-refresh').onclick();await settle();
+  assert.match(h.el('incoming-message').textContent,/request failed \(503\)\. The last published scores are retained/);
+  assert.match(h.el('incoming-queue').innerHTML,/HI-Small:7/);
+  assert.ok([...h.timers.values()].some(timer=>timer.ms===20000));
+});
+
+test('a completed replay is never stale and is checked less often',async()=>{
+  const done=streamSnapshot({state:'completed',reconciled:true,processed:884,senders:{expected:32,started:32,complete:32},
+    generated_at:new Date(Date.now()-86400000).toISOString()});
+  const h=await harness({configured:false,authenticated:false,fetchHook:streamHook(done)});
+  h.el('incoming-tab').onclick();await settle();
+  assert.equal(h.el('incoming-state').textContent,'Replay complete');
+  assert.match(h.el('incoming-message').textContent,/All 884 replayed transactions and 32 sender histories reconcile/);
+  assert.ok([...h.timers.values()].some(timer=>timer.ms===60000));
+});
+
+test('invalid streaming configuration or snapshot is ignored',async()=>{
+  const h=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot(),
+    {config:{...STREAM_CONFIG,snapshot_url:'https://evil.example/snapshot.json'}})});
+  assert.equal(h.el('incoming-tab').hidden,true);
+  assert.equal(h.calls.some(call=>call.url.includes('evil')),false);
+  const other=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot({run_id:'another-run'}))});
+  other.el('incoming-tab').onclick();await settle();
+  assert.match(other.el('incoming-message').textContent,/unexpected snapshot format/);
+  assert.equal(other.el('incoming-queue').innerHTML,'');
+});
+
+test('a long commit history is thinned to a readable chart that keeps its first and last points',async()=>{
+  // Midday UTC: 6 Oct in every common time zone, so the date label is stable.
+  const start=Date.parse('2026-10-06T12:00:00Z');
+  const progress=Array.from({length:240},(_,index)=>({at:new Date(start+index*4000).toISOString(),processed:index+1}));
+  const h=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot({progress}))});
+  h.el('incoming-tab').onclick();await settle();
+  const chart=h.el('incoming-progress').innerHTML;
+  const marks=chart.match(/<circle/g).length;
+  assert.ok(marks>=20 && marks<=25,`expected about 24 points, got ${marks}`);
+  assert.match(chart,/Transactions scored · [^<]*: 1</);
+  assert.match(chart,/Transactions scored · [^<]*: 240</);
+  assert.match(chart,/Time scored · 6 Oct 2026/);
+});
+
+test('refresh shows when the last successful check happened, even with nothing new',async()=>{
+  let release=null, fail=false;
+  const done=streamSnapshot({state:'completed',reconciled:true,processed:884});
+  const h=await harness({configured:false,authenticated:false,fetchHook:streamHook(()=>fail?respond({},503):
+    release?new Promise(resolve=>{const go=release;release=null;go(()=>resolve(respond(done)));}):respond(done))});
+  h.el('incoming-tab').onclick();await settle();
+  assert.match(h.el('incoming-checked').textContent,/^Checked \d\d:\d\d:\d\d$/);
+  h.el('incoming-checked').textContent='Checked earlier';
+  let finish;release=resolve=>{finish=resolve;};
+  const refresh=h.el('incoming-refresh').onclick();await settle();
+  assert.equal(h.el('incoming-refresh').textContent,'Checking…');
+  assert.equal(h.el('incoming-refresh').disabled,true);
+  finish();await refresh;await settle();
+  assert.equal(h.el('incoming-refresh').textContent,'Refresh now');
+  assert.match(h.el('incoming-checked').textContent,/^Checked \d\d:\d\d:\d\d$/);
+  const checked=h.el('incoming-checked').textContent;
+  fail=true;await h.el('incoming-refresh').onclick();await settle();
+  assert.equal(h.el('incoming-checked').textContent,checked);
+  assert.match(h.el('incoming-message').textContent,/request failed \(503\)/);
 });

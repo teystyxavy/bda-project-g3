@@ -1,5 +1,12 @@
 # Proposed Kinesis improvements: incoming scores visible in the dashboard
 
+Status, 1 November 2026: improvement 1 is implemented and tested locally, not
+deployed: publisher `src/bda_pipeline/dashboard_streaming.py`, opt-in Terraform in
+`infra/streaming` and the Incoming AML view in `dashboard/`. The hosting stack is
+unchanged: the snapshot uses a `no-store` object header instead of a new CloudFront
+behavior, as `current.json` already does. See the
+[streaming README](../../streaming/README.md#incoming-aml-dashboard-view) for deployment.
+
 Status, 6 October 2026: proposed, not implemented or deployed. The verified
 streaming replay has 884 results across 32 complete sender histories; its consumer
 is disabled. The dashboard serves batch snapshots. This update proposes the

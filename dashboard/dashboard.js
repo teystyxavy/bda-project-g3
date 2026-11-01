@@ -11,14 +11,15 @@ const escapeText = value => String(value ?? '').replace(/[&<>"']/g, character =>
 
 function selectDashboardView(view) {
   activeView=view;
-  for(const name of ['aml','treasury','ingestion']) {
-    element(name).hidden=name!==view || (name!=='ingestion' && !snapshot);
+  for(const name of ['aml','incoming','treasury','ingestion']) {
+    element(name).hidden=name!==view || (['aml','treasury'].includes(name) && !snapshot);
     element(`${name}-tab`).setAttribute('aria-pressed',String(name===view));
   }
-  element('status').hidden=view==='ingestion';element('methods').hidden=view==='ingestion';
+  const live=['ingestion','incoming'].includes(view);
+  element('status').hidden=live;element('methods').hidden=live;
   if(view==='treasury' && snapshot) renderTreasury();
 }
-for(const view of ['aml','treasury','ingestion']) element(`${view}-tab`).onclick=()=>selectDashboardView(view);
+for(const view of ['aml','incoming','treasury','ingestion']) element(`${view}-tab`).onclick=()=>selectDashboardView(view);
 
 function cards(target, items) {
   element(target).innerHTML = items.map(([label,value,detail]) => `<div class="kpi"><span>${escapeText(label)}</span><strong>${escapeText(value)}</strong><span>${escapeText(detail)}</span></div>`).join('');
@@ -574,6 +575,101 @@ start();
     try {if(await loadResults(lastStatus)) selectDashboardView('aml');}catch(error){message(error.message);}
   };
   document.addEventListener('visibilitychange',()=>{if(document.hidden) stopPolling();else if(currentRun && signedIn()) poll();else if(readOnly()) publicPoll();});
+  initialise();
+})();
+
+// Incoming AML: committed streaming scores published by infra/streaming's publisher.
+// The tab appears only when streaming-config.json is published; batch views never depend on it.
+(function incomingScores() {
+  const states={waiting:'Waiting for events',running:'Live · scoring',paused:'Paused',completed:'Replay complete',failed:'Consumer failure'};
+  let config=null, latest=null, timer=null, busy=false, failures=0;
+  const visible=()=>Boolean(config) && !document.hidden && !element('incoming').hidden;
+  const stop=()=>{clearTimeout(timer);timer=null;};
+  const age=data=>Math.max(0,Math.round((Date.now()-Date.parse(data.generated_at))/1000));
+  const ago=seconds=>seconds<90?`${seconds} s ago`:`${Math.round(seconds/60)} min ago`;
+  // A completed replay does not go stale by aging; anything else does after two minutes.
+  const stale=data=>data.state!=='completed' && age(data)>120;
+  const eventTime=value=>value?value.replace('T',' ').slice(0,16):'Not started';
+  const clock=value=>new Date(value).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const parties=row=>`${row.from_bank} ${row.from_account} → ${row.to_bank} ${row.to_account}`;
+  element('incoming-tab').hidden=true;
+
+  function valid(data) {
+    return data?.schema_version===1 && data.run_id===config.run_id && Object.hasOwn(states,data.state) &&
+      typeof data.generated_at==='string' && Number.isSafeInteger(data.processed) && Number.isSafeInteger(data.expected) &&
+      Array.isArray(data.queue) && Array.isArray(data.latest) && Array.isArray(data.progress) && data.progress.length>0;
+  }
+
+  function render(data) {
+    const old=stale(data), share=data.expected?data.processed/data.expected:0;
+    element('incoming-state').textContent=old?'Stale':states[data.state];
+    element('incoming-state').dataset.state=old||data.state==='failed'?'failed':data.state==='running'?'running':'';
+    element('incoming-message').textContent=old?`No successful update for ${Math.round(age(data)/60)} min. The last published scores are shown.`:{
+      waiting:'Waiting for the first replayed transaction to be scored.',
+      running:`Updated ${ago(age(data))}. Committed scores appear here within about 15 seconds; this page checks every 10 seconds.`,
+      paused:'The Kinesis consumer is disabled, so nothing new is arriving. Scores committed so far are shown.',
+      completed:`All ${integer(data.expected)} replayed transactions and ${integer(data.senders.expected)} sender histories reconcile with the reviewed replay input.`,
+      failed:'The streaming consumer reported record failures. Committed scores are shown; later events may be held back until the failure is resolved.'}[data.state];
+    cards('incoming-kpis',[['Transactions scored',`${integer(data.processed)} / ${integer(data.expected)}`,`${(share*100).toFixed(1)}% of the replay cohort`],
+      ['Complete sender histories',`${integer(data.senders.complete)} / ${integer(data.senders.expected)}`,'Rolling features need each sender’s full history'],
+      ['Highest ranking score',data.max_score==null?'—':Number(data.max_score).toFixed(4),'Uncalibrated · not a probability'],
+      ['Replay position',eventTime(data.replay_position),'Historical event time · September 2022']]);
+    const bar=element('incoming-progressbar');
+    bar.setAttribute('aria-valuenow',String(data.processed));bar.setAttribute('aria-valuemax',String(data.expected));
+    bar.innerHTML=`<i style="width:${(share*100).toFixed(1)}%"></i>`;
+    // Up to ~24 points keeps the shared chart's axis labels readable; first and last are always kept.
+    const step=Math.ceil(data.progress.length/24), points=data.progress.filter((point,index,all)=>index%step===0||index===all.length-1);
+    chartLines('incoming-progress',[{name:'Transactions scored',color:'#14786f',rows:points.map(point=>({x:Date.parse(point.at),y:point.processed,
+      label:clock(point.at)}))}],Math.max(1,data.expected),null,`Time scored · ${new Date(points[0].at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`,integer);
+    table('incoming-latest',['Event time','Scored at','Transaction','Sender → receiver','Ranking score','Payment','Prior-day USD'],
+      data.latest.map(row=>[eventTime(row.timestamp),row.scored_at?clock(row.scored_at):'—',row.transaction_id,parties(row),Number(row.model_score).toFixed(4),row.payment_format,dollars(row.amount_usd_asof)]));
+    if(!data.latest.length) element('incoming-latest').textContent='No transactions scored yet.';
+    element('incoming-queue-note').textContent=`Top ${integer(data.queue.length)} of ${integer(data.processed)} transactions scored so far; ties use event time then source row. Scores rank review priority and are not probabilities.`;
+    table('incoming-queue',['Rank','Transaction','Event time','Sender → receiver','Ranking score','Payment / currency','Prior-day USD','Sender transactions 1h / 24h / 7d','Counterparties 24h / 7d'],
+      data.queue.map(row=>[row.rank,row.transaction_id,eventTime(row.timestamp),parties(row),Number(row.model_score).toFixed(4),`${row.payment_format} / ${row.payment_currency}`,dollars(row.amount_usd_asof),
+        `${row.txn_count_1h} / ${row.txn_count_24h} / ${row.txn_count_7d}`,`${row.distinct_counterparties_24h} / ${row.distinct_counterparties_7d}`]));
+    if(!data.queue.length) element('incoming-queue').textContent='The queue fills as transactions are scored.';
+    element('incoming-provenance').textContent=JSON.stringify({run_id:data.run_id,generated_at:data.generated_at,last_progress_at:data.last_progress_at,
+      reconciled:data.reconciled,consumer_enabled:data.consumer_enabled,cohort:data.cohort,model:data.model},null,2);
+  }
+
+  async function poll() {
+    stop();
+    if(busy || !visible()) return;
+    busy=true;element('incoming-refresh').disabled=true;element('incoming-refresh').textContent='Checking…';
+    const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),15000);
+    try {
+      const response=await fetch(config.snapshot_url,{cache:'no-store',signal:controller.signal});
+      if(!response.ok) throw new Error([403,404].includes(response.status)?'no snapshot has been published yet':`request failed (${response.status})`);
+      const data=await response.json();
+      if(!valid(data)) throw new Error('unexpected snapshot format');
+      failures=0;latest=data;render(data);
+      // Visible proof of each successful check, even when a finished replay has nothing new.
+      element('incoming-checked').textContent=`Checked ${clock(Date.now())}`;
+    } catch(error) {
+      failures++;
+      element('incoming-message').textContent=`Incoming scores unavailable: ${error.name==='AbortError'?'request timed out':error.message}.${latest?' The last published scores are retained.':''}`;
+      if(latest) {element('incoming-state').textContent='Stale';element('incoming-state').dataset.state='failed';}
+    } finally {
+      clearTimeout(timeout);busy=false;element('incoming-refresh').disabled=false;element('incoming-refresh').textContent='Refresh now';
+      // Poll only while visible; back off on failure; a completed replay only needs an occasional check.
+      if(visible()) timer=setTimeout(poll,failures?Math.min(60000,10000*Math.pow(2,Math.min(failures,3))):latest?.state==='completed'?60000:10000);
+    }
+  }
+
+  async function initialise() {
+    try {
+      const response=await fetch('/streaming-config.json',{cache:'no-store'});
+      if(!response.ok) return;
+      const value=await response.json();
+      if(value.schema_version!==1 || !/^[a-z0-9][a-z0-9-]{2,49}$/.test(value.run_id) || value.snapshot_url!==`/streaming/${value.run_id}/snapshot.json`) return;
+      config=value;element('incoming-tab').hidden=false;
+    } catch {}
+  }
+  element('incoming-tab').onclick=()=>{selectDashboardView('incoming');poll();};
+  element('incoming-refresh').onclick=poll;
+  element('incoming-export').onclick=()=>{if(latest) download(latest.queue,`incoming-${latest.run_id}.csv`);};
+  document.addEventListener('visibilitychange',()=>{if(document.hidden) stop();else poll();});
   initialise();
 })();
 

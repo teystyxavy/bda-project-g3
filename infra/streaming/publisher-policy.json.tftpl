@@ -1,0 +1,86 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadCommittedScoresOnly",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:Scan"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:${region}:${account}:table/${name}"
+      ]
+    },
+    {
+      "Sid": "ReadReviewedReplayEvents",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::${bucket}/streaming/${run_id}/input/events.jsonl"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "s3:ResourceAccount": "${account}"
+        }
+      }
+    },
+    {
+      "Sid": "ListScoreCommitTimes",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::${bucket}"
+      ],
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "streaming/${run_id}/audit/*"
+          ]
+        },
+        "StringEquals": {
+          "s3:ResourceAccount": "${account}"
+        }
+      }
+    },
+    {
+      "Sid": "OneDashboardSnapshot",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::${site_bucket}/dashboard/streaming/${run_id}/snapshot.json"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "s3:ResourceAccount": "${account}"
+        }
+      }
+    },
+    {
+      "Sid": "ReadConsumerFailureAlarm",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:DescribeAlarms"
+      ],
+      "Resource": [
+        "arn:aws:cloudwatch:${region}:${account}:alarm:${name}-record-failures"
+      ]
+    },
+    {
+      "Sid": "PrecreatedLogsOnly",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:${region}:${account}:log-group:/aws/lambda/${name}-publisher:*"
+      ]
+    }
+  ]
+}

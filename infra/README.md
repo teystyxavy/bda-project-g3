@@ -16,7 +16,7 @@ a committed provider lock file and mock tests under `tests/`.
 | `dashboard-status/` | Public read-only pipeline status API |
 | `eventbridge-trigger/` | Opt-in S3-triggered pipeline start |
 | `tfstate-bootstrap/` | Existing shared state bucket and lock table |
-| `streaming/` | Optional Kinesis replay, Lambda scoring, DynamoDB state and audit; stream parked (`provision_stream`) |
+| `streaming/` | Optional Kinesis replay, Lambda scoring, DynamoDB state and audit; stream parked (`provision_stream`); opt-in dashboard publisher (`provision_publisher`) |
 
 Follow the [ingestion runbook](../planning/runbooks/ingestion-runbook.md) and
 stack-specific README files for variables and deployment order. Run commands from

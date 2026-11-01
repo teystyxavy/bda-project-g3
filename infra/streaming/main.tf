@@ -23,20 +23,34 @@ locals {
   # Feature switches converted to resource counts (count = 0 means "not created"):
   #   count          -- base streaming resources (ECR repo, table, role, logs);
   #   function_count -- the Lambda only exists once an image digest is supplied;
-  #   stream_count   -- the Kinesis shard (the only always-billing component).
+  #   stream_count   -- the Kinesis shard (the only always-billing component);
+  #   publisher_count -- the dashboard publisher (end of this file).
   # Names: every per-run resource is called is459-g3-<run_id>, so a fresh replay
   # run gets fresh, isolated resources. The *_arn values are pre-computed so the
   # IAM runtime policy can name exact resources even before they exist.
   count          = var.provision_streaming ? 1 : 0
   function_count = var.provision_streaming && var.image_uri != null ? 1 : 0
   # The shard is the only resource that bills while idle; provision_stream parks it.
-  stream_count   = var.provision_streaming && var.provision_stream ? 1 : 0
-  name           = "is459-g3-${var.run_id}"
-  bucket         = "is459-g3-${var.aws_account_id}-${var.aws_region}"
-  failure_bucket = "is459-g3-stream-failures-${var.aws_account_id}-${var.aws_region}"
-  stream_arn     = "arn:aws:kinesis:${var.aws_region}:${var.aws_account_id}:stream/${local.name}"
-  table_arn      = "arn:aws:dynamodb:${var.aws_region}:${var.aws_account_id}:table/${local.name}"
-  log_arn        = "arn:aws:logs:${var.aws_region}:${var.aws_account_id}:log-group:/aws/lambda/${local.name}"
+  stream_count    = var.provision_streaming && var.provision_stream ? 1 : 0
+  publisher_count = var.provision_publisher ? 1 : 0
+  name            = "is459-g3-${var.run_id}"
+  bucket          = "is459-g3-${var.aws_account_id}-${var.aws_region}"
+  failure_bucket  = "is459-g3-stream-failures-${var.aws_account_id}-${var.aws_region}"
+  site_bucket     = "is459-g3-dashboard-${var.aws_account_id}-${var.aws_region}"
+  stream_arn      = "arn:aws:kinesis:${var.aws_region}:${var.aws_account_id}:stream/${local.name}"
+  table_arn       = "arn:aws:dynamodb:${var.aws_region}:${var.aws_account_id}:table/${local.name}"
+  log_arn         = "arn:aws:logs:${var.aws_region}:${var.aws_account_id}:log-group:/aws/lambda/${local.name}"
+  # Frozen model manifest baked into the reviewed consumer image.
+  model_manifest = "323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f"
+  # Exact names the publisher policy template may reference.
+  publisher_policy_inputs = {
+    region      = var.aws_region
+    account     = var.aws_account_id
+    name        = local.name
+    bucket      = local.bucket
+    site_bucket = local.site_bucket
+    run_id      = var.run_id
+  }
 }
 # Private ECR repository holding the consumer's container image. IMMUTABLE tags
 # mean a pushed tag can never be overwritten (the Lambda is pinned by digest
@@ -122,7 +136,7 @@ resource "aws_lambda_function" "consumer" {
       RUN_ID          = var.run_id
       STATE_TABLE     = local.name
       AUDIT_BUCKET    = local.bucket
-      MANIFEST_SHA256 = "323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f"
+      MANIFEST_SHA256 = local.model_manifest
       OMP_NUM_THREADS = "1"
     }
   }
@@ -236,3 +250,133 @@ resource "aws_ecr_repository_policy" "lambda_retrieval" {
     }]
   })
 }
+
+# -----------------------------------------------------------------------------
+# Dashboard publisher: makes committed streaming scores visible
+# -----------------------------------------------------------------------------
+# DynamoDB results (consistent scan) + reviewed replay events (S3, pinned
+# SHA-256) -> publisher Lambda (src/bda_pipeline/dashboard_streaming.py) ->
+# s3://<dashboard bucket>/dashboard/streaming/<run_id>/snapshot.json ->
+# CloudFront /streaming/<run_id>/snapshot.json -> Incoming AML view.
+# Separate from the consumer, so a dashboard failure cannot change scores,
+# sender state or audit. provision_publisher creates it with the schedule
+# DISABLED; enable_publisher arms it until publisher_end_time.
+resource "aws_cloudwatch_log_group" "publisher" {
+  count             = local.publisher_count
+  name              = "/aws/lambda/${local.name}-publisher"
+  retention_in_days = 7
+}
+resource "aws_iam_role" "publisher" {
+  count              = local.publisher_count
+  name               = "${local.name}-publisher"
+  assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" }, Action = "sts:AssumeRole" }] })
+}
+# Read-only on scores, one input object, the audit listing (commit times) and
+# the failure alarm; write only the run's snapshot key. Reviewed separately,
+# like the consumer's runtime policy.
+resource "aws_iam_role_policy" "publisher" {
+  count  = local.publisher_count
+  role   = aws_iam_role.publisher[0].id
+  policy = templatefile("${path.module}/publisher-policy.json.tftpl", local.publisher_policy_inputs)
+}
+# Zip package (boto3 comes with the runtime). Reserved concurrency 1: one
+# writer per run. Each invocation publishes every 15 s for ~50 s, because the
+# scheduler's floor is one minute. CONSUMER_ENABLED follows enable_consumer, so
+# the snapshot can tell a running replay from a paused one.
+resource "aws_lambda_function" "publisher" {
+  count                          = local.publisher_count
+  function_name                  = "${local.name}-publisher"
+  role                           = aws_iam_role.publisher[0].arn
+  runtime                        = "python3.12"
+  handler                        = "dashboard_streaming.handler"
+  filename                       = var.publisher_zip_path
+  source_code_hash               = filebase64sha256(var.publisher_zip_path)
+  memory_size                    = 256
+  timeout                        = 60
+  reserved_concurrent_executions = 1
+  environment {
+    variables = {
+      RUN_ID                   = var.run_id
+      STATE_TABLE              = local.name
+      INPUT_BUCKET             = local.bucket
+      INPUT_KEY                = "streaming/${var.run_id}/input/events.jsonl"
+      INPUT_SHA256             = var.replay_events_sha256
+      SITE_BUCKET              = local.site_bucket
+      MANIFEST_SHA256          = local.model_manifest
+      CONSUMER_ENABLED         = tostring(var.enable_consumer)
+      ALARM_NAME               = "${local.name}-record-failures"
+      PUBLISH_INTERVAL_SECONDS = "15"
+    }
+  }
+  depends_on = [aws_iam_role_policy.publisher, aws_cloudwatch_log_group.publisher]
+}
+# The scheduler invokes asynchronously. If the previous minute is still
+# running, drop the event instead of queueing a backlog of publications.
+resource "aws_lambda_function_event_invoke_config" "publisher" {
+  count                        = local.publisher_count
+  function_name                = aws_lambda_function.publisher[0].function_name
+  maximum_event_age_in_seconds = 60
+  maximum_retry_attempts       = 0
+}
+# Scheduler role: may only invoke the publisher, only for this account's
+# default schedule group (confused-deputy protection).
+resource "aws_iam_role" "publisher_schedule" {
+  count = local.publisher_count
+  name  = "${local.name}-publisher-schedule"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow", Principal = { Service = "scheduler.amazonaws.com" }, Action = "sts:AssumeRole"
+      Condition = { StringEquals = { "aws:SourceAccount" = var.aws_account_id, "aws:SourceArn" = "arn:aws:scheduler:${var.aws_region}:${var.aws_account_id}:schedule-group/default" } }
+    }]
+  })
+}
+resource "aws_iam_role_policy" "publisher_schedule" {
+  count  = local.publisher_count
+  role   = aws_iam_role.publisher_schedule[0].id
+  policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = ["lambda:InvokeFunction"], Resource = [aws_lambda_function.publisher[0].arn] }] })
+}
+# Once a minute, DISABLED unless enable_publisher; end_date stops it at the
+# end of the authorized demo window even if nobody disables it.
+resource "aws_scheduler_schedule" "publisher" {
+  count                        = local.publisher_count
+  name                         = "${local.name}-publisher"
+  state                        = var.enable_publisher ? "ENABLED" : "DISABLED"
+  schedule_expression          = "rate(1 minute)"
+  schedule_expression_timezone = "UTC"
+  end_date                     = var.publisher_end_time == null ? null : "${var.publisher_end_time}Z"
+  flexible_time_window { mode = "OFF" }
+  target {
+    arn      = aws_lambda_function.publisher[0].arn
+    role_arn = aws_iam_role.publisher_schedule[0].arn
+    input    = jsonencode({})
+    retry_policy {
+      maximum_event_age_in_seconds = 60
+      maximum_retry_attempts       = 0
+    }
+  }
+  depends_on = [aws_iam_role_policy.publisher_schedule]
+}
+# Any publisher error (invalid state, over-cap scan, AWS failure) keeps the
+# last good snapshot; this alarm tells the team through the shared topic.
+resource "aws_cloudwatch_metric_alarm" "publisher_errors" {
+  count               = local.publisher_count
+  alarm_name          = "${local.name}-publisher-errors"
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  dimensions          = { FunctionName = "${local.name}-publisher" }
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 1
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = ["arn:aws:sns:${var.aws_region}:${var.aws_account_id}:is459-g3-failures"]
+}
+# Public configuration for the dashboard (publish as dashboard/streaming-config.json
+# after review) and the rendered publisher policy for review.
+output "publisher_configuration" {
+  description = "Public snapshot location only. Publish as dashboard/streaming-config.json after review."
+  value       = var.provision_publisher ? { schema_version = 1, run_id = var.run_id, snapshot_url = "/streaming/${var.run_id}/snapshot.json" } : null
+}
+output "publisher_policy" { value = jsondecode(templatefile("${path.module}/publisher-policy.json.tftpl", local.publisher_policy_inputs)) }

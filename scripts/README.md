@@ -59,6 +59,9 @@ For the newer dashboard paths:
 - [prepare-dashboard-status.py](aws/prepare-dashboard-status.py) packages the
   public read-only status handler; [prepare-dashboard-api.py](aws/prepare-dashboard-api.py)
   packages the separate authenticated control handler. Neither deploys resources.
+- [prepare-dashboard-streaming.py](aws/prepare-dashboard-streaming.py) packages the
+  publisher that turns committed streaming scores into the Incoming AML snapshot.
+  It deploys nothing; see the [streaming guide](../streaming/README.md#incoming-aml-dashboard-view).
 
 Comments explain code behavior, not deployment evidence. Use current runbooks
 and recorded verification results for deployed status; changing documentation in
