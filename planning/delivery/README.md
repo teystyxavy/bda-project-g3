@@ -9,3 +9,6 @@ the checked milestone artifacts. The latest optimisation acceptance is in
 
 Readiness records are dated snapshots. Narrated recordings and final submission
 items remain explicitly marked in the runbook.
+
+The [FX sensitivity check](fx-sensitivity.md) answers whether BQ2 corridor
+rankings depend on the FX rates used.

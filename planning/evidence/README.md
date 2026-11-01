@@ -16,3 +16,7 @@ are identifiers, not credentials. Secrets and private Terraform state are exclud
 
 [HI-Medium publication verification](hi-medium-result-20261030.json) records the
 31,898,238-row public snapshot and explicitly lists pending private AWS checks.
+
+[FX sensitivity](fx-sensitivity-20261101.json) compares BQ2 bank-pair rankings
+for that run under historical and dataset-implied FX rates; see the
+[findings](../delivery/fx-sensitivity.md).

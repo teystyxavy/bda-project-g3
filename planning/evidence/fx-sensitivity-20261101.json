@@ -1,0 +1,87 @@
+{
+  "inputs": {
+    "bq2_daily_corridors.parquet": "3c68c5af6bd235047b4be6bcbf1ac1c3233bbf381fea916a5d99151ef87a2fbe",
+    "fx.csv": "5b658518becad4997ec5d19aa7f3d499f22d4a653fa1081f47615e3d0c6e1e6f",
+    "HI-Small_Trans.csv": "b19d39f515523373f991b689c07e11e7b0b95c17a2c27a87d91584ae16c5b040"
+  },
+  "transactions": 31898238,
+  "bank_pairs": 1762237,
+  "volume": {
+    "historical": 10833125238409.512,
+    "dataset": 10997189712582.998
+  },
+  "concentration": {
+    "historical": {
+      "hhi": 0.0014504056371738353,
+      "top5_share": 0.06529572910133959
+    },
+    "dataset": {
+      "hhi": 0.0011708290927995807,
+      "top5_share": 0.055361821840396286
+    }
+  },
+  "top_k_overlap": {
+    "5": 4,
+    "10": 10,
+    "15": 14,
+    "30": 27
+  },
+  "top5": {
+    "historical": [
+      "1442->80208",
+      "213589->1209574",
+      "1442->1442",
+      "223769->171221",
+      "53839->5965"
+    ],
+    "dataset": [
+      "1442->1442",
+      "1442->80208",
+      "53839->5965",
+      "213589->1209574",
+      "89616->118554"
+    ]
+  },
+  "daily": {
+    "days": 28,
+    "top15_days": 27,
+    "min_top15_overlap": 10,
+    "mean_top15_overlap": 13.555555555555555,
+    "same_top_pair_days": 21
+  },
+  "rate_gap": {
+    "Australian Dollar": 0.0417,
+    "Bitcoin": -0.4015,
+    "Brazil Real": -0.08,
+    "Canadian Dollar": -0.0049,
+    "Euro": 0.1707,
+    "Mexican Peso": -0.0506,
+    "Ruble": -0.2242,
+    "Rupee": 0.0846,
+    "Saudi Riyal": 0.0005,
+    "Shekel": 0.0066,
+    "Swiss Franc": 0.0633,
+    "UK Pound": 0.1175,
+    "US Dollar": 0.0,
+    "Yen": 0.3441,
+    "Yuan": 0.0351
+  },
+  "historical_share": {
+    "Australian Dollar": 0.0263,
+    "Bitcoin": 0.0438,
+    "Brazil Real": 0.0172,
+    "Canadian Dollar": 0.0273,
+    "Euro": 0.1819,
+    "Mexican Peso": 0.0221,
+    "Ruble": 0.0751,
+    "Rupee": 0.0222,
+    "Saudi Riyal": 0.0151,
+    "Shekel": 0.0413,
+    "Swiss Franc": 0.0199,
+    "UK Pound": 0.0224,
+    "US Dollar": 0.3889,
+    "Yen": 0.0343,
+    "Yuan": 0.0623
+  },
+  "dataset_rates_source": "HI-Small_Trans.csv"
+}
