@@ -414,6 +414,43 @@ test('a completed replay is never stale and is checked less often',async()=>{
   assert.ok([...h.timers.values()].some(timer=>timer.ms===60000));
 });
 
+const REVIEW={cutoff:.9937289953,capacity:100,period:'2022-09-07 to 2022-09-08',source_run:'opt-full-20261006-aws1'};
+const VERIFIED={transactions:884,features_exact:true,max_absolute_score_difference:2.9103830456733704e-11,verified_on:'2026-10-06',
+  evidence:'planning/evidence/streaming-deployment-result-20261006.json'};
+
+test('review cutoff and batch parity show as cards and a review column',async()=>{
+  const flagged=streamSnapshot({review:{...REVIEW,flagged:1},verification:VERIFIED,
+    queue:[{...streamRow(1,'HI-Small:7',.995),review_now:true},{...streamRow(2,'HI-Small:8',.5),review_now:false}]});
+  const h=await harness({configured:false,authenticated:false,fetchHook:streamHook(flagged)});
+  h.el('incoming-tab').onclick();await settle();
+  const kpis=h.el('incoming-kpis').innerHTML;
+  assert.match(kpis,/Review now<\/span><strong>1 \/ 412<\/strong><span>Score ≥ 0\.9937 · batch top-100 cutoff/);
+  assert.match(kpis,/Matches batch model<\/span><strong>884 \/ 884<\/strong><span>Max score difference 2\.9e-11 · recorded 2026-10-06/);
+  assert.match(h.el('incoming-queue').innerHTML,/<th scope="col">Review<\/th>/);
+  assert.match(h.el('incoming-queue').innerHTML,/HI-Small:7<\/td>.*<td>Review now<\/td>/);
+  assert.match(h.el('incoming-queue').innerHTML,/HI-Small:8<\/td>.*<td>Below cutoff<\/td>/);
+  assert.match(h.el('incoming-latest').innerHTML,/<th scope="col">Review<\/th>/);
+  assert.match(h.el('incoming-queue-note').textContent,/1 reach the batch top-100 review cutoff \(score ≥ 0\.9937, set on 2022-09-07 to 2022-09-08 validation days\)/);
+  // Nothing at the cutoff is stated plainly rather than hidden.
+  const none=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot({review:{...REVIEW,flagged:0}}))});
+  none.el('incoming-tab').onclick();await settle();
+  assert.match(none.el('incoming-kpis').innerHTML,/<strong>0 \/ 412<\/strong>/);
+  assert.match(none.el('incoming-queue-note').textContent,/None reach the batch top-100 review cutoff/);
+});
+
+test('snapshots without or with malformed review fields render as before',async()=>{
+  for(const extra of [{},{review:{...REVIEW,cutoff:'0.99',flagged:1},verification:{...VERIFIED,features_exact:false}},{review:null,verification:'yes'}]) {
+    const h=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot(extra))});
+    h.el('incoming-tab').onclick();await settle();
+    assert.equal(h.el('incoming-state').textContent,'Live · scoring');
+    assert.match(h.el('incoming-kpis').innerHTML,/412 \/ 884/);
+    assert.doesNotMatch(h.el('incoming-kpis').innerHTML,/Review now|Matches batch model/);
+    assert.doesNotMatch(h.el('incoming-queue').innerHTML+h.el('incoming-latest').innerHTML,/>Review</);
+    assert.doesNotMatch(h.el('incoming-queue-note').textContent,/cutoff/);
+    assert.match(h.el('incoming-queue').innerHTML,/HI-Small:7/);
+  }
+});
+
 test('invalid streaming configuration or snapshot is ignored',async()=>{
   const h=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot(),
     {config:{...STREAM_CONFIG,snapshot_url:'https://evil.example/snapshot.json'}})});

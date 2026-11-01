@@ -25,10 +25,10 @@ RUN = 'stream-smoke-20261006'
 SNAPSHOT_KEY = f'dashboard/streaming/{RUN}/snapshot.json'
 ENV = {'RUN_ID': RUN, 'STATE_TABLE': 'is459-g3-' + RUN, 'INPUT_BUCKET': 'pipeline-bucket',
        'INPUT_KEY': f'streaming/{RUN}/input/events.jsonl', 'SITE_BUCKET': 'site-bucket',
-       'MANIFEST_SHA256': 'f' * 64, 'CONSUMER_ENABLED': 'true', 'ALARM_NAME': f'is459-g3-{RUN}-record-failures'}
+       'MANIFEST_SHA256': publisher.REVIEW['model_manifest_sha256'], 'CONSUMER_ENABLED': 'true', 'ALARM_NAME': f'is459-g3-{RUN}-record-failures'}
 # Two transactions tie on 0.9 to exercise the event-time tie policy.
 SCORES = {'HI-Small:1': .2, 'HI-Small:2': .9, 'HI-Small:3': .9, 'HI-Small:4': .05, 'HI-Small:5': .6}
-PUBLIC_FIELDS = {'rank', 'transaction_id', 'timestamp', 'scored_at', 'model_score', 'amount_usd_asof', 'payment_format',
+PUBLIC_FIELDS = {'rank', 'transaction_id', 'timestamp', 'scored_at', 'model_score', 'review_now', 'amount_usd_asof', 'payment_format',
                  'payment_currency', 'receiving_currency', 'from_bank', 'from_account', 'to_bank', 'to_account',
                  *streaming.SENDER_FEATURES}
 # Wall-clock time of the first audit write; each later commit is 5 s apart.
@@ -163,6 +163,43 @@ def test_completed_only_after_every_event_and_sender_history_reconciles(aws):
     assert summary['state'] == 'completed' and data['reconciled'] is True
     assert data['senders'] == {'expected': 2, 'started': 2, 'complete': 2}
     assert publisher.run_state(5, 5, {'a': 3, 'b': 2}, {'a': 2, 'b': 2}, False, 'OK') == ('paused', False)
+
+
+def test_review_flag_uses_the_batch_cutoff_over_every_committed_score(aws, monkeypatch):
+    consume(aws, aws.events)
+    data = published(aws)[1]
+    # Fixture scores top out at 0.9, below the batch top-100 cutoff.
+    assert data['review'] == {**publisher.REVIEW, 'flagged': 0}
+    assert not any(row['review_now'] for row in data['queue'] + data['latest'])
+    monkeypatch.setitem(publisher.REVIEW, 'cutoff', .6)
+    data = published(aws)[1]
+    # Inclusive cutoff, counted over all committed scores rather than the shown rows.
+    assert data['review']['flagged'] == 3
+    assert {row['transaction_id'] for row in data['queue'] if row['review_now']} == {'HI-Small:2', 'HI-Small:3', 'HI-Small:5'}
+
+
+def test_batch_parity_is_reported_only_for_a_run_with_recorded_acceptance(aws):
+    consume(aws, aws.events[:2])
+    assert published(aws)[1]['verification'] == publisher.VERIFIED[RUN]
+    assert publisher.VERIFIED.get('another-run') is None
+
+
+def test_another_model_gets_neither_the_cutoff_nor_the_parity_record(aws):
+    consume(aws, aws.events)
+    aws.env['MANIFEST_SHA256'] = 'e' * 64
+    data = published(aws)[1]
+    assert data['review'] is None and data['verification'] is None
+    assert all(row['review_now'] is None for row in data['queue'] + data['latest'])
+    assert data['state'] == 'completed' and data['processed'] == 5
+
+
+def test_recorded_parity_matches_the_committed_evidence():
+    path = Path(__file__).resolve().parents[1] / publisher.VERIFIED[RUN]['evidence']
+    evidence = json.loads(path.read_text(encoding='utf-8'))
+    recorded = publisher.VERIFIED[RUN]
+    assert evidence['run_id'] == RUN and evidence['reconciliation']['transactions'] == recorded['transactions']
+    assert evidence['reconciliation']['features_exact'] is recorded['features_exact'] is True
+    assert evidence['reconciliation']['max_absolute_score_difference'] == recorded['max_absolute_score_difference']
 
 
 def test_waiting_paused_and_failed_states(aws):
