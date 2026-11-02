@@ -365,7 +365,12 @@ test('mule-network tab renders hubs, loops, rings and the ring node graph from t
   assert.match(svg,/<svg id="ring-svg"/);
   assert.equal((svg.match(/class="ring-node/g)||[]).length,4);
   assert.equal((svg.match(/ring-link-loop/g)||[]).length,2);
-  assert.match(svg,/marker-end="url\(#ring-arrow-loop\)"/);
+  // Direction arrows sit mid-link (no pile-up at the hub); without animation the graph is static, with no payment dots running.
+  assert.match(svg,/marker-mid="url\(#ring-arrow-loop\)"/);
+  assert.match(svg,/<svg id="ring-svg" class="ring-static"/);
+  // One to three payment dots per link, more for links with more payments (fixture: 1, 1, 2 and 5 payments).
+  assert.equal((svg.match(/data-dot="/g)||[]).length,9);
+  assert.equal(h.el('ring-flow').hidden,true);assert.equal(h.el('ring-legend-flow').hidden,true);
   // The deterministic layout keeps every account inside the drawing area.
   const layout=vm.runInContext("ringLayouts['10:A']",h.context);
   for(const point of Object.values(layout)) {assert.ok(point.x>=48&&point.x<=812);assert.ok(point.y>=48&&point.y<=512);}
@@ -379,6 +384,32 @@ test('mule-network tab renders hubs, loops, rings and the ring node graph from t
   assert.match(h.el('ring-search-result').textContent,/20:R1 is in ring #1/);
   vm.runInContext("showAccount('10:H')",h.context);
   assert.match(h.el('ring-node').innerHTML,/Hub/);assert.match(h.el('ring-node').innerHTML,/→ 20:R1/);
+});
+
+test('ring graph physics settles back on the tested layout and the hover card explains accounts and links',async()=>{
+  const h=await harness({authenticated:false});
+  vm.runInContext(`snapshot=${JSON.stringify(snapshot())};selectDashboardView('network')`,h.context);
+  // Without animation, accounts are drawn exactly at their rest positions.
+  assert.equal(vm.runInContext("JSON.stringify(Object.fromEntries(Object.entries(ringScene.pos).map(([id,p])=>[id,{x:p.x,y:p.y}])))",h.context),
+    vm.runInContext("JSON.stringify(ringLayouts['10:A'])",h.context));
+  // Knock every account off its rest position, then step: the springs bring them back and the energy falls to rest.
+  const settled=vm.runInContext(`(()=>{const s=ringScene;for(const id of s.ids){s.pos[id].x+=60;s.pos[id].y-=40;}
+    let energy=Infinity,steps=0;while(energy>=.03*s.ids.length&&steps<600){energy=stepRing(s,16.7);steps++;}
+    return {steps,error:Math.max(...s.ids.map(id=>Math.hypot(s.pos[id].x-s.layout[id].x,s.pos[id].y-s.layout[id].y)))};})()`,h.context);
+  assert.ok(settled.steps<600,'physics did not settle');assert.ok(settled.error<2,`accounts stopped ${settled.error}px from rest`);
+  // A dragged account tows its neighbours part of the way, and only part of the way.
+  const towed=vm.runInContext(`(()=>{const s=ringScene;s.drag='10:H';s.pos['10:H'].x+=100;for(let i=0;i<300;i++) stepRing(s,16.7);
+    const shift=s.pos['20:R1'].x-s.layout['20:R1'].x;s.drag=null;s.pos['10:H'].x-=100;return shift;})()`,h.context);
+  assert.ok(towed>20&&towed<100,`receiver moved ${towed}px`);
+  // Fit keeps the ring inside the view.
+  const view=vm.runInContext('fitRing(ringScene,false),ringScene.view',h.context);
+  assert.ok(view.k>=.6&&view.k<=1.6);
+  const node=vm.runInContext("ringTipContent(ringScene,{node:'10:H'})",h.context);
+  assert.match(node,/Hub/);assert.match(node,/10 senders/);assert.match(node,/In this ring: 1 in · 1 out/);
+  assert.match(vm.runInContext('ringTipContent(ringScene,{link:3})',h.context),/Money out of the hub[\s\S]*10:H → 20:R1[\s\S]*5<\/span>/);
+  assert.match(vm.runInContext('ringTipContent(ringScene,{link:0})',h.context),/Part of a timed loop/);
+  vm.runInContext('toggleRingFlow()',h.context);
+  assert.equal(h.el('ring-flow').textContent,'Play flow');assert.equal(h.el('ring-flow').attributes['aria-pressed'],'true');
 });
 
 test('releases from before the network analysis explain that BQ2 is missing',async()=>{

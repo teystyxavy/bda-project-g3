@@ -749,7 +749,11 @@ function renderNetwork() {
     networkReady=true;
     element('ring-picker').onchange=()=>selectRing(element('ring-picker').value);
     element('ring-search').oninput=()=>findAccount(element('ring-search').value);
-    element('ring-reset').onclick=()=>{if(selectedRing){delete ringLayouts[selectedRing];renderRing();}};
+    element('ring-reset').onclick=()=>{if(selectedRing){delete ringLayouts[selectedRing];stopRingScene();ringScene=null;renderRing();}};
+    element('ring-flow').onclick=toggleRingFlow;
+    element('ring-zoom-in').onclick=()=>zoomRing(1.3);element('ring-zoom-out').onclick=()=>zoomRing(1/1.3);element('ring-fit').onclick=()=>ringScene&&fitRing(ringScene);
+    // Animate only while the graph is on screen.
+    if(typeof IntersectionObserver==='function') new IntersectionObserver(entries=>{ringVisible=entries.some(entry=>entry.isIntersecting);if(ringVisible&&ringScene) wakeRing(ringScene);}).observe(element('ring-graph'));
     element('export-rings').onclick=()=>download(snapshot.network.ring_list,'mule-network-rings.csv');
   }
   const ids=data.ring_list.map(row=>row.ring_id);
@@ -844,66 +848,315 @@ function layoutRing(graph) {
   return Object.fromEntries(graph.nodes.map((node,i)=>[node.id,pos[i]]));
 }
 
+// ---- Live ring graph: settling physics, flowing payments, zoom/pan and a hover card ----
+// layoutRing gives each account its rest position. The live layer moves accounts
+// around that rest position: they spread out from the centre on load, lean
+// toward a hovered account, pull their linked accounts along while dragged and
+// spring back afterwards. Dots travel along each link in the direction the money
+// moved. Without requestAnimationFrame, or with reduced motion, the graph is
+// drawn once at rest with direction arrows.
+const RING_GLOW={hub:'#ff6f5e',loop:'#b794ff',sender:'#4fa8ff',receiver:'#ffb648',both:'#a9bccb'};
+const RING_TONE={in:'#4fa8ff',out:'#ffb648',other:'#a9bccb',loop:'#c3a6ff'};
+let ringScene=null, ringFlowPaused=false, ringVisible=true;
+const motionAllowed = () => typeof requestAnimationFrame==='function' && !window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+const quadPoint = (a,c,b,t) => ({x:(1-t)*(1-t)*a.x+2*(1-t)*t*c.x+t*t*b.x,y:(1-t)*(1-t)*a.y+2*(1-t)*t*c.y+t*t*b.y});
+const xy = p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+
 function renderRing() {
   const graph=snapshot.network.graphs[selectedRing];
   if(!graph) return;
   GRAPH=graphShape();
   if(ringLayoutShape[selectedRing]!==GRAPH.width) {delete ringLayouts[selectedRing];ringLayoutShape[selectedRing]=GRAPH.width;}
   const layout=ringLayouts[selectedRing]||(ringLayouts[selectedRing]=layoutRing(graph));
-  const roles=flowRoles(graph), hasHub=graph.nodes.some(node=>node.role==='hub');
+  const roles=flowRoles(graph), hasHub=graph.nodes.some(node=>node.role==='hub'), {width,height,margin}=GRAPH, cx=width/2, cy=height/2;
   const byId=new Map(graph.nodes.map(node=>[node.id,node]));
-  const maxTxns=Math.max(1,...graph.links.map(link=>link.txns)), maxUsd=Math.max(1,...graph.nodes.map(node=>node.in_usd+node.out_usd));
-  const radius=node=>node.role==='counterparty'?ROLE[roles[node.id]].radius+4*Math.sqrt((node.in_usd+node.out_usd)/maxUsd):ROLE[node.role].radius;
+  const maxTxns=Math.max(1,...graph.links.map(link=>link.txns)), maxUsd=Math.max(1,...graph.nodes.map(node=>node.in_usd+node.out_usd)), maxLinkUsd=Math.max(1,...graph.links.map(link=>link.usd));
+  const radius=Object.fromEntries(graph.nodes.map(node=>[node.id,node.role==='counterparty'?ROLE[roles[node.id]].radius+4*Math.sqrt((node.in_usd+node.out_usd)/maxUsd):ROLE[node.role].radius]));
   const tone=link=>link.loop?'loop':roles[link.source]==='sender'?'in':roles[link.target]==='receiver'?'out':'other';
-  const linkMarkup=graph.links.map((link,i)=>`<line data-link="${i}" class="ring-link ring-link-${tone(link)}" stroke-width="${(1+3*Math.log1p(link.txns)/Math.log1p(maxTxns)).toFixed(2)}" marker-end="url(#ring-arrow-${tone(link)})"><title>${escapeText(link.source)} → ${escapeText(link.target)}: ${integer(link.txns)} payment${link.txns===1?'':'s'}, ${dollars(link.usd)}${link.loop?' · part of a timed loop':''}</title></line>`).join('');
-  const nodeMarkup=graph.nodes.map(node=>{const role=ROLE[roles[node.id]], r=radius(node);return `<g class="ring-node ring-node-${roles[node.id]}${node.id===selectedAccount?' ring-node-selected':''}" data-node="${escapeText(node.id)}" tabindex="0" role="button" aria-label="${escapeText(role.label)} ${escapeText(node.id)}, ${integer(node.fan_in)} senders, ${integer(node.fan_out)} receivers"><circle r="${r.toFixed(1)}" fill="${role.color}"/>${node.role==='counterparty'?'':`<text y="${(node.role==='hub'?r+16:-r-6).toFixed(1)}" text-anchor="middle">${escapeText(shortAccount(node.id))}</text>`}<title>${escapeText(node.id)} · ${escapeText(role.label)} · ${integer(node.fan_in)} senders, ${integer(node.fan_out)} receivers overall</title></g>`;}).join('');
-  const marker=(name,color)=>`<marker id="ring-arrow-${name}" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${color}"/></marker>`;
-  const lanes=hasHub?`<text class="ring-lane" x="${GRAPH.margin-10}" y="22">← MONEY IN</text><text class="ring-lane" x="${GRAPH.width-GRAPH.margin+10}" y="22" text-anchor="end">MONEY OUT →</text>`:'';
+  const pairs=new Set(graph.links.map(link=>link.source+'\n'+link.target));
+  const adjacent=Object.fromEntries(graph.nodes.map(node=>[node.id,new Set()]));
+  for(const link of graph.links) if(adjacent[link.source]&&adjacent[link.target]) {adjacent[link.source].add(link.target);adjacent[link.target].add(link.source);}
+  const animate=motionAllowed(), previous=ringScene;
+  stopRingScene();
+  // Re-rendering the same ring keeps positions and zoom; a new ring spreads out from the centre.
+  const same=previous&&previous.ring===selectedRing&&previous.width===width;
+  const pos=Object.fromEntries(graph.nodes.map(node=>{const p=layout[node.id], old=same&&previous.pos[node.id];
+    return [node.id,old?{...old}:animate?{x:cx+(p.x-cx)*.35,y:cy+(p.y-cy)*.35,vx:0,vy:0}:{x:p.x,y:p.y,vx:0,vy:0}];}));
+  const dots=[];
+  graph.links.forEach((link,i)=>{const count=1+Math.round(2*Math.log1p(link.txns)/Math.log1p(maxTxns));
+    for(let k=0;k<count;k++) dots.push({link:i,u:(k/count+i*.618)%1,r:1.7+2.6*Math.sqrt(link.usd/maxLinkUsd)});});
+  const scene=ringScene={ring:selectedRing,width,height,graph,layout,pos,roles,byId,radius,animate,dots,
+    ids:graph.nodes.map(node=>node.id),adjacent:Object.fromEntries(Object.entries(adjacent).map(([id,set])=>[id,[...set]])),adjacentSet:adjacent,
+    reverse:graph.links.map(link=>pairs.has(link.target+'\n'+link.source)),scale:Object.fromEntries(graph.nodes.map(node=>[node.id,1])),
+    view:same?previous.view:null,hover:null,hoverLink:null,drag:null,gesture:null,settled:!animate,raf:null,last:0,geometry:[]};
+
+  const gradients=graph.links.map((link,i)=>`<linearGradient id="ring-grad-${i}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${RING_GLOW[roles[link.source]]}"/><stop offset="1" stop-color="${RING_GLOW[roles[link.target]]}"/></linearGradient>`).join('');
+  const marker=name=>`<marker id="ring-arrow-${name}" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto"><path d="M1 1 L9 5 L1 9" fill="none" stroke="${RING_TONE[name]}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker>`;
+  const linkMarkup=graph.links.map((link,i)=>`<path data-link="${i}" class="ring-link ring-link-${tone(link)}" stroke="url(#ring-grad-${i})" stroke-width="${(1.2+3*Math.log1p(link.txns)/Math.log1p(maxTxns)).toFixed(2)}" marker-mid="url(#ring-arrow-${tone(link)})"/>`).join('');
+  const hitMarkup=graph.links.map((link,i)=>`<path data-hit="${i}" class="ring-hit"/>`).join('');
+  const dotMarkup=dots.map((dot,i)=>`<circle data-dot="${i}" class="ring-dot ring-dot-${tone(graph.links[dot.link])}" r="${dot.r.toFixed(1)}" fill="${RING_TONE[tone(graph.links[dot.link])]}"/>`).join('');
+  const nodeMarkup=graph.nodes.map(node=>{const role=roles[node.id], r=radius[node.id], minor=node.role==='counterparty';
+    return `<g class="ring-node ring-node-${role}${node.id===selectedAccount?' ring-node-selected':''}" data-node="${escapeText(node.id)}" tabindex="0" role="button" aria-label="${escapeText(ROLE[role].label)} ${escapeText(node.id)}, ${integer(node.fan_in)} senders, ${integer(node.fan_out)} receivers">${node.role==='hub'?`<circle class="ring-halo" r="${(r+3).toFixed(1)}"/>`:''}<circle class="ring-grab" r="${(r+7).toFixed(1)}"/><circle class="ring-core" r="${r.toFixed(1)}" fill="${RING_GLOW[role]}" filter="url(#ring-glow)"/><text class="ring-label${minor?' ring-label-minor':''}" y="${(node.role==='hub'?r+17:-r-7).toFixed(1)}" text-anchor="middle">${escapeText(shortAccount(node.id))}</text></g>`;}).join('');
+  const lanes=hasHub?`<text class="ring-lane" x="${margin-10}" y="${height-16}">← MONEY IN</text><text class="ring-lane" x="${width-margin+10}" y="${height-16}" text-anchor="end">MONEY OUT →</text>`:'';
   const crowded=graph.nodes.filter(node=>node.role==='loop').length>8;
-  element('ring-graph').innerHTML=`<svg id="ring-svg" class="${crowded?'ring-crowded':''}" viewBox="0 0 ${GRAPH.width} ${GRAPH.height}" role="img" aria-label="Money flows between ${graph.shown_accounts} accounts of the selected ring"><defs>${marker('in','#7fa3bf')}${marker('out','#d6a85a')}${marker('other','#9aabb7')}${marker('loop','#7c5cb0')}</defs>${lanes}<g>${linkMarkup}</g><g>${nodeMarkup}</g></svg>`;
-  element('ring-graph-note').textContent=`${graph.truncated?`Showing ${graph.shown_accounts} of ${graph.total_accounts} accounts: every hub and loop account, then counterparties by payment volume. `:''}Arrows show direction; thicker links carry more payments; larger dots moved more money. ${crowded?'Loop-account names appear on hover. ':''}Hover to trace an account, drag to rearrange.`;
-  placeRing(graph,layout,byId,radius);
-  const svg=element('ring-svg');
-  const neighbours=id=>new Set([id,...graph.links.filter(link=>link.source===id||link.target===id).flatMap(link=>[link.source,link.target])]);
-  const highlight=id=>{
-    if(!svg?.classList) return;
-    svg.classList.toggle('ring-dim',Boolean(id));
-    const keep=id?neighbours(id):new Set();
-    svg.querySelectorAll('[data-node]').forEach(mark=>mark.classList.toggle('ring-hl',keep.has(mark.dataset.node)));
-    svg.querySelectorAll('[data-link]').forEach(line=>{const link=graph.links[Number(line.dataset.link)];line.classList.toggle('ring-hl',Boolean(id)&&(link.source===id||link.target===id));});
-  };
-  svg?.querySelectorAll?.('[data-node]').forEach(mark=>{
-    const id=mark.dataset.node, activate=()=>{selectedAccount=id;showAccount(id);svg.querySelectorAll('[data-node]').forEach(other=>other.classList.toggle('ring-node-selected',other.dataset.node===id));};
-    mark.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activate();}};
-    mark.onpointerenter=()=>highlight(id);mark.onpointerleave=()=>highlight(null);mark.onfocus=()=>highlight(id);mark.onblur=()=>highlight(null);
-    let drag=null;
-    mark.onpointerdown=event=>{drag={x:event.clientX,y:event.clientY,moved:false};mark.setPointerCapture?.(event.pointerId);};
-    mark.onpointermove=event=>{
-      if(!drag) return;
-      if(Math.hypot(event.clientX-drag.x,event.clientY-drag.y)>3) drag.moved=true;
-      if(!drag.moved) return;
-      const point=svg.createSVGPoint();point.x=event.clientX;point.y=event.clientY;
-      const local=point.matrixTransform(svg.getScreenCTM().inverse());
-      layout[id]={x:Math.min(GRAPH.width-GRAPH.margin,Math.max(GRAPH.margin,local.x)),y:Math.min(GRAPH.height-GRAPH.margin,Math.max(GRAPH.margin,local.y))};
-      placeRing(graph,layout,byId,radius);
-    };
-    mark.onpointerup=()=>{const click=drag&&!drag.moved;drag=null;if(click) activate();};
-  });
+  element('ring-graph').innerHTML=`<svg id="ring-svg" class="${[crowded&&'ring-crowded',!animate&&'ring-static',ringFlowPaused&&'ring-paused'].filter(Boolean).join(' ')}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Money flows between ${graph.shown_accounts} accounts of the selected ring"><defs><filter id="ring-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="3.2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>${gradients}${['in','out','other','loop'].map(marker).join('')}</defs><rect class="ring-backdrop" width="${width}" height="${height}"/>${lanes}<g id="ring-viewport"><g class="ring-links">${linkMarkup}</g><g class="ring-hits">${hitMarkup}</g><g class="ring-dots" filter="url(#ring-glow)">${dotMarkup}</g><g class="ring-accounts">${nodeMarkup}</g></g></svg>`;
+  element('ring-graph-note').textContent=`${graph.truncated?`Showing ${graph.shown_accounts} of ${graph.total_accounts} accounts: every hub and loop account, then counterparties by payment volume. `:''}${animate?'Moving dots are payments, travelling the way the money went; more dots means more payments, bigger dots more USD.':'Arrows show the direction of the money.'} Larger accounts moved more money. ${crowded?'Loop-account names appear on hover. ':''}Hover to trace an account, ${animate?'drag one to pull on its links':'drag to rearrange'}, drag the background to pan.`;
+  element('ring-flow').hidden=!animate;element('ring-legend-flow').hidden=!animate;
+  bindRingScene(scene);
   if(selectedAccount&&byId.has(selectedAccount)) showAccount(selectedAccount);
   else element('ring-node').innerHTML='<h3>Account details</h3><p>Select an account in the graph.</p>';
 }
 
-// Moves nodes and trims each link to stop at the edge of its target circle.
-function placeRing(graph,layout,byId,radius) {
+function stopRingScene() {
+  if(ringScene?.raf!=null&&typeof cancelAnimationFrame==='function') cancelAnimationFrame(ringScene.raf);
+  if(ringScene) ringScene.raf=null;
+  hideRingTip();
+}
+
+// Caches the drawn elements, wires up pointer, keyboard and wheel input, then starts the animation.
+function bindRingScene(scene) {
   const svg=element('ring-svg');
-  if(!svg?.querySelectorAll) return;
-  svg.querySelectorAll('[data-node]').forEach(mark=>{const p=layout[mark.dataset.node];mark.setAttribute('transform',`translate(${p.x.toFixed(1)},${p.y.toFixed(1)})`);});
-  svg.querySelectorAll('[data-link]').forEach(line=>{
-    const link=graph.links[Number(line.dataset.link)], a=layout[link.source], b=layout[link.target];
-    const d=Math.hypot(b.x-a.x,b.y-a.y)||1, from=radius(byId.get(link.source))+1, to=radius(byId.get(link.target))+3;
-    line.setAttribute('x1',(a.x+(b.x-a.x)*from/d).toFixed(1));line.setAttribute('y1',(a.y+(b.y-a.y)*from/d).toFixed(1));
-    line.setAttribute('x2',(b.x-(b.x-a.x)*to/d).toFixed(1));line.setAttribute('y2',(b.y-(b.y-a.y)*to/d).toFixed(1));
+  if(!svg?.querySelector) return;
+  const all=selector=>Array.from(svg.querySelectorAll(selector));
+  scene.svg=svg;scene.viewport=svg.querySelector('#ring-viewport');
+  scene.nodeEls=Object.fromEntries(all('[data-node]').map(mark=>[mark.dataset.node,mark]));
+  scene.linkEls=all('[data-link]');scene.hitEls=all('[data-hit]');scene.dotEls=all('[data-dot]');
+  scene.gradEls=scene.graph.links.map((link,i)=>svg.querySelector(`#ring-grad-${i}`));
+  if(!scene.view) fitRing(scene,false); else applyRingView(scene);
+  drawRingNodes(scene);drawRingDots(scene,0);
+
+  const toViewport=event=>{const point=svg.createSVGPoint();point.x=event.clientX;point.y=event.clientY;return point.matrixTransform(scene.viewport.getScreenCTM().inverse());};
+  const toSvg=event=>{const point=svg.createSVGPoint();point.x=event.clientX;point.y=event.clientY;return point.matrixTransform(svg.getScreenCTM().inverse());};
+  const activate=id=>{selectedAccount=id;showAccount(id);Object.entries(scene.nodeEls).forEach(([other,mark])=>mark.classList.toggle('ring-node-selected',other===id));};
+  svg.onpointerdown=event=>{
+    if(event.button>0) return;
+    cancelRingTween(scene);
+    const mark=event.target.closest?.('[data-node]');
+    scene.gesture={id:mark?.dataset.node||null,x:event.clientX,y:event.clientY,start:toSvg(event),view:{...scene.view},moved:false};
+    svg.setPointerCapture?.(event.pointerId);
+  };
+  svg.onpointermove=event=>{
+    const gesture=scene.gesture;
+    if(!gesture) {hoverFromEvent(scene,event);return;}
+    if(!gesture.moved&&Math.hypot(event.clientX-gesture.x,event.clientY-gesture.y)>3) {
+      gesture.moved=true;hideRingTip();
+      if(gesture.id) {scene.drag=gesture.id;setRingHover(scene,gesture.id);svg.classList.add('ring-dragging');}
+      else svg.classList.add('ring-panning');
+    }
+    if(!gesture.moved) return;
+    if(gesture.id) {
+      const local=toViewport(event), p=scene.pos[gesture.id], {width,height}=scene;
+      p.x=Math.min(width-12,Math.max(12,local.x));p.y=Math.min(height-12,Math.max(12,local.y));p.vx=p.vy=0;
+      if(!scene.animate) {scene.layout[gesture.id]={x:p.x,y:p.y};drawRingNodes(scene);}
+      wakeRing(scene);
+    } else {
+      const now=toSvg(event);
+      scene.view={...gesture.view,x:gesture.view.x+now.x-gesture.start.x,y:gesture.view.y+now.y-gesture.start.y};
+      applyRingView(scene);
+    }
+  };
+  svg.onpointerup=svg.onpointercancel=event=>{
+    const gesture=scene.gesture;scene.gesture=null;
+    svg.classList.remove('ring-dragging','ring-panning');
+    if(!gesture) return;
+    // Let go and the account springs back into place, like Obsidian's graph (it stays put when motion is off).
+    if(gesture.id&&gesture.moved) {scene.drag=null;scene.settled=false;wakeRing(scene);hoverFromEvent(scene,event);}
+    else if(gesture.id&&event.type==='pointerup') activate(gesture.id);
+  };
+  svg.onpointerleave=()=>{if(!scene.gesture) {setRingHover(scene,null);hideRingTip();}};
+  // Pinch on a trackpad, or Ctrl/⌘ + scroll, zooms; plain scrolling keeps scrolling the page.
+  svg.onwheel=event=>{if(!(event.ctrlKey||event.metaKey)) return;event.preventDefault();zoomRing(Math.exp(-event.deltaY*.01),toSvg(event));};
+  Object.entries(scene.nodeEls).forEach(([id,mark])=>{
+    mark.onfocus=()=>{setRingHover(scene,id);showRingTip(scene,{node:id},mark.getBoundingClientRect());};
+    mark.onblur=()=>{setRingHover(scene,null);hideRingTip();};
+    mark.onkeydown=event=>{if(event.key==='Enter'||event.key===' ') {event.preventDefault();activate(id);}};
   });
+  wakeRing(scene);
+}
+
+function hoverFromEvent(scene,event) {
+  const mark=event.target.closest?.('[data-node]'), hit=event.target.closest?.('[data-hit]');
+  if(mark) {setRingHover(scene,mark.dataset.node);showRingTip(scene,{node:mark.dataset.node},event);}
+  else if(hit) {setRingHover(scene,null,Number(hit.dataset.hit));showRingTip(scene,{link:Number(hit.dataset.hit)},event);}
+  else {setRingHover(scene,null);hideRingTip();}
+}
+
+// Highlights an account and its direct links (or one link), and fades everything else.
+function setRingHover(scene,id,linkIndex=null) {
+  if(scene.hover===id&&scene.hoverLink===linkIndex) return;
+  scene.hover=id;scene.hoverLink=linkIndex;scene.settled=false;
+  const svg=scene.svg, links=scene.graph.links, active=id!=null||linkIndex!=null;
+  const lit=new Set(id!=null?[id,...scene.adjacent[id]]:linkIndex!=null?[links[linkIndex].source,links[linkIndex].target]:[]);
+  scene.lit=lit;
+  const litLink=i=>id!=null?links[i].source===id||links[i].target===id:i===linkIndex;
+  svg.classList.toggle('ring-dim',active);
+  Object.entries(scene.nodeEls).forEach(([node,mark])=>mark.classList.toggle('ring-hl',lit.has(node)));
+  scene.linkEls.forEach((path,i)=>path.classList.toggle('ring-hl',active&&litLink(i)));
+  scene.dotEls.forEach((dot,i)=>dot.classList.toggle('ring-hl',active&&litLink(scene.dots[i].link)));
+  wakeRing(scene);
+}
+
+function wakeRing(scene) {
+  if(!scene.animate||scene!==ringScene||scene.raf!=null||!ringVisible) return;
+  scene.last=0;scene.raf=requestAnimationFrame(time=>ringFrame(scene,time));
+}
+
+function ringFrame(scene,time) {
+  scene.raf=null;
+  if(scene!==ringScene||!ringVisible) return;
+  const dt=scene.last?Math.min(time-scene.last,50):16.7;scene.last=time;
+  if(!scene.settled) {scene.settled=stepRing(scene,dt)<.03*scene.ids.length&&!scene.drag;drawRingNodes(scene);}
+  if(!ringFlowPaused) drawRingDots(scene,dt);
+  if(!scene.settled||!ringFlowPaused) scene.raf=requestAnimationFrame(next=>ringFrame(scene,next));
+}
+
+// One physics step. Each account springs toward its rest position, shifted by
+// part of its neighbours' average displacement (so a dragged account tows its
+// links) and, while another account is hovered, leaning slightly toward it.
+// Averaging keeps the coupling stable however many links a hub has.
+function stepRing(scene,dt) {
+  const f=Math.min(dt/16.7,2.5), {pos,layout,adjacent,hover,drag}=scene, damping=Math.pow(.74,f);
+  const shift=Object.fromEntries(scene.ids.map(id=>[id,{x:pos[id].x-layout[id].x,y:pos[id].y-layout[id].y}]));
+  let energy=0;
+  for(const id of scene.ids) {
+    const p=pos[id], near=adjacent[id];
+    const target=scene.scale[id]+(((id===hover&&!drag)?1.35:1)-scene.scale[id])*Math.min(1,.25*f);
+    energy+=Math.abs(target-scene.scale[id])*20;scene.scale[id]=target;
+    if(id===drag) continue;
+    let tx=layout[id].x, ty=layout[id].y;
+    if(near.length) {let sx=0, sy=0;for(const other of near) {sx+=shift[other].x;sy+=shift[other].y;}tx+=.45*sx/near.length;ty+=.45*sy/near.length;}
+    if(hover&&!drag&&id!==hover&&scene.adjacentSet[hover].has(id)) {tx+=(pos[hover].x-tx)*.1;ty+=(pos[hover].y-ty)*.1;}
+    p.vx=(p.vx+(tx-p.x)*.07*f)*damping;p.vy=(p.vy+(ty-p.y)*.07*f)*damping;
+    p.x+=p.vx*f;p.y+=p.vy*f;
+    energy+=Math.abs(p.vx)+Math.abs(p.vy)+.05*(Math.abs(tx-p.x)+Math.abs(ty-p.y));
+  }
+  return energy;
+}
+
+// Curved link from source to target. Links that have a reverse partner bend
+// further so A → B and B → A never draw on top of each other.
+function ringGeometry(scene,i) {
+  const link=scene.graph.links[i], a=scene.pos[link.source], b=scene.pos[link.target];
+  const dx=b.x-a.x, dy=b.y-a.y, bend=scene.reverse[i]?.2:.07;
+  const c={x:(a.x+b.x)/2+dy*bend,y:(a.y+b.y)/2-dx*bend};
+  const trim=(p,r)=>{const ex=c.x-p.x, ey=c.y-p.y, e=Math.hypot(ex,ey)||1;return {x:p.x+ex/e*r,y:p.y+ey/e*r};};
+  const from=trim(a,scene.radius[link.source]*scene.scale[link.source]+1), to=trim(b,scene.radius[link.target]*scene.scale[link.target]+2);
+  return {from,c,to,length:Math.max(20,Math.hypot(dx,dy))};
+}
+
+function drawRingNodes(scene) {
+  if(!scene.nodeEls) return;
+  for(const id of scene.ids) {const p=scene.pos[id];scene.nodeEls[id]?.setAttribute('transform',`translate(${xy(p).replace(' ',',')}) scale(${scene.scale[id].toFixed(3)})`);}
+  scene.graph.links.forEach((link,i)=>{
+    const g=scene.geometry[i]=ringGeometry(scene,i), mid=quadPoint(g.from,g.c,g.to,.5);
+    const left={x:(g.from.x+g.c.x)/2,y:(g.from.y+g.c.y)/2}, right={x:(g.c.x+g.to.x)/2,y:(g.c.y+g.to.y)/2};
+    // Split at the midpoint so the direction arrow (marker-mid) sits halfway along the curve.
+    const d=`M${xy(g.from)}Q${xy(left)} ${xy(mid)}Q${xy(right)} ${xy(g.to)}`;
+    scene.linkEls[i]?.setAttribute('d',d);scene.hitEls[i]?.setAttribute('d',d);
+    const grad=scene.gradEls[i];
+    if(grad) {grad.setAttribute('x1',g.from.x.toFixed(1));grad.setAttribute('y1',g.from.y.toFixed(1));grad.setAttribute('x2',g.to.x.toFixed(1));grad.setAttribute('y2',g.to.y.toFixed(1));}
+  });
+}
+
+// Payment dots move at a steady on-screen speed and swell mid-link, so each reads as a pulse of money.
+function drawRingDots(scene,dt) {
+  if(!scene.dotEls?.length||!scene.animate) return;
+  scene.dots.forEach((dot,i)=>{
+    const g=scene.geometry[dot.link];
+    if(!g) return;
+    dot.u=(dot.u+dt/1000*85/g.length)%1;
+    const p=quadPoint(g.from,g.c,g.to,dot.u), el=scene.dotEls[i];
+    el.setAttribute('cx',p.x.toFixed(1));el.setAttribute('cy',p.y.toFixed(1));
+    el.setAttribute('r',(dot.r*(.35+.65*Math.sin(Math.PI*dot.u))).toFixed(2));
+  });
+}
+
+// ---- Zoom, pan and fit ----
+function applyRingView(scene) {
+  const {k,x,y}=scene.view;
+  scene.viewport?.setAttribute('transform',`translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${k.toFixed(3)})`);
+  scene.svg?.classList.toggle('ring-zoomed',k>=1.45);
+}
+
+function fitRing(scene,animated=true) {
+  const points=scene.ids.map(id=>scene.layout[id]), pad=40;
+  const minX=Math.min(...points.map(p=>p.x))-pad, maxX=Math.max(...points.map(p=>p.x))+pad;
+  const minY=Math.min(...points.map(p=>p.y))-pad, maxY=Math.max(...points.map(p=>p.y))+pad;
+  const k=Math.min(1.6,Math.max(.6,Math.min(scene.width/(maxX-minX),scene.height/(maxY-minY))));
+  const target={k,x:scene.width/2-k*(minX+maxX)/2,y:scene.height/2-k*(minY+maxY)/2};
+  if(!animated||!scene.animate||!scene.view) {scene.view=target;applyRingView(scene);return;}
+  tweenRingView(scene,target);
+}
+
+function zoomRing(factor,around) {
+  const scene=ringScene;
+  if(!scene?.view) return;
+  // Repeated clicks build on where the running zoom is heading, not where it currently is.
+  const {k,x,y}=scene.tweenTarget||scene.view;
+  if(around) cancelRingTween(scene);
+  const next=Math.min(4,Math.max(.5,k*factor)), at=around||{x:scene.width/2,y:scene.height/2};
+  const target={k:next,x:at.x-(at.x-x)*next/k,y:at.y-(at.y-y)*next/k};
+  if(around) {scene.view=target;applyRingView(scene);} else tweenRingView(scene,target);
+}
+
+function tweenRingView(scene,target) {
+  if(!scene.animate) {scene.view=target;applyRingView(scene);return;}
+  const from={...scene.view}, start=performance.now(), token=scene.tween=(scene.tween||0)+1;
+  scene.tweenTarget=target;
+  const tick=time=>{
+    if(scene.tween!==token||scene!==ringScene) return;
+    const t=Math.min(1,(time-start)/320), e=1-Math.pow(1-t,3);
+    scene.view={k:from.k+(target.k-from.k)*e,x:from.x+(target.x-from.x)*e,y:from.y+(target.y-from.y)*e};
+    applyRingView(scene);
+    if(t<1) requestAnimationFrame(tick); else scene.tweenTarget=null;
+  };
+  requestAnimationFrame(tick);
+}
+
+function cancelRingTween(scene) {scene.tween=(scene.tween||0)+1;scene.tweenTarget=null;}
+
+// ---- Hover card ----
+function ringTipContent(scene,target) {
+  if(target.node!=null) {
+    const node=scene.byId.get(target.node), role=scene.roles[target.node], links=scene.graph.links;
+    const inRing=links.filter(link=>link.target===target.node).length, outRing=links.filter(link=>link.source===target.node).length;
+    return `<span class="tip-role" style="--role:${RING_GLOW[role]}">${escapeText(ROLE[role].label)}</span><strong class="tip-title">${escapeText(node.id)}</strong><div class="tip-grid"><span><small>Received</small>${escapeText(dollars(node.in_usd))}<em>${escapeText(plural(node.fan_in,'sender'))}</em></span><span><small>Sent</small>${escapeText(dollars(node.out_usd))}<em>${escapeText(plural(node.fan_out,'receiver'))}</em></span></div><small class="tip-foot">In this ring: ${inRing} in · ${outRing} out · click for details</small>`;
+  }
+  const link=scene.graph.links[target.link], role=scene.roles;
+  const story=link.loop?'Part of a timed loop':role[link.target]==='hub'?'Money into the hub':role[link.source]==='hub'?'Money out of the hub':'Payments between ring accounts';
+  return `<span class="tip-role" style="--role:${link.loop?RING_TONE.loop:RING_GLOW[role[link.source]]}">${escapeText(story)}</span><strong class="tip-title">${escapeText(shortAccount(link.source))} → ${escapeText(shortAccount(link.target))}</strong><div class="tip-grid"><span><small>Payments</small>${escapeText(integer(link.txns))}</span><span><small>USD</small>${escapeText(dollars(link.usd))}</span></div>`;
+}
+
+// Node cards anchor to the account; link cards follow the pointer. The card takes
+// whichever side (above, below, right, left) covers the fewest highlighted accounts.
+function showRingTip(scene,target,at) {
+  const tip=element('ring-tip'), stage=tip?.parentElement;
+  if(!tip||!stage?.getBoundingClientRect||scene.gesture?.moved) return;
+  const key=target.node!=null?'n'+target.node:'l'+target.link;
+  if(tip.dataset.key===key&&target.node!=null&&!tip.hidden) return;
+  if(tip.dataset.key!==key) {tip.innerHTML=ringTipContent(scene,target);tip.dataset.key=key;}
+  tip.hidden=false;
+  const box=stage.getBoundingClientRect(), w=tip.offsetWidth||220, h=tip.offsetHeight||90;
+  const centre=id=>{const r=scene.nodeEls[id]?.querySelector('.ring-core')?.getBoundingClientRect();return r&&{x:r.left+r.width/2-box.left,y:r.top+r.height/2-box.top,r:r.height/2};};
+  const anchor=target.node!=null?centre(target.node):null;
+  const ax=anchor?anchor.x:at.clientX-box.left, ay=anchor?anchor.y:at.clientY-box.top, gap=anchor?anchor.r+28:18;
+  const clamp=([x,y])=>[Math.min(Math.max(8,x),box.width-w-8),Math.min(Math.max(8,y),box.height-h-8)];
+  const options=[[ax-w/2,ay-gap-h],[ax-w/2,ay+gap],[ax+gap,ay-h/2],[ax-gap-w,ay-h/2]].map(clamp);
+  const lit=[...(scene.lit||[])].map(centre).filter(Boolean);
+  // Each highlighted account counts with its name label (about 90px wide, above the dot).
+  const covers=([x,y])=>lit.filter(p=>p.x+45>x&&p.x-45<x+w&&p.y+p.r+4>y&&p.y-p.r-22<y+h).length+(ax>x-8&&ax<x+w+8&&ay>y-8&&ay<y+h+8?100:0);
+  const [left,top]=options.reduce((best,option)=>covers(option)<covers(best)?option:best);
+  tip.style.left=`${left}px`;tip.style.top=`${top}px`;
+}
+
+function hideRingTip() {const tip=element('ring-tip');if(tip) {tip.hidden=true;if(tip.dataset) tip.dataset.key='';}}
+
+function toggleRingFlow() {
+  ringFlowPaused=!ringFlowPaused;
+  const button=element('ring-flow');
+  button.textContent=ringFlowPaused?'Play flow':'Pause flow';button.setAttribute('aria-pressed',String(ringFlowPaused));
+  ringScene?.svg?.classList.toggle('ring-paused',ringFlowPaused);
+  if(ringScene) wakeRing(ringScene);
 }
 
 function showAccount(id) {
