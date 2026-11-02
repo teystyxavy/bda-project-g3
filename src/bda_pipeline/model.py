@@ -3,16 +3,21 @@ Splits come from ``splits.py`` (recorded in the snapshot) and the selection is f
 import gc
 import hashlib
 import json
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.compute as pc
 import pyarrow.dataset as ds
 
 from .analytics import ranking_metrics
 from .batch import FEATURES, QUEUE_COLUMNS
-from .splits import LEGACY_SPLITS, eval_names
+from .splits import LEGACY_SPLITS, SPARSE_FRACTION, eval_names, sparse_tail_start
+
+# Rows per streamed batch: bounds the memory held while training reads a split (about 0.5 GB of features at 2 million rows).
+BATCH_ROWS = 2_000_000
 
 # String columns that are one-hot encoded for the model.
 CATEGORICAL = ['payment_format', 'payment_currency', 'receiving_currency']
@@ -99,18 +104,129 @@ def choose_candidate(candidates):
                   -(c['metrics']['precision_at_k'] or 0), c['name']))[0]
 
 
+def window_filter(splits, name):
+    """The pyarrow timestamp condition for one half-open ``(start, end)`` window of ``splits``."""
+    start, end = splits[name]
+    return (ds.field('timestamp') >= pd.Timestamp(start)) & (ds.field('timestamp') < pd.Timestamp(end))
+
+
 def read_split(dataset, name, splits):
     """Loads one chronological split of ``splits`` (``(start, end)`` dates), pushing the timestamp filter down to pyarrow and reading only ``INPUT_COLUMNS``.
     Raises ValueError if the split is empty, has non-0/1 labels or has duplicate ``transaction_id``."""
-    start, end = splits[name]
-    condition = ((ds.field('timestamp') >= pd.Timestamp(start)) &
-                 (ds.field('timestamp') < pd.Timestamp(end)))
-    frame = dataset.to_table(columns=INPUT_COLUMNS, filter=condition).to_pandas()
+    frame = dataset.to_table(columns=INPUT_COLUMNS, filter=window_filter(splits, name)).to_pandas()
     if frame.empty or not frame.is_laundering.isin([0, 1]).all():
         raise ValueError(f'Empty split or invalid labels: {name}')
     if frame.transaction_id.duplicated().any():
         raise ValueError(f'Duplicate transaction IDs: {name}')
     return frame
+
+
+def encode_columns():
+    """The columns ``encode`` reads, plus the label and row index the streamed passes need (looked up at call time, as ``FEATURES`` can be patched)."""
+    return ['source_row_index', 'timestamp', 'from_bank', 'from_account', 'to_bank', 'to_account',
+            'amount_usd_asof', 'is_laundering', *FEATURES, *CATEGORICAL]
+
+
+def scan_split(dataset, name, splits, batch_rows=BATCH_ROWS):
+    """Streams one split's labels, row indexes and categorical columns, so training can fit its vocabulary and class counts without loading the split.
+    Returns ``rows``, ``positives`` and ``vocabulary``; raises the ``read_split`` ValueErrors for an empty split, non-0/1 labels or a repeated ``source_row_index``
+    (one-to-one with ``transaction_id``)."""
+    rows = positives = 0
+    seen = {column: set() for column in CATEGORICAL}
+    indexes = []
+    for batch in dataset.to_batches(columns=['source_row_index', 'is_laundering', *CATEGORICAL],
+                                    filter=window_filter(splits, name), batch_size=batch_rows):
+        labels = batch.column('is_laundering').to_numpy(zero_copy_only=False)
+        if not np.isin(labels, [0, 1]).all():
+            raise ValueError(f'Empty split or invalid labels: {name}')
+        rows += len(labels)
+        positives += int(labels.sum())
+        indexes.append(batch.column('source_row_index').to_numpy(zero_copy_only=False))
+        for column in CATEGORICAL:
+            seen[column].update(pc.unique(batch.column(column)).to_pylist())
+    if not rows:
+        raise ValueError(f'Empty split or invalid labels: {name}')
+    indexes = np.concatenate(indexes)
+    indexes.sort()
+    if (indexes[1:] == indexes[:-1]).any():
+        raise ValueError(f'Duplicate transaction IDs: {name}')
+    # fit_encoder drops nulls and sorts, exactly as for a loaded split.
+    vocabulary = fit_encoder(pd.DataFrame({column: pd.Series(list(values)) for column, values in seen.items()}))
+    return dict(rows=rows, positives=positives, vocabulary=vocabulary)
+
+
+def batch_iterator(dataset, name, splits, vocabulary, batch_rows=BATCH_ROWS):
+    """An XGBoost ``DataIter`` over one split: each batch is encoded with the fixed ``vocabulary`` and handed over with its labels, so the full matrix never exists.
+    ``feature_names`` is set from the first batch. XGBoost reads the stream twice (sketch, then build); a different batch sequence on the second pass raises ValueError."""
+    import xgboost as xgb
+
+    class Batches(xgb.DataIter):
+        def __init__(self):
+            super().__init__()
+            self.batches, self.current, self.passes, self.feature_names = None, [], [], None
+
+        def reset(self):
+            self.batches, self.current = None, []
+
+        def next(self, input_data):
+            if self.batches is None:
+                self.batches = dataset.to_batches(columns=encode_columns(), filter=window_filter(splits, name), batch_size=batch_rows)
+            batch = next(self.batches, None)
+            while batch is not None and not batch.num_rows:
+                batch = next(self.batches, None)
+            if batch is None:
+                if self.current:
+                    self.passes.append(self.current)
+                    self.current = []
+                if any(done != self.passes[0] for done in self.passes[1:]):
+                    raise ValueError('Batch order changed between passes')
+                return False
+            frame = batch.to_pandas()
+            matrix = encode(frame, vocabulary)
+            self.feature_names = self.feature_names or matrix.columns.tolist()
+            index = frame.source_row_index.to_numpy()
+            self.current.append((int(index[0]), int(index[-1]), len(frame)))
+            input_data(data=matrix, label=frame.is_laundering.to_numpy().astype(np.float32))
+            return True
+
+    return Batches()
+
+
+def score_batches(models, dataset, name, splits, vocabulary, threads, batch_rows=BATCH_ROWS):
+    """Streams one split once and scores it with every model. Returns the ranking columns (timestamp, source_row_index, is_laundering, baseline risk_score) and one score array per model."""
+    import xgboost as xgb
+    columns = list(dict.fromkeys([*encode_columns(), 'risk_score']))
+    parts, scores = [], [[] for _ in models]
+    for batch in dataset.to_batches(columns=columns, filter=window_filter(splits, name), batch_size=batch_rows):
+        if not batch.num_rows:
+            continue
+        frame = batch.to_pandas()
+        matrix = xgb.DMatrix(encode(frame, vocabulary), nthread=threads)
+        for out, model in zip(scores, models):
+            out.append(model.predict(matrix))
+        parts.append(frame[['timestamp', 'source_row_index', 'is_laundering', 'risk_score']])
+    return pd.concat(parts, ignore_index=True), [np.concatenate(out) for out in scores]
+
+
+def daily_timestamp_counts(dataset, batch_rows=BATCH_ROWS):
+    """Rows per ISO date, counted from the ``timestamp`` column alone in batches."""
+    counts = Counter()
+    for batch in dataset.to_batches(columns=['timestamp'], batch_size=batch_rows):
+        counts.update(batch.column('timestamp').to_pandas().dt.strftime('%Y-%m-%d').value_counts().to_dict())
+    return dict(counts)
+
+
+def tail_breakdown(frame, predictions, cutoff):
+    """Model and baseline metrics for the dense part (before ``cutoff``) and the sparse tail of a window; empty when the window lies wholly on one side."""
+    late = (frame.timestamp >= pd.Timestamp(cutoff)).to_numpy()
+    if late.all() or not late.any():
+        return {}
+    result = {}
+    for part, mask in [('dense', ~late), ('tail', late)]:
+        rows = frame[mask]
+        result[part] = dict(model=ranking_metrics(rank(rows, predictions[mask])),
+                            baseline=ranking_metrics(rank(rows, rows.risk_score.to_numpy())))
+    return result
 
 
 def explain_queue(model, frame, scores, vocabulary, k=100):
@@ -210,12 +326,13 @@ class SavedRanker:
         return queue
 
 
-def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
+def compare_models(scored, snapshot_path, output, rounds=120, threads=4, batch_rows=BATCH_ROWS):
     """Trains the candidates, picks one on validation, freezes ``selection.json`` and ``features.json`` before reading test data, then evaluates every period against the baseline.
-    Writes to a fresh ``output`` directory, returns the ``comparison.json`` report and raises ValueError on any input or coverage failure."""
+    Training and validation are streamed in batches of ``batch_rows``, so neither split is ever held in memory. Windows that reach into the sparse tail (see ``sparse_tail_start``)
+    also report dense-day and tail metrics. Writes to a fresh ``output`` directory, returns the ``comparison.json`` report and raises ValueError on any input or coverage failure."""
     import xgboost as xgb
-    if rounds <= 0 or threads <= 0:
-        raise ValueError('Rounds and threads must be positive')
+    if rounds <= 0 or threads <= 0 or batch_rows <= 0:
+        raise ValueError('Rounds, threads and batch rows must be positive')
     output = Path(output)
     if output.exists():
         raise ValueError('Use a fresh output directory')
@@ -232,27 +349,27 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
     if dataset.count_rows() != snapshot['full_rows']:
         raise ValueError('Scored input row count mismatch')
     output.mkdir(parents=True)
-    training, validation = read_split(dataset, 'train', splits), read_split(dataset, 'validation', splits)
-    vocabulary = fit_encoder(training)
-    xtrain, xvalid = encode(training, vocabulary), encode(validation, vocabulary)
-    positives = int(training.is_laundering.sum())
-    negatives = len(training) - positives
+    # Pass 1 streams labels and categories only; the vocabulary is fitted on training alone.
+    train_scan, valid_scan = scan_split(dataset, 'train', splits, batch_rows), scan_split(dataset, 'validation', splits, batch_rows)
+    vocabulary = train_scan['vocabulary']
+    positives = train_scan['positives']
+    negatives = train_scan['rows'] - positives
     # Training needs both classes; validation needs positives or AP is undefined.
-    if not positives or not negatives or not validation.is_laundering.sum():
+    if not positives or not negatives or not valid_scan['positives']:
         raise ValueError('Training needs both classes and validation needs positives')
-    train_counts = dict(rows=len(training), positives=positives)
-    feature_names = xtrain.columns.tolist()
-    # QuantileDMatrix pre-bins features to save memory; ref=dtrain reuses the training bin edges for validation.
-    dtrain = xgb.QuantileDMatrix(xtrain, label=training.is_laundering, nthread=threads)
-    dvalid = xgb.QuantileDMatrix(xvalid, label=validation.is_laundering, ref=dtrain, nthread=threads)
-    del training, xtrain
-    gc.collect()
+    train_counts = dict(rows=train_scan['rows'], positives=positives)
+    # QuantileDMatrix bins features batch by batch (sketch pass, then build pass), so the float matrix never exists;
+    # ref=dtrain reuses the training bin edges for validation.
+    train_batches = batch_iterator(dataset, 'train', splits, vocabulary, batch_rows)
+    dtrain = xgb.QuantileDMatrix(train_batches, nthread=threads)
+    feature_names = train_batches.feature_names
+    dvalid = xgb.QuantileDMatrix(batch_iterator(dataset, 'validation', splits, vocabulary, batch_rows), ref=dtrain, nthread=threads)
     # aucpr suits rare positives; a scale_pos_weight above 1 up-weights laundering rows, so scores are then not calibrated probabilities.
     # The weight differs per candidate, so it is recorded with each candidate rather than in these shared parameters.
     params = dict(objective='binary:logistic', tree_method='hist', device='cpu',
                   eval_metric='aucpr', eta=.1, min_child_weight=10, subsample=1,
                   colsample_bytree=1, seed=459, nthread=threads)
-    candidates = []
+    trained = []
     for candidate in CANDIDATES:
         weight = positive_weight(candidate, positives, negatives)
         print(f"Training {candidate['name']} (scale_pos_weight {weight:.4g}) on {train_counts['rows']:,} rows", flush=True)
@@ -262,12 +379,15 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
                           early_stopping_rounds=20, verbose_eval=20)
         # Slice explicitly: later predictions and saved artifacts use selected trees only.
         model = model[:model.best_iteration + 1]
-        predictions = model.predict(xgb.DMatrix(xvalid, nthread=threads))
-        metrics = ranking_metrics(rank(validation, predictions))
         path = output / (candidate['name'] + '.ubj')
         model.save_model(path)
+        trained.append((candidate, weight, model, path))
+    # One validation stream scores every candidate.
+    validation, predictions = score_batches([model for _, _, model, _ in trained], dataset, 'validation', splits, vocabulary, threads, batch_rows)
+    candidates = []
+    for (candidate, weight, model, path), scores in zip(trained, predictions):
         candidates.append(dict(**candidate, scale_pos_weight=weight, trees=model.num_boosted_rounds(),
-                               metrics=metrics, model_file=path.name, sha256=digest(path)))
+                               metrics=ranking_metrics(rank(validation, scores)), model_file=path.name, sha256=digest(path)))
         print(json.dumps(candidates[-1]), flush=True)
     selected = choose_candidate(candidates)
     # The rule baseline's risk_score (already in the input) ranked the same way.
@@ -288,8 +408,13 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
     # Reload from disk so evaluation uses exactly the saved artifact.
     model = xgb.Booster(model_file=output / selected['model_file'])
     model.set_param({'nthread': threads})
-    del dtrain, dvalid, xvalid, validation
+    del dtrain, dvalid, validation
     gc.collect()
+    # Days holding under SPARSE_FRACTION of the median day, at the end of the data, are reported apart from the dense days.
+    counts = daily_timestamp_counts(dataset, batch_rows)
+    tail_start = sparse_tail_start(counts)
+    sparse_tail = None if tail_start is None else dict(
+        fraction=SPARSE_FRACTION, start=tail_start, median_daily_rows=float(np.median(list(counts.values()))))
     metrics = {}
     # Running totals for the coverage check below (start with training).
     total_rows = train_counts['rows']
@@ -298,7 +423,8 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
         frame = read_split(dataset, name, splits)
         predictions = model.predict(xgb.DMatrix(encode(frame, vocabulary), nthread=threads))
         metrics[name] = dict(model=ranking_metrics(rank(frame, predictions)),
-                            baseline=ranking_metrics(rank(frame, frame.risk_score.to_numpy())))
+                            baseline=ranking_metrics(rank(frame, frame.risk_score.to_numpy())),
+                            **(tail_breakdown(frame, predictions, tail_start) if tail_start else {}))
         explain_queue(model, frame, predictions, vocabulary).to_csv(
             output / f'model_queue_{name}.csv', index=False)
         total_rows += len(frame)
@@ -312,8 +438,8 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4):
         raise ValueError('Split coverage mismatch')
     # Hashes of selection/features let SavedRanker detect later tampering.
     report = dict(selection=selection, metrics=metrics, train=train_counts, splits=splits,
-                  total_rows=total_rows, total_positives=total_positives,
-                  parameters=params, max_rounds=rounds, xgboost_version=xgb.__version__,
+                  total_rows=total_rows, total_positives=total_positives, sparse_tail=sparse_tail,
+                  parameters=params, max_rounds=rounds, batch_rows=batch_rows, xgboost_version=xgb.__version__,
                   feature_names=feature_names, selection_sha256=digest(output / 'selection.json'),
                   feature_schema_sha256=digest(output / 'features.json'),
                   limitations=['Logistic ranking scores (weighted or not) are not calibrated probabilities.',

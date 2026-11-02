@@ -24,6 +24,14 @@ precision, then precision@100, then name. The choice is saved before test labels
 are loaded. Each candidate records its `scale_pos_weight`; category vocabularies are
 fitted on training only. Scores are ranking outputs, not calibrated probabilities.
 
+Training and validation are streamed from the Parquet export in batches (`batch_rows`,
+default 2,000,000) into XGBoost's `QuantileDMatrix`, so memory no longer grows with the
+size of those splits; the evaluation windows are still loaded whole. A window that reaches
+the sparse tail (trailing days under 1% of the median day) also reports `dense` and
+`tail` metrics beside its headline numbers, and `comparison.json` records the cutoff
+under `sparse_tail`. Treat the headline test figure as inflated by the tail; the dense
+figure is the comparable one.
+
 ## Inputs and outputs
 
 Input is the **verified full baseline export**, not raw CSV or model predictions:

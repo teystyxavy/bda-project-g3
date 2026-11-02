@@ -4,7 +4,8 @@ import json
 import numpy as np
 import pytest
 
-from bda_pipeline.splits import LEGACY_SPLITS, eval_names, row_share_splits, run_splits, window_label
+from bda_pipeline.splits import (LEGACY_SPLITS, eval_names, row_share_splits, run_splits, sparse_tail_start,
+                                 window_label)
 
 # Rows per day of HI-Small, 1-18 September 2022: dense for ten days, then a trickle.
 HI_SMALL = [1114921, 754449, 207382, 207430, 482650, 482089, 482751, 482773, 654467, 208325,
@@ -61,6 +62,28 @@ def test_run_splits_derives_when_training_and_reads_the_model_otherwise(tmp_path
     recorded = row_share_splits(COUNTS)
     (tmp_path / 'comparison.json').write_text(json.dumps({'splits': recorded}))
     assert run_splits(manifest, tmp_path) == recorded
+
+
+def test_hi_small_tail_starts_on_the_eleventh():
+    assert sparse_tail_start(COUNTS) == '2022-09-11'
+
+
+def test_only_a_trailing_run_of_sparse_days_is_a_tail():
+    days = {f'2022-09-{day:02d}': rows for day, rows in enumerate([1000, 1000, 5, 1000, 4, 3], 1)}
+    # The quiet day in the middle stays dense; the run at the end is the tail.
+    assert sparse_tail_start(days) == '2022-09-05'
+    # A last day that is not sparse means there is no tail.
+    assert sparse_tail_start({**days, '2022-09-06': 900}) is None
+    assert sparse_tail_start({}) is None and sparse_tail_start({'2022-09-01': 7}) is None
+
+
+def test_sparse_means_under_one_percent_of_the_median_day_and_the_first_day_stays_dense():
+    counts = {f'2022-09-{day:02d}': rows for day, rows in enumerate([1000, 1000, 1000, 10, 9], 1)}
+    assert sparse_tail_start(counts) == '2022-09-05'        # 10 is exactly 1% of the median, not below it
+    assert sparse_tail_start(counts, fraction=0.02) == '2022-09-04'
+    assert sparse_tail_start({'2022-09-01': 1, '2022-09-02': 1_000_000, '2022-09-03': 1_000_000, '2022-09-04': 1}, 0.5) == '2022-09-04'
+    # Even if every day is sparse relative to the median, the first day is kept as the dense reference.
+    assert sparse_tail_start({'2022-09-01': 1, '2022-09-02': 1, '2022-09-03': 1}, fraction=2) == '2022-09-02'
 
 
 def test_eval_names_and_labels():

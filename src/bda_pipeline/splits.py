@@ -4,9 +4,12 @@ import json
 from datetime import date, timedelta
 from itertools import accumulate
 from pathlib import Path
+from statistics import median
 
 # Share of rows in train, validation and test; boundaries snap to whole days.
 SPLIT_RATIOS = (0.6, 0.2, 0.2)
+# A day is sparse when it holds less than this share of the median day's rows.
+SPARSE_FRACTION = 0.01
 # Layout of models and snapshots saved before splits were recorded.
 LEGACY_SPLITS = {'train': ('2022-09-01', '2022-09-07'), 'validation': ('2022-09-07', '2022-09-09'),
                  'test': ('2022-09-09', '2022-09-11'), 'tail': ('2022-09-11', '2022-09-19')}
@@ -30,6 +33,19 @@ def row_share_splits(daily_counts, ratios=SPLIT_RATIOS):
     end = date.fromisoformat(days[-1]) + timedelta(1)
     return {'train': (days[0], days[train]), 'validation': (days[train], days[validation]),
             'test': (days[validation], end.isoformat())}
+
+
+def sparse_tail_start(daily_counts, fraction=SPARSE_FRACTION):
+    """First day of the trailing run of sparse days (rows below ``fraction`` of the median day), or None if the last day is not sparse.
+    Only a run reaching the last day counts, so a quiet day in the middle is never a tail, and the first day is always kept dense."""
+    days = sorted(daily_counts)
+    if not days:
+        return None
+    threshold = fraction * median(daily_counts[day] for day in days)
+    start = len(days)
+    while start > 1 and daily_counts[days[start - 1]] < threshold:
+        start -= 1
+    return days[start] if start < len(days) else None
 
 
 def eval_names(splits):
