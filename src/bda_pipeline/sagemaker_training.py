@@ -39,7 +39,7 @@ def validate_inputs(scored, snapshot):
     return {'rows': rows, 'scored_sha256': expected, 'snapshot_sha256': digest(snapshot)}
 
 
-def build_request(job_name, image_uri, rows, rounds=120, max_runtime=None):
+def build_request(job_name, image_uri, rows, rounds=300, max_runtime=None):
     """Builds the exact SageMaker ``CreateTrainingJob`` request for the run's size profile (see ``ingest_contract.training_job_request``) after checking the job name and digest-pinned image.
     Raises ValueError if any argument is outside the bounded contract."""
     validate_name(job_name)
@@ -48,7 +48,7 @@ def build_request(job_name, image_uri, rows, rounds=120, max_runtime=None):
     return training_job_request(job_name, image_uri, rows, rounds, max_runtime)
 
 
-def prepare_bundle(scored, snapshot, output, job_name, image_uri, rounds=120, max_runtime=None):
+def prepare_bundle(scored, snapshot, output, job_name, image_uri, rounds=300, max_runtime=None):
     """Writes the local bundle (``baseline/``, ``manifest/`` with ``input.json`` provenance, ``request.json``) for one job into a fresh ``output`` directory and returns the request.
     Nothing is uploaded or started here."""
     output = Path(output)
@@ -86,7 +86,7 @@ def validate_bundle(directory):
     return request
 
 
-def train_channels(baseline, manifest, work, model_dir, report_dir, rounds=120, threads=4,
+def train_channels(baseline, manifest, work, model_dir, report_dir, rounds=300, threads=4,
                    expected_rows=None):
     """Runs inside the SageMaker container: re-verifies the staged inputs and bounds, runs ``compare_models``, copies the artifacts to ``model_dir`` and reloads them with ``SavedRanker``.
     Raises ValueError on any verification or bounds failure (``train.py`` reports it as the job's FailureReason)."""

@@ -87,7 +87,7 @@ def run_profile(rows):
     return next(profile for profile in RUN_PROFILES if profile['max_rows'] is None or rows <= profile['max_rows'])
 
 
-def training_job_request(job_name, image_uri, rows, rounds=120, max_runtime=None):
+def training_job_request(job_name, image_uri, rows, rounds=300, max_runtime=None):
     """The bounded ``CreateTrainingJob`` request for a run of ``rows`` transactions: the run profile's instance, volume and runtime, network isolation, no spot or profiler.
     Raises ValueError if rounds are outside 1-500 or the runtime is outside 60 seconds to the profile's cap."""
     profile = run_profile(rows)
