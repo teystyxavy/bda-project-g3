@@ -22,6 +22,8 @@ RAW_HEADER = [
     "Timestamp", "From Bank", "Account", "To Bank", "Account", "Amount Received",
     "Receiving Currency", "Amount Paid", "Payment Currency", "Payment Format", "Is Laundering",
 ]
+# Every IBM subset the pipeline accepts (mirrors dataset_options.SUBSETS); a name missing here fails the Glue run at argument parsing.
+SUBSETS = ["HI-Small", "HI-Medium", "HI-Large", "LI-Small", "LI-Medium", "LI-Large"]
 # Accounts file column -> curated column name.
 ACCOUNT_COLUMNS = {
     "Bank Name": "bank_name", "Bank ID": "bank_id", "Account Number": "account_number",
@@ -278,7 +280,7 @@ def main():
     for name in ["transactions", "accounts", "fx", "output"]:
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--expected_rows", type=int, required=True)
-    parser.add_argument("--subset", choices=["HI-Small", "HI-Medium"], default="HI-Small")
+    parser.add_argument("--subset", choices=SUBSETS, default="HI-Small")
     parser.add_argument("--start_date", default="2022-09-01")
     parser.add_argument("--end_date", default="2022-09-18")
     parser.add_argument("--shuffle_partitions", type=int, default=8)

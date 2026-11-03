@@ -19,7 +19,8 @@ import pyarrow.dataset as ds
 
 from .acquisition import validate_fx
 from .analytics import add_behaviour, ranking_metrics
-from .batch import COLUMNS, FEATURES, daily_row_counts, evaluation_periods, export_verified_batch
+from .batch import (COLUMNS, FEATURES, RECEIVER_FEATURES, SENDER_FEATURES, daily_row_counts, evaluation_periods,
+                    export_verified_batch)
 from .cloud_scores import checked_indices, feature_fingerprints
 from .dashboard import records
 from .inference import SCORING_COLUMNS, verify_artifacts
@@ -63,6 +64,23 @@ def raw_fingerprints(frame):
                        for row in normalized.itertuples(index=False, name=None)], dtype='S32')
 
 
+def verify_behaviour(sender_cohort, receiver_cohort):
+    """Recomputes the behaviour features of each cohort's complete history with ``analytics.add_behaviour`` and requires Glue's values to match exactly.
+    The sender cohort proves ``SENDER_FEATURES`` (outgoing and directed-pair) and the receiver cohort ``RECEIVER_FEATURES`` (incoming), because each side
+    only holds the complete history of its own accounts. Each argument is a list of frames; an empty list is skipped.
+    Returns the number of reference rows; raises AssertionError on the first mismatch."""
+    checked_rows = 0
+    for cohort, features in [(sender_cohort, SENDER_FEATURES), (receiver_cohort, RECEIVER_FEATURES)]:
+        if cohort:
+            # Original file order, because the windows depend on chronological order.
+            reference = pd.concat(cohort, ignore_index=True).sort_values('source_row_index').reset_index(drop=True)
+            actual = reference[features].copy()
+            recalculated = add_behaviour(reference)
+            np.testing.assert_array_equal(actual.to_numpy(), recalculated[features].to_numpy())
+            checked_rows += len(reference)
+    return checked_rows
+
+
 def verify_curated(curated, raw, manifest):
     """Independently prove that the Glue-curated dataset matches the raw inputs.
 
@@ -88,8 +106,9 @@ def verify_curated(curated, raw, manifest):
     10. **Behaviour features** - for deterministic ~1% samples of senders and
         of receivers (chosen by hashing bank+account, *not* by label), the full
         history is collected and recomputed with ``analytics.add_behaviour``.
-        The sender sample checks the five outgoing features and the receiver
-        sample the five incoming ones; each must match Glue's values exactly.
+        The sender sample checks the outgoing and directed-pair features and the
+        receiver sample the incoming ones (``verify_behaviour``); each must match
+        Glue's values exactly.
 
     Args:
         curated: Directory of hive-partitioned curated Parquet (``txn_date=...``).
@@ -172,16 +191,8 @@ def verify_curated(curated, raw, manifest):
     # Every raw row must have appeared exactly once, with the same labels.
     if not seen.all() or positives != positives_raw:
         raise ValueError('Curated census or label count differs from source')
-    # 10. Recompute behaviour features for each cohort's full history; FEATURES is 5 outgoing then 5 incoming.
-    checked_rows = 0
-    for cohort, features in [(histories, FEATURES[:5]), (receiver_histories, FEATURES[5:])]:
-        if cohort:
-            # Original file order, because the windows depend on chronological order.
-            reference = pd.concat(cohort, ignore_index=True).sort_values('source_row_index').reset_index(drop=True)
-            actual = reference[features].copy()
-            recalculated = add_behaviour(reference)
-            np.testing.assert_array_equal(actual.to_numpy(), recalculated[features].to_numpy())
-            checked_rows += len(reference)
+    # 10. Recompute behaviour features for each cohort's full history.
+    checked_rows = verify_behaviour(histories, receiver_histories)
     return {'status': 'passed', 'rows': n, 'positives': positives, 'amount_usd': amount_usd,
             'subset': manifest.get('subset', 'HI-Small'), 'start_date': manifest['start_date'], 'end_date': manifest['end_date'],
             'raw_identity_comparison': 'Every source row: ordered SHA256 fingerprint',

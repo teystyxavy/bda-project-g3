@@ -32,6 +32,18 @@ def call_problems(path):
     return problems
 
 
+def test_curate_job_accepts_every_subset_the_manifest_validator_accepts():
+    # A subset missing from the job's argparse choices makes Glue exit with code 2 seconds after a 17 GB upload.
+    from bda_pipeline.dataset_options import SUBSETS
+    from bda_pipeline.ingest_contract import valid_subset
+    source = (JOBS / 'curate_transactions.py').read_text(encoding='utf-8')
+    declared = next(ast.literal_eval(node.value) for node in ast.parse(source).body
+                    if isinstance(node, ast.Assign) and any(getattr(target, 'id', None) == 'SUBSETS' for target in node.targets))
+    assert sorted(declared) == sorted(SUBSETS)
+    assert all(valid_subset(name) == name for name in declared)
+    assert '"--subset", choices=SUBSETS' in source
+
+
 @pytest.mark.parametrize('script', sorted(path.name for path in JOBS.glob('*.py')))
 def test_glue_job_calls_match_the_signatures_in_the_same_script(script):
     # The Spark parity tests are skipped without pyspark, so a half-merged signature would otherwise first fail inside Glue.

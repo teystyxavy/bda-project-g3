@@ -27,6 +27,10 @@ FEATURES = ['txn_count_1h', 'txn_count_24h', 'txn_count_7d',
             'distinct_senders_24h', 'distinct_senders_7d',
             'in_amount_sum_24h', 'in_amount_sum_7d',
             'corridor_prior_count']
+# Which cohort can prove each feature: a sender's complete history recomputes its outgoing and directed-pair features,
+# a receiver's complete history its incoming ones. Derived by name so the split cannot drift when FEATURES changes.
+RECEIVER_FEATURES = [name for name in FEATURES if name.startswith(('in_', 'distinct_senders'))]
+SENDER_FEATURES = [name for name in FEATURES if name not in RECEIVER_FEATURES]
 # Columns read from the curated Parquet; a missing one fails fast.
 COLUMNS = ['source_row_index', 'transaction_id', 'timestamp', 'txn_date',
            'from_bank', 'from_account', 'to_bank', 'to_account', 'payment_format',

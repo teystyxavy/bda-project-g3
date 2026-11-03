@@ -64,7 +64,7 @@ def test_medium_processing_is_bounded_and_small_settings_preserved():
         assert small['Timeout'] == 30
         assert medium['Timeout'] == 60
         large = stage_request('test-run', stage, config(), subset='LI-Large', rows=179_702_229)
-        assert large['Timeout'] == 180
+        assert large['Timeout'] == 360
         assert large['WorkerType'] == 'G.2X'
 
 

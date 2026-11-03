@@ -65,7 +65,9 @@ RUN_PROFILES = [
          train_instance='ml.m5.4xlarge', train_threads=16, train_volume_gb=100,
          train_seconds=3600, train_max_seconds=7200),
     dict(name='large', max_rows=None, glue_workers=10, glue_timeout=120, shuffle_partitions=128,
-         processing_instance='ml.m5.4xlarge', processing_volume_gb=500, processing_seconds=10800,
+         # The baseline/export Glue stages run single-threaded Python on one driver: the baseline stage took 379 s for 5.08M rows locally,
+         # about 223 minutes linearly extrapolated to HI-Large's 179.7M, so the stage timeout (processing_seconds // 60) is 6 hours.
+         processing_instance='ml.m5.4xlarge', processing_volume_gb=500, processing_seconds=21600,
          train_instance='ml.m5.12xlarge', train_threads=48, train_volume_gb=250,
          train_seconds=10800, train_max_seconds=21600),
 ]

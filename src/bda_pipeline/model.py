@@ -344,13 +344,17 @@ def _average_precision_metric(predt, dtrain):
     return 'ap', ranking_metrics(frame)['average_precision'] or 0.0
 
 
-def compare_models(scored, snapshot_path, output, rounds=300, threads=4, batch_rows=BATCH_ROWS):
+def compare_models(scored, snapshot_path, output, rounds=300, threads=4, batch_rows=BATCH_ROWS, early_stopping='aucpr'):
     """Trains the candidates, picks one on validation, freezes ``selection.json`` and ``features.json`` before reading test data, then evaluates every period against the baseline.
     Training and validation are streamed in batches of ``batch_rows``, so neither split is ever held in memory. Windows that reach into the sparse tail (see ``sparse_tail_start``)
-    also report dense-day and tail metrics. Writes to a fresh ``output`` directory, returns the ``comparison.json`` report and raises ValueError on any input or coverage failure."""
+    also report dense-day and tail metrics. ``early_stopping`` picks the validation metric that stops each candidate: ``'aucpr'`` (XGBoost's own, the default) or ``'ap'`` (the exact-tie
+    average precision candidates are selected on, which is too slow for very large validation sets: see ``_average_precision_metric``). Writes to a fresh ``output`` directory,
+    returns the ``comparison.json`` report and raises ValueError on any input or coverage failure."""
     import xgboost as xgb
     if rounds <= 0 or threads <= 0 or batch_rows <= 0:
         raise ValueError('Rounds, threads and batch rows must be positive')
+    if early_stopping not in ('aucpr', 'ap'):
+        raise ValueError("early_stopping must be 'aucpr' or 'ap'")
     output = Path(output)
     if output.exists():
         raise ValueError('Use a fresh output directory')
@@ -384,21 +388,22 @@ def compare_models(scored, snapshot_path, output, rounds=300, threads=4, batch_r
     dvalid = xgb.QuantileDMatrix(batch_iterator(dataset, 'validation', splits, vocabulary, batch_rows), ref=dtrain, nthread=threads)
     # A scale_pos_weight above 1 up-weights laundering rows, so scores are then not calibrated probabilities.
     # The weight differs per candidate, so it is recorded with each candidate rather than in these shared parameters.
-    # No eval_metric here: early stopping uses the custom _average_precision_metric below instead of XGBoost's
-    # own trapezoidal aucpr, so the stopping decision matches the exact-tie average precision candidates are selected on.
+    # Early stopping watches XGBoost's trapezoidal aucpr by default. 'ap' instead uses the custom _average_precision_metric (the exact-tie AP that
+    # candidates are selected on), but that runs a pandas group-by over the whole validation set every round: about 0.4 s per million rows and growing
+    # faster than linearly, i.e. hours at HI-Large's ~35 million validation rows, and on HI-Small it gave no held-out gain (test AP -0.002).
     params = dict(objective='binary:logistic', tree_method='hist', device='cpu',
                   eta=.1, min_child_weight=10, subsample=1,
-                  colsample_bytree=1, seed=459, nthread=threads)
+                  colsample_bytree=1, seed=459, nthread=threads, **({'eval_metric': 'aucpr'} if early_stopping == 'aucpr' else {}))
     trained = []
     for candidate in CANDIDATES:
         weight = positive_weight(candidate, positives, negatives)
         print(f"Training {candidate['name']} (scale_pos_weight {weight:.4g}) on {train_counts['rows']:,} rows", flush=True)
         candidate_params = {**params, 'max_depth': candidate['max_depth'], 'scale_pos_weight': weight,
                             **{key: candidate[key] for key in PARAM_KEYS if key in candidate}}
-        # Stop if validation AP has not improved for 20 rounds; log every 20.
+        # Stop if the validation metric has not improved for 20 rounds; log every 20.
         model = xgb.train(candidate_params, dtrain,
                           num_boost_round=rounds, evals=[(dvalid, 'validation')],
-                          custom_metric=_average_precision_metric, maximize=True,
+                          **({'custom_metric': _average_precision_metric, 'maximize': True} if early_stopping == 'ap' else {}),
                           early_stopping_rounds=20, verbose_eval=20)
         # Slice explicitly: later predictions and saved artifacts use selected trees only.
         model = model[:model.best_iteration + 1]
@@ -462,7 +467,7 @@ def compare_models(scored, snapshot_path, output, rounds=300, threads=4, batch_r
     # Hashes of selection/features let SavedRanker detect later tampering.
     report = dict(selection=selection, metrics=metrics, train=train_counts, splits=splits,
                   total_rows=total_rows, total_positives=total_positives, sparse_tail=sparse_tail,
-                  parameters=params, max_rounds=rounds, batch_rows=batch_rows, xgboost_version=xgb.__version__,
+                  parameters=params, max_rounds=rounds, batch_rows=batch_rows, early_stopping=early_stopping, xgboost_version=xgb.__version__,
                   feature_names=feature_names, selection_sha256=digest(output / 'selection.json'),
                   feature_schema_sha256=digest(output / 'features.json'),
                   limitations=['Logistic ranking scores (weighted or not) are not calibrated probabilities.',

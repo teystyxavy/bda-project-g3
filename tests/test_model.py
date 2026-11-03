@@ -364,3 +364,14 @@ def test_windows_reaching_the_sparse_tail_report_dense_and_tail_metrics(tmp_path
     other.mkdir()
     scored, snapshot, _ = write_run(other, streaming_sample(tail_days=0))
     assert compare_models(scored, snapshot, other / 'model', rounds=5, threads=1, batch_rows=400)['sparse_tail'] is None
+
+
+def test_early_stopping_metric_is_selectable_and_aucpr_is_the_default(tmp_path):
+    pytest.importorskip('xgboost')
+    scored, snapshot, _ = write_run(tmp_path, streaming_sample())
+    default = compare_models(scored, snapshot, tmp_path / 'default', rounds=15, threads=1, batch_rows=400)
+    assert default['early_stopping'] == 'aucpr' and default['parameters']['eval_metric'] == 'aucpr'
+    exact = compare_models(scored, snapshot, tmp_path / 'exact', rounds=15, threads=1, batch_rows=400, early_stopping='ap')
+    assert exact['early_stopping'] == 'ap' and 'eval_metric' not in exact['parameters']
+    with pytest.raises(ValueError, match='early_stopping'):
+        compare_models(scored, snapshot, tmp_path / 'bad', rounds=15, threads=1, early_stopping='auc')
