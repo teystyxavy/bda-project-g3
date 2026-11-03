@@ -54,7 +54,7 @@ def test_candidate_grid_is_declared_with_safe_names_and_resolvable_weights():
     names = [item['name'] for item in CANDIDATES]
     assert len(set(names)) == len(names)
     assert all(re.fullmatch(r'[a-z0-9-]+', name) for name in names)
-    assert [positive_weight(item, 10, 1280) for item in CANDIDATES] == [1.0, 5.0, 128.0]
+    assert [positive_weight(item, 10, 1280) for item in CANDIDATES] == [1.0, 5.0, 128.0, 1.0, 1.0]
     assert all(positive_weight(item, 7, 700) > 0 for item in CANDIDATES)
 
 
@@ -121,7 +121,8 @@ def test_tiny_model_comparison_artifact_reload_and_explanations(tmp_path, monkey
     # Every candidate trained with its own weight, recorded in the selection and present in the saved model.
     weights = {item['name']: item['scale_pos_weight'] for item in selection['candidates']}
     assert weights == {'hist-depth5-unweighted': 1.0, 'hist-depth5-light': 5.0,
-                       'hist-depth5-balanced': (80-training_positives)/training_positives}
+                       'hist-depth5-balanced': (80-training_positives)/training_positives,
+                       'hist-depth5-delta1': 1.0, 'hist-depth5-delta5-sub08': 1.0}
     for item in selection['candidates']:
         config = json.loads(xgb.Booster(model_file=output / item['model_file']).save_config())
         assert float(config['learner']['objective']['reg_loss_param']['scale_pos_weight']) == pytest.approx(item['scale_pos_weight'])
@@ -311,6 +312,7 @@ def test_stream_rejects_changed_batch_order_and_bad_splits(tmp_path):
 def in_memory_validation_metrics(scored, splits, rounds, threads=1):
     """The pre-streaming training path: both splits loaded and encoded whole. Returns validation metrics per candidate and the feature names."""
     import xgboost as xgb
+    from bda_pipeline.model import PARAM_KEYS, _average_precision_metric
     dataset = ds.dataset(scored)
     training, validation = read_split(dataset, 'train', splits), read_split(dataset, 'validation', splits)
     vocabulary = fit_encoder(training)
@@ -318,13 +320,16 @@ def in_memory_validation_metrics(scored, splits, rounds, threads=1):
     positives = int(training.is_laundering.sum())
     dtrain = xgb.QuantileDMatrix(xtrain, label=training.is_laundering, nthread=threads)
     dvalid = xgb.QuantileDMatrix(xvalid, label=validation.is_laundering, ref=dtrain, nthread=threads)
-    params = dict(objective='binary:logistic', tree_method='hist', device='cpu', eval_metric='aucpr', eta=.1,
+    params = dict(objective='binary:logistic', tree_method='hist', device='cpu', eta=.1,
                   min_child_weight=10, subsample=1, colsample_bytree=1, seed=459, nthread=threads)
     metrics = {}
     for candidate in CANDIDATES:
         weight = positive_weight(candidate, positives, len(training) - positives)
-        model = xgb.train({**params, 'max_depth': candidate['max_depth'], 'scale_pos_weight': weight}, dtrain,
-                          num_boost_round=rounds, evals=[(dvalid, 'validation')], early_stopping_rounds=20, verbose_eval=False)
+        candidate_params = {**params, 'max_depth': candidate['max_depth'], 'scale_pos_weight': weight,
+                            **{key: candidate[key] for key in PARAM_KEYS if key in candidate}}
+        model = xgb.train(candidate_params, dtrain, num_boost_round=rounds, evals=[(dvalid, 'validation')],
+                          custom_metric=_average_precision_metric, maximize=True,
+                          early_stopping_rounds=20, verbose_eval=False)
         model = model[:model.best_iteration + 1]
         metrics[candidate['name']] = ranking_metrics(rank(validation, model.predict(xgb.DMatrix(xvalid))))
     return metrics, xtrain.columns.tolist()

@@ -28,9 +28,15 @@ INPUT_COLUMNS = ['transaction_id', 'source_row_index', 'timestamp', 'from_bank',
 # A tiny, pre-declared grid limits overfitting to validation. ``weight`` is the multiplier on laundering rows: a number, or
 # 'balanced' for negatives/positives (about 1,280 on HI-Small, the setting used before the weight became a candidate).
 # Validation-only sweeps found no weight beating 1 and depths 5-8 equivalent; names must be lowercase letters, digits and hyphens.
+# The last two candidates add max_delta_step/subsample on top of the winning depth-5/unweighted setting, per XGBoost's
+# own tuning guide recommendation for this project's ~1,283:1 class imbalance; any of PARAM_KEYS a candidate sets
+# overrides the shared training params below (see compare_models), others keep XGBoost's own defaults.
+PARAM_KEYS = ('max_delta_step', 'subsample', 'reg_lambda', 'reg_alpha')
 CANDIDATES = [{'name': 'hist-depth5-unweighted', 'max_depth': 5, 'weight': 1},
               {'name': 'hist-depth5-light', 'max_depth': 5, 'weight': 5},
-              {'name': 'hist-depth5-balanced', 'max_depth': 5, 'weight': 'balanced'}]
+              {'name': 'hist-depth5-balanced', 'max_depth': 5, 'weight': 'balanced'},
+              {'name': 'hist-depth5-delta1', 'max_depth': 5, 'weight': 1, 'max_delta_step': 1},
+              {'name': 'hist-depth5-delta5-sub08', 'max_depth': 5, 'weight': 1, 'max_delta_step': 5, 'subsample': 0.8}]
 
 
 def digest(path):
@@ -329,7 +335,16 @@ class SavedRanker:
         return queue
 
 
-def compare_models(scored, snapshot_path, output, rounds=120, threads=4, batch_rows=BATCH_ROWS):
+def _average_precision_metric(predt, dtrain):
+    """Early-stopping metric: the project's own exact-tie average precision (``analytics.ranking_metrics``),
+    not XGBoost's built-in trapezoidal aucpr, so stopping matches what ``choose_candidate`` selects on.
+    ``predt`` is already a probability here since ``binary:logistic`` is a builtin objective; no pre-sorted
+    order is needed because ``ranking_metrics`` groups by score value itself."""
+    frame = pd.DataFrame({'risk_score': predt, 'is_laundering': dtrain.get_label().astype(int)})
+    return 'ap', ranking_metrics(frame)['average_precision'] or 0.0
+
+
+def compare_models(scored, snapshot_path, output, rounds=300, threads=4, batch_rows=BATCH_ROWS):
     """Trains the candidates, picks one on validation, freezes ``selection.json`` and ``features.json`` before reading test data, then evaluates every period against the baseline.
     Training and validation are streamed in batches of ``batch_rows``, so neither split is ever held in memory. Windows that reach into the sparse tail (see ``sparse_tail_start``)
     also report dense-day and tail metrics. Writes to a fresh ``output`` directory, returns the ``comparison.json`` report and raises ValueError on any input or coverage failure."""
@@ -367,18 +382,23 @@ def compare_models(scored, snapshot_path, output, rounds=120, threads=4, batch_r
     dtrain = xgb.QuantileDMatrix(train_batches, nthread=threads)
     feature_names = train_batches.feature_names
     dvalid = xgb.QuantileDMatrix(batch_iterator(dataset, 'validation', splits, vocabulary, batch_rows), ref=dtrain, nthread=threads)
-    # aucpr suits rare positives; a scale_pos_weight above 1 up-weights laundering rows, so scores are then not calibrated probabilities.
+    # A scale_pos_weight above 1 up-weights laundering rows, so scores are then not calibrated probabilities.
     # The weight differs per candidate, so it is recorded with each candidate rather than in these shared parameters.
+    # No eval_metric here: early stopping uses the custom _average_precision_metric below instead of XGBoost's
+    # own trapezoidal aucpr, so the stopping decision matches the exact-tie average precision candidates are selected on.
     params = dict(objective='binary:logistic', tree_method='hist', device='cpu',
-                  eval_metric='aucpr', eta=.1, min_child_weight=10, subsample=1,
+                  eta=.1, min_child_weight=10, subsample=1,
                   colsample_bytree=1, seed=459, nthread=threads)
     trained = []
     for candidate in CANDIDATES:
         weight = positive_weight(candidate, positives, negatives)
         print(f"Training {candidate['name']} (scale_pos_weight {weight:.4g}) on {train_counts['rows']:,} rows", flush=True)
-        # Stop if validation AUC-PR has not improved for 20 rounds; log every 20.
-        model = xgb.train({**params, 'max_depth': candidate['max_depth'], 'scale_pos_weight': weight}, dtrain,
+        candidate_params = {**params, 'max_depth': candidate['max_depth'], 'scale_pos_weight': weight,
+                            **{key: candidate[key] for key in PARAM_KEYS if key in candidate}}
+        # Stop if validation AP has not improved for 20 rounds; log every 20.
+        model = xgb.train(candidate_params, dtrain,
                           num_boost_round=rounds, evals=[(dvalid, 'validation')],
+                          custom_metric=_average_precision_metric, maximize=True,
                           early_stopping_rounds=20, verbose_eval=20)
         # Slice explicitly: later predictions and saved artifacts use selected trees only.
         model = model[:model.best_iteration + 1]
