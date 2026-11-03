@@ -108,11 +108,11 @@ def test_exact_behaviour_matches_local_boundaries_peers_and_banks(spark):
              "2022-09-01 01:00", "2022-09-02 00:00", "2022-09-02 00:01",
              "2022-09-08 00:00", "2022-09-08 00:01", "2022-09-09 00:00"]
     rows = [(i, f"HI-Small:{i}", pd.Timestamp(t).to_pydatetime(),
-             "020" if i % 2 else "20", "0001", "021" if i % 2 else "21", "0002")
+             "020" if i % 2 else "20", "0001", "021" if i % 2 else "21", "0002", 10.0)
             for i, t in enumerate(times)]
-    rows += [(9, "HI-Small:9", pd.Timestamp(times[0]).to_pydatetime(), "99", "0001", "21", "0002"),
-             (10, "HI-Small:10", pd.Timestamp(times[2]).to_pydatetime(), "20", "0001", "22", "0002")]
-    columns = ["source_row_index", "transaction_id", "timestamp", "from_bank", "from_account", "to_bank", "to_account"]
+    rows += [(9, "HI-Small:9", pd.Timestamp(times[0]).to_pydatetime(), "99", "0001", "21", "0002", 10.0),
+             (10, "HI-Small:10", pd.Timestamp(times[2]).to_pydatetime(), "20", "0001", "22", "0002", 10.0)]
+    columns = ["source_row_index", "transaction_id", "timestamp", "from_bank", "from_account", "to_bank", "to_account", "amount_usd_asof"]
     frame = spark.createDataFrame(rows, columns)
     expected = add_behaviour(pd.DataFrame(rows, columns=columns)).sort_values("source_row_index").reset_index(drop=True)
     actual = MODULE.add_behaviour(frame.repartition(3)).orderBy("source_row_index").toPandas()
@@ -152,6 +152,7 @@ def test_queue_randomized_parity_and_label_independence(spark):
         "from_account": rng.choice(["0001", "0002", "0003"], count),
         "to_bank": rng.choice(["22", "022", "23"], count),
         "to_account": rng.choice(["0001", "0002", "0003"], count),
+        "amount_usd_asof": rng.lognormal(6, 1.5, count),
         "is_laundering": rng.integers(0, 2, count),
     })
     expected = add_behaviour(local)
@@ -161,7 +162,9 @@ def test_queue_randomized_parity_and_label_independence(spark):
     pd.testing.assert_frame_equal(actual, expected, check_dtype=False)
     changed = MODULE.add_behaviour(source.withColumn("is_laundering", 1 - F.col("is_laundering")))
     features = [c for c in actual if c.startswith(("txn_count_", "distinct_counterparties_",
-                                                    "in_txn_count_", "distinct_senders_"))]
+                                                    "in_txn_count_", "distinct_senders_",
+                                                    "amount_sum_", "in_amount_sum_"))
+                or c == "corridor_prior_count"]
     pd.testing.assert_frame_equal(changed.orderBy("source_row_index").toPandas()[features], actual[features])
 
 

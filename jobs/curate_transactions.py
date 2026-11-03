@@ -8,7 +8,7 @@ from functools import reduce
 from time import perf_counter
 
 from pyspark.sql import SparkSession, functions as functions
-from pyspark.sql.types import LongType, StringType, StructField, StructType
+from pyspark.sql.types import DoubleType, LongType, StringType, StructField, StructType
 
 
 # Snake-case names given to the 11 CSV columns, in file order.
@@ -82,17 +82,18 @@ def read_transactions(spark, path, subset='HI-Small'):
     return spark.createDataFrame(lines.zipWithIndex().filter(lambda row: row[1] > 0).map(parse), schema)
 
 
-def _windowed_counts(frame, self_bank_col, self_account_col, party_bank_col, party_account_col, names):
+def _windowed_counts(frame, self_bank_col, self_account_col, party_bank_col, party_account_col, amount_col, names):
     """Sorts once, then scans each entity's history with exact window queues, excluding same-timestamp peers.
-    Returns ``source_row_index`` plus the five ``names`` columns; needs complete history per entity."""
+    Returns ``source_row_index`` plus the five count/distinct ``names`` columns and two USD sum columns (24h, 7d);
+    needs complete history per entity."""
     result = frame.withColumn("_epoch", functions.col("timestamp").cast("long"))
     # Co-locate each entity's rows, sorted by time (source_row_index breaks ties), for one sequential scan.
     ordered = result.repartition(self_bank_col, self_account_col).sortWithinPartitions(
         self_bank_col, self_account_col, "_epoch", "source_row_index")
     columns = ordered.columns
-    self_bank, self_account, party_bank, party_account, epoch, row_index = [
+    self_bank, self_account, party_bank, party_account, epoch, row_index, amount = [
         columns.index(name) for name in
-        [self_bank_col, self_account_col, party_bank_col, party_account_col, "_epoch", "source_row_index"]]
+        [self_bank_col, self_account_col, party_bank_col, party_account_col, "_epoch", "source_row_index", amount_col]]
 
     def scan(records):
         """Generator run once per partition over the sorted rows."""
@@ -103,47 +104,92 @@ def _windowed_counts(frame, self_bank_col, self_account_col, party_bank_col, par
         for row in records:
             key = (row[self_bank], row[self_account])
             if key != entity:
-                # New entity: reset the windows (a deque plus a counterparty Counter per window).
+                # New entity: reset the windows (a deque plus a counterparty Counter and running sum per window).
                 entity, now = key, None
                 queues = [deque(), deque(), deque()]
                 counts = [Counter(), Counter(), Counter()]
+                sums = [0.0, 0.0, 0.0]
             timestamp = row[epoch]
             if timestamp != now:
                 # Recompute only when time moves forward; same-timestamp rows reuse the snapshot, so peers exclude each other.
                 now = timestamp
                 # Evict entries older than now - window; entries exactly at the cutoff stay.
-                for queue, counter, seconds in zip(queues, counts, (3600, 86400, 604800)):
-                    while queue and queue[0][0] < now - seconds:
-                        _, party = queue.popleft()
-                        counter[party] -= 1
-                        if not counter[party]:
-                            del counter[party]
-                # (count 1h, count 24h, count 7d, distinct 24h, distinct 7d)
-                snapshot = tuple(len(queue) for queue in queues) + (len(counts[1]), len(counts[2]))
+                for window in range(3):
+                    seconds = (3600, 86400, 604800)[window]
+                    while queues[window] and queues[window][0][0] < now - seconds:
+                        _, party, amt = queues[window].popleft()
+                        counts[window][party] -= 1
+                        if not counts[window][party]:
+                            del counts[window][party]
+                        # Clamp at the eviction point so float drift never compounds across many cycles
+                        # (a window that is actually empty must read back as exactly 0.0, not -1e-6).
+                        sums[window] = max(0.0, sums[window] - amt)
+                # (count 1h, count 24h, count 7d, distinct 24h, distinct 7d, sum 24h, sum 7d)
+                snapshot = (tuple(len(queue) for queue in queues) + (len(counts[1]), len(counts[2])) +
+                           (sums[1], sums[2]))
             yield (row[row_index],) + snapshot
             # Add the current transaction AFTER emitting its features.
             party = (row[party_bank], row[party_account])
-            for queue, counter in zip(queues, counts):
-                queue.append((timestamp, party))
-                counter[party] += 1
+            value = row[amount]
+            for window in range(3):
+                queues[window].append((timestamp, party, value))
+                counts[window][party] += 1
+                sums[window] += value
 
     schema = StructType([StructField("source_row_index", LongType(), False)] +
-                        [StructField(name, LongType(), False) for name in names])
+                        [StructField(name, LongType(), False) for name in names[:5]] +
+                        [StructField(name, DoubleType(), False) for name in names[5:]])
+    return frame.sparkSession.createDataFrame(ordered.rdd.mapPartitions(scan), schema)
+
+
+def _prior_pair_counts(frame, self_bank_col, self_account_col, party_bank_col, party_account_col):
+    """All-time count of prior transactions between each self/party pair, scanned in chronological order per entity.
+    0 = first time this directed pair has transacted. Matches ``analytics._prior_pair_counts``."""
+    result = frame.withColumn("_epoch", functions.col("timestamp").cast("long"))
+    ordered = result.repartition(self_bank_col, self_account_col).sortWithinPartitions(
+        self_bank_col, self_account_col, "_epoch", "source_row_index")
+    columns = ordered.columns
+    self_bank, self_account, party_bank, party_account, row_index = [
+        columns.index(name) for name in
+        [self_bank_col, self_account_col, party_bank_col, party_account_col, "source_row_index"]]
+
+    def scan(records):
+        from collections import Counter
+
+        entity = None
+        seen = None
+        for row in records:
+            key = (row[self_bank], row[self_account])
+            if key != entity:
+                entity = key
+                seen = Counter()
+            party = (row[party_bank], row[party_account])
+            yield (row[row_index], seen[party])
+            seen[party] += 1
+
+    schema = StructType([StructField("source_row_index", LongType(), False),
+                        StructField("corridor_prior_count", LongType(), False)])
     return frame.sparkSession.createDataFrame(ordered.rdd.mapPartitions(scan), schema)
 
 
 def add_behaviour(frame):
-    """Adds 5 outgoing (sender) and 5 incoming (receiver) long columns, matching ``analytics.add_behaviour``.
-    Runs ``_windowed_counts`` per direction and joins both back on ``source_row_index``."""
+    """Adds 7 outgoing (sender) and 7 incoming (receiver) columns plus one directed-pair novelty count,
+    matching ``analytics.add_behaviour``. Runs ``_windowed_counts`` per direction and ``_prior_pair_counts``
+    once, then joins all three back on ``source_row_index``."""
     result = frame.withColumn("_sender_bank", normalized_bank(functions.col("from_bank")))
     result = result.withColumn("_party_bank", normalized_bank(functions.col("to_bank")))
     out_names = ["txn_count_1h", "txn_count_24h", "txn_count_7d",
-                 "distinct_counterparties_24h", "distinct_counterparties_7d"]
+                 "distinct_counterparties_24h", "distinct_counterparties_7d",
+                 "amount_sum_24h", "amount_sum_7d"]
     in_names = ["in_txn_count_1h", "in_txn_count_24h", "in_txn_count_7d",
-                "distinct_senders_24h", "distinct_senders_7d"]
-    out_features = _windowed_counts(result, "_sender_bank", "from_account", "_party_bank", "to_account", out_names)
-    in_features = _windowed_counts(result, "_party_bank", "to_account", "_sender_bank", "from_account", in_names)
-    return frame.join(out_features, "source_row_index", "inner").join(in_features, "source_row_index", "inner")
+                "distinct_senders_24h", "distinct_senders_7d",
+                "in_amount_sum_24h", "in_amount_sum_7d"]
+    out_features = _windowed_counts(result, "_sender_bank", "from_account", "_party_bank", "to_account", "amount_usd_asof", out_names)
+    in_features = _windowed_counts(result, "_party_bank", "to_account", "_sender_bank", "from_account", "amount_usd_asof", in_names)
+    prior = _prior_pair_counts(result, "_sender_bank", "from_account", "_party_bank", "to_account")
+    return (frame.join(out_features, "source_row_index", "inner")
+                .join(in_features, "source_row_index", "inner")
+                .join(prior, "source_row_index", "inner"))
 
 
 def curate(transactions, accounts, rates, start_date='2022-09-01', end_date='2022-09-18'):

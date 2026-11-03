@@ -17,12 +17,16 @@ from .analytics import concentration, corridor_totals, score_baseline
 from .dashboard import ranked, records, treasury_view
 from .splits import eval_names, row_share_splits, window_label
 
-# Causal behaviour features from the curate job: 5 for the sender's outgoing activity, then 5 for the
-# receiver's incoming activity. They only look backwards in time, so they never leak the future.
+# Causal behaviour features from the curate job: 7 for the sender's outgoing activity (counts, distinct
+# counterparties, rolling USD sums), then 7 for the receiver's incoming activity, then one directed-pair
+# novelty count. They only look backwards in time, so they never leak the future.
 FEATURES = ['txn_count_1h', 'txn_count_24h', 'txn_count_7d',
             'distinct_counterparties_24h', 'distinct_counterparties_7d',
+            'amount_sum_24h', 'amount_sum_7d',
             'in_txn_count_1h', 'in_txn_count_24h', 'in_txn_count_7d',
-            'distinct_senders_24h', 'distinct_senders_7d']
+            'distinct_senders_24h', 'distinct_senders_7d',
+            'in_amount_sum_24h', 'in_amount_sum_7d',
+            'corridor_prior_count']
 # Columns read from the curated Parquet; a missing one fails fast.
 COLUMNS = ['source_row_index', 'transaction_id', 'timestamp', 'txn_date',
            'from_bank', 'from_account', 'to_bank', 'to_account', 'payment_format',
@@ -32,7 +36,7 @@ COLUMNS = ['source_row_index', 'transaction_id', 'timestamp', 'txn_date',
 QUEUE_COLUMNS = ['transaction_id', 'timestamp', 'from_bank', 'from_account',
                  'to_bank', 'to_account', 'payment_format', 'payment_currency',
                  'amount_usd_asof', 'risk_score', 'risk_reasons', 'txn_count_1h',
-                 'distinct_counterparties_24h']
+                 'distinct_counterparties_24h', 'amount_sum_7d', 'corridor_prior_count']
 def evaluation_periods(splits, end_date):
     """Every non-train window of ``splits`` (half-open), with the last one stretched to include the run's last day."""
     end = (datetime.fromisoformat(end_date) + timedelta(days=1)).date().isoformat()

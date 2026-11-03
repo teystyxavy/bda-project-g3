@@ -111,20 +111,22 @@ def aml_view(frame):
 
     Returns:
         dict with ranking ``metrics`` (precision/recall/lift at 100, average
-        precision), number of ``flagged`` rows (score >= 60), the top-100
+        precision), number of ``flagged`` rows (score >= 60), the top-2000
         ``queue`` an analyst would review, ``daily`` transaction/alert counts
         and a risk-score ``histogram``.
     """
     ordered = ranked(frame)
     metrics = ranking_metrics(ordered)
     # Columns shown in the queue table; the label is intentionally left out.
+    # Kept in sync with batch.QUEUE_COLUMNS by hand (batch.py imports from this module, so importing back would cycle).
     queue_columns = ['transaction_id', 'timestamp', 'from_bank', 'from_account', 'to_bank',
                      'to_account', 'payment_format', 'payment_currency', 'amount_usd_asof',
-                     'risk_score', 'risk_reasons', 'txn_count_1h', 'distinct_counterparties_24h']
+                     'risk_score', 'risk_reasons', 'txn_count_1h', 'distinct_counterparties_24h',
+                     'amount_sum_7d', 'corridor_prior_count']
     daily = frame.assign(day=frame.timestamp.dt.strftime('%Y-%m-%d')).groupby('day').agg(
         transactions=('risk_score', 'size'), alerts=('flagged', 'sum')).reset_index()
     histogram = frame.groupby('risk_score').size().rename('transactions').reset_index()
-    return dict(metrics=metrics, flagged=int(frame.flagged.sum()), queue=records(ordered.head(100)[queue_columns]),
+    return dict(metrics=metrics, flagged=int(frame.flagged.sum()), queue=records(ordered.head(2000)[queue_columns]),
                 daily=records(daily), histogram=records(histogram))
 
 

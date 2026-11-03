@@ -20,8 +20,8 @@ def test_aml_queue_omits_labels_and_validation_diagnostics_ignore_test():
         'from_bank':'01','from_account':'A','to_bank':'02','to_account':'B','payment_format':'ACH',
         'payment_currency':'Euro','amount_usd_asof':[10,11,99999], 'risk_score':[50,70,70],
         'risk_reasons':['ACH','ACH; above training P99','ACH; above training P99'],
-        'txn_count_1h':0,'distinct_counterparties_24h':0,'source_row_index':[0,1,2],
-        'is_laundering':[0,1,0], 'flagged':[False,True,True]})
+        'txn_count_1h':0,'distinct_counterparties_24h':0,'amount_sum_7d':0.,'corridor_prior_count':0,
+        'source_row_index':[0,1,2], 'is_laundering':[0,1,0], 'flagged':[False,True,True]})
     view=aml_view(frame)
     assert len(view['queue'])==3
     assert 'is_laundering' not in view['queue'][0]
@@ -35,7 +35,8 @@ def test_aml_queue_omits_labels_and_validation_diagnostics_ignore_test():
 def test_empty_aml_period_has_unavailable_metrics():
     columns=['risk_score','timestamp','source_row_index','is_laundering','flagged','transaction_id',
              'from_bank','from_account','to_bank','to_account','payment_format','payment_currency',
-             'amount_usd_asof','risk_reasons','txn_count_1h','distinct_counterparties_24h']
+             'amount_usd_asof','risk_reasons','txn_count_1h','distinct_counterparties_24h',
+             'amount_sum_7d','corridor_prior_count']
     frame=pd.DataFrame(columns=columns)
     frame['timestamp']=pd.to_datetime(frame.timestamp)
     view=aml_view(frame)

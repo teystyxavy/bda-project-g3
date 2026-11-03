@@ -25,8 +25,10 @@ def sample():
         receiving_currency='US Dollar', amount_usd_asof=np.arange(size, dtype=float),
         txn_count_1h=1, txn_count_24h=2, txn_count_7d=3,
         distinct_counterparties_24h=1, distinct_counterparties_7d=1,
+        amount_sum_24h=10., amount_sum_7d=15.,
         in_txn_count_1h=1, in_txn_count_24h=2, in_txn_count_7d=3,
         distinct_senders_24h=1, distinct_senders_7d=1,
+        in_amount_sum_24h=10., in_amount_sum_7d=15., corridor_prior_count=1,
         is_laundering=[int(i % 7 == 0) for i in range(size)],
         risk_score=[50 if i % 2 == 0 else 0 for i in range(size)], risk_reasons='ACH'))
 
@@ -226,8 +228,11 @@ def streaming_sample(dense_days=12, per_day=500, tail_days=2, tail_rows=3, seed=
         receiving_currency=rng.choice(['US Dollar', 'Euro'], size), amount_usd_asof=amount,
         txn_count_1h=count, txn_count_24h=count + 1, txn_count_7d=count + 2,
         distinct_counterparties_24h=rng.integers(0, 5, size), distinct_counterparties_7d=rng.integers(0, 9, size),
+        amount_sum_24h=rng.lognormal(6, 1.5, size), amount_sum_7d=rng.lognormal(6, 1.5, size),
         in_txn_count_1h=rng.integers(0, 4, size), in_txn_count_24h=rng.integers(0, 8, size), in_txn_count_7d=rng.integers(0, 12, size),
         distinct_senders_24h=rng.integers(0, 4, size), distinct_senders_7d=rng.integers(0, 7, size),
+        in_amount_sum_24h=rng.lognormal(6, 1.5, size), in_amount_sum_7d=rng.lognormal(6, 1.5, size),
+        corridor_prior_count=rng.integers(0, 5, size),
         is_laundering=(rng.random(size) < chance).astype(int), risk_score=rng.integers(0, 100, size), risk_reasons='x'))
 
 

@@ -316,9 +316,12 @@ class SavedRanker:
                        ['Prior-hour transaction count (log)', 'Prior-day transaction count (log)',
                         'Prior-week transaction count (log)', 'Prior-day counterparties (log)',
                         'Prior-week counterparties (log)',
+                        'Prior-day amount sent (log)', 'Prior-week amount sent (log)',
                         'Prior-hour incoming count (log)', 'Prior-day incoming count (log)',
                         'Prior-week incoming count (log)', 'Prior-day distinct senders (log)',
-                        'Prior-week distinct senders (log)'])})
+                        'Prior-week distinct senders (log)',
+                        'Prior-day amount received (log)', 'Prior-week amount received (log)',
+                        'Prior transactions with this counterparty (log)'])})
         # Split each "name: +x margin" part at the first ":" and swap the name for its alias.
         queue['model_evidence'] = queue.model_evidence.map(lambda evidence: '; '.join(
             aliases.get(part.split(':', 1)[0], part.split(':', 1)[0]) + ':' + part.split(':', 1)[1]

@@ -10,16 +10,18 @@ def bank_key(values):
     return values.astype('string').str.lstrip('0').replace('', '0')
 
 
-def _windowed_counts(result, self_bank, self_account, party_bank, party_account):
-    """Sliding-window counts and distinct counterparties per entity for 1h/24h/7d, as an (n, 5) array.
+def _windowed_counts(result, self_bank, self_account, party_bank, party_account, amount_column):
+    """Sliding-window counts, distinct counterparties and USD sums per entity for 1h/24h/7d, as an (n, 7) array:
+    [count_1h, count_24h, count_7d, distinct_24h, distinct_7d, sum_24h, sum_7d] (sums skip the 1h window).
     Called keyed by sender (outgoing) and by receiver (incoming)."""
-    features = np.zeros((len(result), 5), dtype=np.int64)
+    features = np.zeros((len(result), 7), dtype=np.float64)
     for _, group in result.groupby([self_bank, self_account], sort=False):
         group = group.sort_values(['timestamp', 'source_row_index'])
         # Index 0/1/2 = the 1h / 24h / 7d windows respectively.
         queues = [deque(), deque(), deque()]
         counters = [Counter(), Counter(), Counter()]
-        records = list(zip(group.index, group.timestamp, group[party_bank], group[party_account]))
+        sums = [0.0, 0.0, 0.0]
+        records = list(zip(group.index, group.timestamp, group[party_bank], group[party_account], group[amount_column]))
         pos = 0
         while pos < len(records):
             # Process rows sharing a timestamp together so none of them sees the others.
@@ -28,39 +30,61 @@ def _windowed_counts(result, self_bank, self_account, party_bank, party_account)
             while end < len(records) and records[end][1] == now:
                 end += 1
             # Drop entries older than now - window; the cutoff itself is kept.
-            for q, counts, hours in zip(queues, counters, [1, 24, 168]):
-                cutoff = now - pd.Timedelta(hours=hours)
-                while q and q[0][0] < cutoff:
-                    _, party = q.popleft()
-                    counts[party] -= 1
+            for window in range(3):
+                cutoff = now - pd.Timedelta(hours=[1, 24, 168][window])
+                while queues[window] and queues[window][0][0] < cutoff:
+                    _, party, amount = queues[window].popleft()
+                    counters[window][party] -= 1
                     # Remove zero entries so len(counts) = distinct parties.
-                    if counts[party] == 0:
-                        del counts[party]
+                    if counters[window][party] == 0:
+                        del counters[window][party]
+                    # Clamp at the eviction point so float drift never compounds across many cycles
+                    # (a window that is actually empty must read back as exactly 0.0, not -1e-6).
+                    sums[window] = max(0.0, sums[window] - amount)
             # Record features BEFORE adding the block (strict earlier-only); distinct = keys of the 24h/7d Counters.
-            for idx, _, _, _ in records[pos:end]:
-                features[idx] = [len(q) for q in queues] + [len(counters[1]), len(counters[2])]
-            for _, timestamp, bank, account in records[pos:end]:
-                for q, counts in zip(queues, counters):
-                    q.append((timestamp, (bank, account)))
-                    counts[(bank, account)] += 1
+            for idx, _, _, _, _ in records[pos:end]:
+                features[idx] = ([len(q) for q in queues] + [len(counters[1]), len(counters[2])] +
+                                 [sums[1], sums[2]])
+            for _, timestamp, bank, account, amount in records[pos:end]:
+                for window in range(3):
+                    queues[window].append((timestamp, (bank, account), amount))
+                    counters[window][(bank, account)] += 1
+                    sums[window] += amount
             pos = end
     return features
 
 
+def _prior_pair_counts(result, self_bank, self_account, party_bank, party_account):
+    """All-time count of prior transactions between each self/party pair, scanned in chronological order per entity.
+    0 = first time this directed pair has transacted (a novelty signal; no eviction, unlike the windowed counts)."""
+    counts = np.zeros(len(result), dtype=np.int64)
+    for _, group in result.groupby([self_bank, self_account], sort=False):
+        group = group.sort_values(['timestamp', 'source_row_index'])
+        seen = Counter()
+        for idx, party_bank_value, party_account_value in zip(group.index, group[party_bank], group[party_account]):
+            party = (party_bank_value, party_account_value)
+            counts[idx] = seen[party]
+            seen[party] += 1
+    return counts
+
+
 def add_behaviour(frame):
-    """Adds 5 outgoing (sender) and 5 incoming (receiver) behaviour features over [t-window, t).
-    Same-timestamp peers are excluded; input needs complete history per account."""
+    """Adds 7 outgoing (sender) and 7 incoming (receiver) behaviour features over [t-window, t), plus one
+    directed-pair novelty count. Same-timestamp peers are excluded; input needs complete history per account."""
     # reset_index so row labels are 0..n-1 and can be used to index `features`.
     result = frame.copy().reset_index(drop=True)
     # Zero-stripped bank IDs so "010" and "10" are grouped as the same bank.
     result['_from_bank'] = bank_key(result.from_bank)
     result['_to_bank'] = bank_key(result.to_bank)
     out_columns = ['txn_count_1h', 'txn_count_24h', 'txn_count_7d',
-                   'distinct_counterparties_24h', 'distinct_counterparties_7d']
+                   'distinct_counterparties_24h', 'distinct_counterparties_7d',
+                   'amount_sum_24h', 'amount_sum_7d']
     in_columns = ['in_txn_count_1h', 'in_txn_count_24h', 'in_txn_count_7d',
-                  'distinct_senders_24h', 'distinct_senders_7d']
-    result[out_columns] = _windowed_counts(result, '_from_bank', 'from_account', '_to_bank', 'to_account')
-    result[in_columns] = _windowed_counts(result, '_to_bank', 'to_account', '_from_bank', 'from_account')
+                  'distinct_senders_24h', 'distinct_senders_7d',
+                  'in_amount_sum_24h', 'in_amount_sum_7d']
+    result[out_columns] = _windowed_counts(result, '_from_bank', 'from_account', '_to_bank', 'to_account', 'amount_usd_asof')
+    result[in_columns] = _windowed_counts(result, '_to_bank', 'to_account', '_from_bank', 'from_account', 'amount_usd_asof')
+    result['corridor_prior_count'] = _prior_pair_counts(result, '_from_bank', 'from_account', '_to_bank', 'to_account')
     return result.drop(columns=['_from_bank', '_to_bank'])
 
 

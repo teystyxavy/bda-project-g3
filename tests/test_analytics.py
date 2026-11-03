@@ -8,11 +8,14 @@ def test_windows_exclude_peers_and_future_include_boundary_and_separate_banks():
         timestamp=pd.to_datetime(['2022-09-01 10:00','2022-09-01 10:00','2022-09-01 11:00',
                                   '2022-09-01 11:01','2022-09-01 11:02','2022-09-03 12:00']),
         from_bank=['001','1','1','1','2','1'], from_account=['A']*6,
-        to_bank=['2','3','2','2','2','2'], to_account=['X']*6))
+        to_bank=['2','3','2','2','2','2'], to_account=['X']*6,
+        amount_usd_asof=[10.,20.,30.,40.,50.,60.]))
     f = add_behaviour(d)
     assert f.txn_count_1h.tolist() == [0,0,2,1,0,0]
     assert f.distinct_counterparties_24h.tolist() == [0,0,2,2,0,0]
     assert f.txn_count_7d.tolist() == [0,0,2,3,0,4]
+    assert f.amount_sum_24h.tolist() == [0,0,30,60,0,0]
+    assert f.amount_sum_7d.tolist() == [0,0,30,60,0,100]
     pd.testing.assert_frame_equal(add_behaviour(d.iloc[:4]), f.iloc[:4])
     # Receiver ('2','X') is paid by ('1','A') on rows 0,2,3,5 and by ('2','A') on row 4.
     assert f.in_txn_count_1h.tolist() == [0,0,1,1,2,0]
@@ -20,6 +23,10 @@ def test_windows_exclude_peers_and_future_include_boundary_and_separate_banks():
     assert f.in_txn_count_7d.tolist() == [0,0,1,2,3,4]
     assert f.distinct_senders_24h.tolist() == [0,0,1,1,1,0]
     assert f.distinct_senders_7d.tolist() == [0,0,1,1,1,2]
+    assert f.in_amount_sum_24h.tolist() == [0,0,10,40,80,0]
+    assert f.in_amount_sum_7d.tolist() == [0,0,10,40,80,130]
+    # Directed pair ('1','A')->('2','X') repeats on rows 0,2,3,5; every other pair is novel.
+    assert f.corridor_prior_count.tolist() == [0,0,1,2,0,3]
 
 
 def test_fan_in_counts_distinct_senders_not_the_current_rows_own_sender():
@@ -28,13 +35,18 @@ def test_fan_in_counts_distinct_senders_not_the_current_rows_own_sender():
         timestamp=pd.to_datetime(['2022-09-05 09:00','2022-09-05 10:00',
                                   '2022-09-05 11:00','2022-09-05 12:00']),
         from_bank=['1','2','3','1'], from_account=['A','B','C','A'],
-        to_bank=['9']*4, to_account=['R']*4))
+        to_bank=['9']*4, to_account=['R']*4,
+        amount_usd_asof=[5.,15.,25.,35.]))
     f = add_behaviour(d)
     assert f.in_txn_count_24h.tolist() == [0,1,2,3]
     assert f.distinct_senders_24h.tolist() == [0,1,2,3]
     assert f.distinct_senders_7d.tolist() == [0,1,2,3]
     assert f.txn_count_24h.tolist() == [0,0,0,1]
     assert f.distinct_counterparties_24h.tolist() == [0,0,0,1]
+    assert f.amount_sum_24h.tolist() == [0,0,0,5]
+    assert f.in_amount_sum_24h.tolist() == [0,5,20,45]
+    # Row 3 repeats the ('1','A')->('9','R') pair from row 0; every other pair is novel.
+    assert f.corridor_prior_count.tolist() == [0,0,0,1]
 
 
 def test_ranking_labels_do_not_influence_scores_and_metrics_handle_ties():
