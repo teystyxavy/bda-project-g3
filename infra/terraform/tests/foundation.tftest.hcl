@@ -33,7 +33,7 @@ run "smoke_plan_controls" {
   assert {
     condition = (
       aws_athena_workgroup.analysis.configuration[0].enforce_workgroup_configuration &&
-      aws_athena_workgroup.analysis.configuration[0].bytes_scanned_cutoff_per_query <= 1073741824 &&
+      aws_athena_workgroup.analysis.configuration[0].bytes_scanned_cutoff_per_query <= 8589934592 &&
       aws_glue_catalog_table.smoke.parameters["projection.enabled"] == "true" &&
       aws_glue_catalog_table.smoke.partition_keys[0].name == "txn_date"
     )

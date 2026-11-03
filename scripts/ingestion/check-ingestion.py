@@ -25,7 +25,7 @@ def main():
 
     Raises:
         ValueError: wrong AWS account, Athena workgroup disabled or its scan
-            limit raised above 1 GiB, or the Step Functions definition does not
+            limit raised above 8 GiB, or the Step Functions definition does not
             validate as ``OK``.
         botocore errors: if a bucket/workgroup is missing or access is denied.
     """
@@ -48,10 +48,10 @@ def main():
     # head_bucket raises (403/404) if either bucket is missing or not accessible.
     for bucket in [BUCKET, SITE_BUCKET]: client('s3').head_bucket(Bucket=bucket)
     # Athena cost guard: the workgroup must be enabled and must cap each query
-    # at <= 1 GiB scanned (1_073_741_824 bytes), keeping corridor SQL cheap.
+    # at <= 8 GiB scanned (8_589_934_592 bytes), keeping corridor SQL cheap.
     group = client('athena').get_work_group(WorkGroup='is459-g3-analysis')['WorkGroup']
     report['athena'] = {'state': group['State'], 'scan_limit_bytes': group['Configuration']['BytesScannedCutoffPerQuery']}
-    if group['State'] != 'ENABLED' or report['athena']['scan_limit_bytes'] > 1_073_741_824: raise ValueError('Athena cost guard changed')
+    if group['State'] != 'ENABLED' or report['athena']['scan_limit_bytes'] > 8_589_934_592: raise ValueError('Athena cost guard changed')
     # Only optional training uses SageMaker quotas; baseline/export run in Glue.
     found = []
     for page in client('service-quotas').get_paginator('list_service_quotas').paginate(ServiceCode='sagemaker'):

@@ -229,17 +229,19 @@ resource "aws_glue_catalog_database" "curated" {
 
 # Athena workgroup used for all project queries (BQ2 corridor analysis and
 # reconciliation). enforce_workgroup_configuration stops clients overriding
-# these settings; bytes_scanned_cutoff_per_query = 1 GiB cancels any query
+# these settings; bytes_scanned_cutoff_per_query = 8 GiB cancels any query
 # that would scan more, which caps the cost of a mistaken query (Athena bills
-# per byte scanned). Results go to athena-results/ encrypted with SSE-S3, and
-# per-query metrics are published to CloudWatch.
+# per byte scanned). 8 GiB was sized for the curated dataset's full-scan
+# corridor query (~2.6-3 GB at current size), with headroom for growth.
+# Results go to athena-results/ encrypted with SSE-S3, and per-query metrics
+# are published to CloudWatch.
 resource "aws_athena_workgroup" "analysis" {
   name          = "${var.project_name}-analysis"
   force_destroy = false
   configuration {
     enforce_workgroup_configuration    = true
     publish_cloudwatch_metrics_enabled = true
-    bytes_scanned_cutoff_per_query     = 1073741824
+    bytes_scanned_cutoff_per_query     = 8589934592
     result_configuration {
       output_location = "s3://${aws_s3_bucket.pipeline.id}/athena-results/"
       encryption_configuration { encryption_option = "SSE_S3" }
