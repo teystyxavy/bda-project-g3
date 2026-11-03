@@ -235,7 +235,7 @@ def tail_breakdown(frame, predictions, cutoff):
     return result
 
 
-def explain_queue(model, frame, scores, vocabulary, k=100):
+def explain_queue(model, frame, scores, vocabulary, k=2000):
     """Builds the top-``k`` review queue with the three largest exact TreeSHAP contributions per alert (model margins, not causal claims).
     Raises ValueError if the contributions do not reproduce the model scores."""
     import xgboost as xgb
@@ -306,7 +306,7 @@ class SavedRanker:
             raise ValueError('Encoded feature schema mismatch')
         return self.model.predict(xgb.DMatrix(matrix, nthread=self.threads))
 
-    def queue(self, frame, scores, k=100):
+    def queue(self, frame, scores, k=2000):
         """Like ``explain_queue`` but rewrites feature names in ``model_evidence`` into reviewer-readable labels."""
         queue = explain_queue(self.model, frame, scores, self.vocabulary, k=k)
         # Map index-based one-hot names back to "column=value".

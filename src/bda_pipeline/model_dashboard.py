@@ -6,7 +6,7 @@ Where this sits in the pipeline
 transparent rule score (BQ1) and corridor totals (BQ2). Separately, an
 XGBoost ranker is trained and frozen (``model.compare_models`` / SageMaker).
 This module adds a ``model`` section to that baseline snapshot so the
-dashboard can show the model's top-100 review queue next to the rule queue.
+dashboard can show the model's top-2000 review queue next to the rule queue.
 
 It never retrains, re-tunes or promotes anything, and it leaves the BQ2
 treasury numbers untouched. Before writing anything it re-computes the

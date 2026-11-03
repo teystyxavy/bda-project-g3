@@ -49,7 +49,7 @@ def ranked(frame):
 
     Ties on risk_score are broken by earliest ``timestamp`` and then by
     ``source_row_index`` (original CSV row). The stable sort plus this full
-    tie-break makes the top-100 queue identical on every run.
+    tie-break makes the top-2000 queue identical on every run.
     """
     return frame.sort_values(['risk_score', 'timestamp', 'source_row_index'],
                              ascending=[False, True, True], kind='stable')
@@ -66,7 +66,7 @@ def diagnose_rules(scored, splits=None):
     Returns:
         dict with the validation period, metrics for each variant
         ("Current baseline", "ACH only", "ACH + amount", "ACH + behaviour"),
-        a reason breakdown of the validation top-100 queue, and a fixed
+        a reason breakdown of the validation top-2000 queue, and a fixed
         decision note.
 
     Why: it shows which parts of the rule score actually help, while keeping
@@ -91,9 +91,9 @@ def diagnose_rules(scored, splits=None):
     for name, scores in variants.items():
         metrics = ranking_metrics(ranked(validation.assign(risk_score=scores)))
         comparisons.append(dict(variant=name, **metrics))
-    # Explainability for the actual queue: group the top 100 by score and
+    # Explainability for the actual queue: group the top 2000 by score and
     # reason text, count reviewed rows, true positives and false positives.
-    queue = ranked(validation).head(100)
+    queue = ranked(validation).head(2000)
     breakdown = queue.groupby(['risk_score', 'risk_reasons'], dropna=False).agg(
         reviewed=('is_laundering', 'size'), positives=('is_laundering', 'sum')).reset_index()
     breakdown['false_positives'] = breakdown.reviewed - breakdown.positives

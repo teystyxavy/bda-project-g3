@@ -59,7 +59,7 @@ def daily_row_counts(dataset):
 
 
 class AmlSummary:
-    """Bounded top-100 queue plus running counters for one period, giving exact metrics including tied-score AP.
+    """Bounded top-2000 queue plus running counters for one period, giving exact metrics including tied-score AP.
     Never stores the full scored data."""
     def __init__(self):
         """Starts empty (``queue`` is None until a batch is added)."""
@@ -69,7 +69,7 @@ class AmlSummary:
         self.queue = None
 
     def add(self, frame):
-        """Folds one scored batch (already filtered to this period) into the counters and refreshes the top-100 queue."""
+        """Folds one scored batch (already filtered to this period) into the counters and refreshes the top-2000 queue."""
         if frame.empty:
             return
         self.rows += len(frame)
@@ -80,14 +80,14 @@ class AmlSummary:
         day = frame.timestamp.dt.strftime('%Y-%m-%d')
         self.daily_rows.update(day.value_counts().to_dict())
         self.daily_alerts.update(frame.assign(day=day).groupby('day').flagged.sum().to_dict())
-        # The global top 100 lies within (old top 100 + this batch's top 100), so merging and re-ranking is exact.
-        candidate = ranked(frame).head(100)
-        self.queue = ranked(pd.concat([self.queue, candidate], ignore_index=True)).head(100) if self.queue is not None else candidate.copy()
+        # The global top 2000 lies within (old top 2000 + this batch's top 2000), so merging and re-ranking is exact.
+        candidate = ranked(frame).head(2000)
+        self.queue = ranked(pd.concat([self.queue, candidate], ignore_index=True)).head(2000) if self.queue is not None else candidate.copy()
 
     def view(self):
-        """Dashboard-ready summary: metrics (precision, recall and lift at k=100 or fewer, average precision), flagged count,
-        top-100 queue, daily counts and score histogram."""
-        k = min(100, self.rows)
+        """Dashboard-ready summary: metrics (precision, recall and lift at k=2000 or fewer, average precision), flagged count,
+        top-2000 queue, daily counts and score histogram."""
+        k = min(2000, self.rows)
         hits = int(self.queue.is_laundering.sum()) if self.queue is not None else 0
         precision = hits/k if k else None
         ap = None
@@ -239,7 +239,7 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
     if not serving_only:
         for name, view in aml.items():
             pd.DataFrame(view['queue'], columns=QUEUE_COLUMNS).to_csv(output / f'review_queue_{name}.csv', index=False)
-    # Validation top-100 breakdown by (score, reasons): reviewed, true and false positives.
+    # Validation top-2000 breakdown by (score, reasons): reviewed, true and false positives.
     queue = summaries['validation'].queue
     breakdown = queue.groupby(['risk_score', 'risk_reasons']).agg(reviewed=('is_laundering', 'size'), positives=('is_laundering', 'sum')).reset_index() if queue is not None else pd.DataFrame(columns=['risk_score','risk_reasons','reviewed','positives'])
     breakdown['false_positives'] = breakdown.reviewed - breakdown.positives

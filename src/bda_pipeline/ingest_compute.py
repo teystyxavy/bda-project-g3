@@ -332,7 +332,7 @@ def export_stage(inputs, output, assets):
        single Athena CSV (``compare_corridors``).
     3. For each evaluation period in ``snapshot['splits']`` (every window after
        train): ranking metrics (precision/recall/lift at K=100, average
-       precision) and the top-100 explained review queue for the dashboard.
+       precision) and the top-2000 explained review queue for the dashboard.
     4. Add model, pipeline and provenance metadata to the snapshot.
     5. If training was requested: safely unpack the candidate archive, check
        its provenance (same rows, job name, image, input hash, candidate-only)

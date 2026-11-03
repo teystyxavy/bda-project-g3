@@ -85,7 +85,7 @@ def test_frozen_outgoing_model_keeps_its_schema_after_incoming_features_added(tm
         expected = legacy.predict(frame)
     restored = SavedRanker(directory, threads=1)
     np.testing.assert_array_equal(restored.predict(frame), expected)
-    queue = restored.queue(frame, expected)
+    queue = restored.queue(frame, expected, k=100)
     assert len(queue) == 100
     assert not any('incoming' in reason.lower() for reason in queue.model_evidence)
     schema = restored.feature_names + ['log1p_untrusted_feature']

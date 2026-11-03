@@ -26,7 +26,7 @@ day is needed for the prior-day rate on Sep 1).
 
 Writes (new ``--output`` folder)
 --------------------------------
-* ``bq1_scored.parquet`` - scored, ranked cohort; ``review_queue.csv`` - top 100
+* ``bq1_scored.parquet`` - scored, ranked cohort; ``review_queue.csv`` - top 2000
   without the label column.
 * ``bq2_daily_corridors.parquet``; ``corridor_rankings.csv`` (corridors by total
   USD volume); ``concentration_daily.csv`` (HHI and top-5 share per day).
@@ -143,7 +143,7 @@ def main():
     # Outputs are written only after every check passed (no partial results).
     args.output.mkdir(parents=True)
     ranked.to_parquet(args.output / 'bq1_scored.parquet', index=False)
-    ranked.head(100).drop(columns=['is_laundering']).to_csv(args.output / 'review_queue.csv', index=False)
+    ranked.head(2000).drop(columns=['is_laundering']).to_csv(args.output / 'review_queue.csv', index=False)
     daily.to_parquet(args.output / 'bq2_daily_corridors.parquet', index=False)
     # Corridor ranking over the whole period (date dropped from the keys).
     daily.groupby(keys[1:])[['transaction_count', 'volume_usd']].sum().sort_values('volume_usd', ascending=False).to_csv(args.output / 'corridor_rankings.csv')

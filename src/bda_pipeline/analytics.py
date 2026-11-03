@@ -106,7 +106,7 @@ def score_baseline(frame, thresholds):
                               ascending=[False, True, True], kind='stable')
 
 
-def ranking_metrics(ranked, k=100):
+def ranking_metrics(ranked, k=2000):
     """Average precision (each risk_score level is one step, so ties do not matter) plus top-K precision, recall and lift.
     Metrics that would divide by zero are None."""
     n = len(ranked)
