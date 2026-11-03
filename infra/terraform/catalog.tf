@@ -127,13 +127,20 @@ resource "aws_glue_catalog_table" "full" {
     #   preceding 1h / 24h / 7d, and how many distinct counterparties it paid
     #   in the preceding 24h / 7d (sender/outgoing), plus the mirrored
     #   in_txn_count_* / distinct_senders_* receiver/incoming features
-    #   (inputs to the XGBoost AML risk model for BQ1).
+    #   (inputs to the XGBoost AML risk model for BQ1); rolling USD sums over
+    #   the 24h / 7d windows (amount_sum_*/in_amount_sum_*, structuring
+    #   signal); and corridor_prior_count, a directed-pair novelty count
+    #   (0 = first time this sender has paid this receiver).
     dynamic "columns" {
       for_each = merge(local.curated_columns, { transaction_id = "string" }, {
         for name in ["source_row_index", "txn_count_1h", "txn_count_24h", "txn_count_7d",
           "distinct_counterparties_24h", "distinct_counterparties_7d",
           "in_txn_count_1h", "in_txn_count_24h", "in_txn_count_7d",
-        "distinct_senders_24h", "distinct_senders_7d"] : name => "bigint"
+          "distinct_senders_24h", "distinct_senders_7d",
+        "corridor_prior_count"] : name => "bigint"
+      }, {
+        for name in ["amount_sum_24h", "amount_sum_7d",
+        "in_amount_sum_24h", "in_amount_sum_7d"] : name => "double"
       })
       content {
         name = columns.key
