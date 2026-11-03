@@ -56,7 +56,7 @@ def test_training_request_follows_the_run_size_profile_and_is_shared_with_the_co
     small, medium, large = (build_request(JOB, IMAGE, rows) for rows in (5_078_345, 31_898_238, 179_702_229))
     assert [r['ResourceConfig']['InstanceType'] for r in (small, medium, large)] == [
         'ml.m5.xlarge', 'ml.m5.4xlarge', 'ml.m5.12xlarge']
-    assert [r['StoppingCondition']['MaxRuntimeInSeconds'] for r in (small, medium, large)] == [1200, 3600, 10800]
+    assert [r['StoppingCondition']['MaxRuntimeInSeconds'] for r in (small, medium, large)] == [1200, 3600, 21600]
     assert [r['HyperParameters']['threads'] for r in (small, medium, large)] == ['4', '16', '48']
     assert small == training_job_request(JOB, IMAGE, 5_078_345)
     assert build_request(JOB, IMAGE, 31_898_238, 120, 7200)['StoppingCondition']['MaxRuntimeInSeconds'] == 7200

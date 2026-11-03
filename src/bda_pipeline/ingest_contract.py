@@ -69,7 +69,9 @@ RUN_PROFILES = [
          # about 223 minutes linearly extrapolated to HI-Large's 179.7M, so the stage timeout (processing_seconds // 60) is 6 hours.
          processing_instance='ml.m5.4xlarge', processing_volume_gb=500, processing_seconds=21600,
          train_instance='ml.m5.12xlarge', train_threads=48, train_volume_gb=250,
-         train_seconds=10800, train_max_seconds=21600),
+         # Local scale check (5 candidates, 300 rounds): about 0.5 s per tree per million training rows, i.e. 3.6-5 hours for HI-Large's 108M; the
+         # runtime limit is the profile cap because a job stopped at its limit is billed in full and produces nothing.
+         train_seconds=21600, train_max_seconds=21600),
 ]
 MAX_TRAIN_THREADS = max(profile['train_threads'] for profile in RUN_PROFILES)
 TRAINING_ROLE = f'arn:aws:iam::{ACCOUNT}:role/is459-g3-sagemaker-training'
