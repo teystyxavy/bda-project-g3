@@ -347,7 +347,10 @@ def test_begin_starts_the_glue_network_job_instead_of_athena():
     assert work['network_arguments'] == {
         '--INPUT': f"s3://{BUCKET}/{p['curated']}/", '--OUTPUT': f"s3://{BUCKET}/{p['network']}/",
         '--EXPECTED_ROWS': '320', '--SHUFFLE_PARTITIONS': work['curate_arguments']['--shuffle_partitions'],
-        '--TempDir': f's3://{BUCKET}/tmp/ingest/test-run/network/'}
+        '--enable-auto-scaling': 'true', '--TempDir': f's3://{BUCKET}/tmp/ingest/test-run/network/'}
+    # Auto-scaling is for the light network job only; curate and score keep fixed workers.
+    assert '--enable-auto-scaling' not in work['curate_arguments'] and '--enable-auto-scaling' not in work['score_arguments']
+    assert work['network_cache_hit'] is False
     # An existing network output is never overwritten by a new run.
     s3.data.pop((BUCKET, 'pipeline/lock.json'))
     s3.put_object(Bucket=BUCKET, Key=p['network']+'/loops/part-0.parquet', Body=b'x')

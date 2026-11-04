@@ -69,6 +69,13 @@ MIN_RING_ACCOUNTS = 3
 # Dashboard limits: rings listed and drawn, and nodes drawn per ring.
 TOP_RINGS = 50
 MAX_GRAPH_NODES = 120
+# Plausibility gate (``check_shape``): a ring holding more than this share of
+# all accounts means unrelated accounts were glued together (e.g. thresholds
+# that do not suit a new dataset), so the run must not publish. The floor keeps
+# tiny demo runs from tripping on noise. Full HI-Small: largest ring 33 accounts
+# against a limit of 4,228.
+MAX_RING_SHARE = 0.01
+MIN_RING_LIMIT = 500
 # Columns the analysis reads from curated Parquet.
 COLUMNS = ['timestamp', 'from_bank', 'from_account', 'to_bank', 'to_account', 'amount_usd', 'is_laundering']
 # Tables shared by the Glue job and this module, with their key columns.
@@ -458,6 +465,31 @@ def dashboard_section(result, top=TOP_RINGS):
             ranking='Hubs first, then loops, then payments. Labels never change the order.',
             evaluation='Laundering rate = share of accounts with at least one labelled laundering payment. Used only to check results.'),
     )
+
+
+def check_shape(result):
+    """Plausibility gate on verified network results; returns their shape.
+
+    ``compare_network`` proves Glue and pandas agree; this checks that what
+    they agree on is believable. It runs on label-free counts only.
+
+    Returns:
+        ``{'accounts', 'rings', 'ring_accounts', 'largest_ring', 'ring_limit',
+        'loops', 'pairs', 'status': 'passed'}`` (stored in the network proof).
+
+    Raises:
+        ValueError: if one ring holds more than ``MAX_RING_SHARE`` of all
+        accounts (and more than ``MIN_RING_LIMIT``).
+    """
+    accounts = int(result['totals'].accounts.iloc[0])
+    sizes = result['ring_members'].groupby('ring_id').size()
+    largest = int(sizes.max()) if len(sizes) else 0
+    limit = max(MIN_RING_LIMIT, int(np.ceil(MAX_RING_SHARE * accounts)))
+    if largest > limit:
+        raise ValueError(f'Implausible network: one ring has {largest} accounts (limit {limit}); '
+                         'review the thresholds for this dataset before publishing')
+    return dict(status='passed', accounts=accounts, rings=int(len(sizes)), ring_accounts=int(sizes.sum()),
+                largest_ring=largest, ring_limit=limit, loops=int(len(result['loops'])), pairs=int(len(result['pairs'])))
 
 
 def _normalise(table, name):

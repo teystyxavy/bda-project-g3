@@ -53,7 +53,7 @@ from .model import INPUT_COLUMNS, SavedRanker, digest, rank
 from .release import prepare_release
 from .splits import run_splits
 from .transform import TRANSACTION_COLUMNS, IDENTIFIER_DTYPES
-from .network import COLUMNS as NETWORK_COLUMNS, analyse_network, compare_network, dashboard_section, read_tables
+from .network import COLUMNS as NETWORK_COLUMNS, analyse_network, check_shape, compare_network, dashboard_section, read_tables
 
 
 def raw_fingerprints(frame):
@@ -354,8 +354,9 @@ def export_stage(inputs, output, assets):
     1. ``verify_scores`` - all model scores reproduced (BQ1).
     2. Network reconciliation (BQ2): recompute hubs, loops and rings in pandas
        (``network.analyse_network``) and compare with every Glue network
-       table (``network.compare_network``); the dashboard's ``network``
-       section is built from the verified result.
+       table (``network.compare_network``), then refuse implausible results
+       (``network.check_shape``); the dashboard's ``network`` section is
+       built from the verified result.
     3. For each evaluation period in ``snapshot['splits']`` (every window after
        train): ranking metrics (precision/recall/lift at K=100, average
        precision) and the top-100 explained review queue for the dashboard.
@@ -395,6 +396,8 @@ def export_stage(inputs, output, assets):
             yield batch.to_pandas()
     network_result = analyse_network(network_batches)
     network_proof = compare_network(network_result, read_tables(inputs / 'network'), manifest['rows'])
+    # Agreement is not enough: refuse implausible results (e.g. one giant ring).
+    network_proof['shape'] = check_shape(network_result)
     (output / 'evidence/scores.json').write_text(json.dumps(score_proof, allow_nan=False))
     (output / 'evidence/network.json').write_text(json.dumps(network_proof, allow_nan=False))
     # ---- 3. Per-period metrics and review queues ----

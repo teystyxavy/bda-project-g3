@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "recorded": "2026-11-04",
+  "scope": "Local verification only, on the feature/bq2-pipeline-improvements branch. Nothing was deployed to or run in AWS.",
+  "dataset": {
+    "subset": "HI-Medium",
+    "source": "Kaggle ealtman2019/ibm-transactions-for-anti-money-laundering-aml version 8",
+    "transactions_sha256": "3126afb8155e7c8815d62bc5370549a7b5ae6bf7dfe872b3cd7813e66a3d7ff5",
+    "rows": 31898238,
+    "dates": "2022-09-01 to 2022-09-28",
+    "fx": "scripts/ingestion/fetch-fx-rates.py --lookback-days 1: 435 records, 15 currencies"
+  },
+  "environment": {
+    "spark": "public.ecr.aws/glue/aws-glue-libs pinned image (pyspark 3.5.2), spark-submit --master local[8] --driver-memory 12g, Docker memory limit 15 GB",
+    "pandas": "laptop, Python 3.12, bda_pipeline.network via parquet_batches (200,000-row batches)"
+  },
+  "curation": {
+    "job": "jobs/curate_transactions.py --subset HI-Medium --shuffle_partitions 32 --behaviour false",
+    "note": "Behaviour features skipped: the network job does not read them, and they are the slowest curation phase.",
+    "rows_verified": 31898238,
+    "seconds": 369
+  },
+  "network_job": {
+    "job": "jobs/network_mules.py --SHUFFLE_PARTITIONS 32",
+    "seconds": 139.4,
+    "seconds_including_spark_start": 150,
+    "tables": {"totals": 1, "candidates": 4141, "pairs": 24226, "loops": 2280, "ring_members": 6879, "ring_edges": 8194}
+  },
+  "export_check": {
+    "steps": "network.analyse_network + compare_network + check_shape + dashboard_section",
+    "seconds": 394.7,
+    "peak_memory_gb": 3.35,
+    "comparison": "passed",
+    "max_absolute_usd_difference": 6.103515625e-05,
+    "note": "About 2.7x the linear scale-up of the 23.5 s HI-Small figure; well inside the 60-minute export limit and the 32 GB ml.m5.2xlarge."
+  },
+  "shape": {"status": "passed", "accounts": 1758597, "rings": 1381, "ring_accounts": 6879, "largest_ring": 134, "ring_limit": 17586, "loops": 2280, "pairs": 24226},
+  "results": {
+    "labels_used_for": "aggregate evaluation only",
+    "base_rate": 0.0238,
+    "hubs_by_threshold": {
+      "5": {"accounts": 4124, "laundering_rate": 0.215},
+      "10": {"accounts": 125, "laundering_rate": 0.944},
+      "15": {"accounts": 21, "laundering_rate": 1.0}
+    },
+    "three_account_loops": {"loops": 2280, "laundering_rate": 0.174},
+    "ring_accounts": {"accounts": 6879, "laundering_rate": 0.373},
+    "top_rings": {"10": 0.471, "25": 0.558, "50": 0.613},
+    "dashboard_network_mb": 0.57,
+    "independence": "Thresholds and ranking were chosen on HI-Small; HI-Medium was not used to tune anything, so these rates are an out-of-sample check."
+  }
+}
