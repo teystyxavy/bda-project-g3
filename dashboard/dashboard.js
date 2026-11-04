@@ -767,6 +767,14 @@ function renderRingList(data) {
   element('ring-list-note').textContent=`Top ${data.ring_list.length} of ${integer(data.rings.rings)} rings. ${data.definitions.ranking}`;
   element('ring-rail').innerHTML=`<ol>${data.ring_list.map(row=>`<li><button type="button" data-ring="${escapeText(row.ring_id)}" title="Ring ${escapeText(row.ring_id)}"><span class="rail-rank">#${row.rank}</span><span class="rail-main"><strong>${escapeText(shortAccount(leadAccount(row.ring_id)))}</strong><span>${row.hubs?`<b class="flag flag-hub">${plural(row.hubs,'hub')}</b>`:''}${row.loops?`<b class="flag flag-loop">${plural(row.loops,'loop')}</b>`:''}</span><small>${integer(row.accounts)} accounts · ${dollars(row.usd)}</small></span></button></li>`).join('')}</ol>`;
   element('ring-rail').querySelectorAll?.('[data-ring]').forEach(button=>{button.onclick=()=>selectRing(button.dataset.ring);});
+  // The rail lists the top 10 (plus the selected ring) and grows on request, so it never needs its own scroll box.
+  if(data.ring_list.length>10&&typeof document.createElement==='function') {
+    const rail=element('ring-rail'), more=document.createElement('button');
+    more.type='button';more.className='rail-more';
+    const label=()=>{more.textContent=rail.classList.contains('rail-open')?'Show top 10 only':`Show all ${data.ring_list.length} rings`;};
+    more.onclick=()=>{rail.classList.toggle('rail-open');label();};
+    label();rail.appendChild?.(more);
+  }
   table('ring-list',['Rank','Lead account','Ring ID (smallest account)','Accounts','Hubs','Loops','Payments','USD','Active','Accounts touching laundering'],
     data.ring_list.map(row=>[row.rank,leadAccount(row.ring_id),row.ring_id,integer(row.accounts),integer(row.hubs),integer(row.loops),integer(row.txns),dollars(row.usd),dateRange(row.first_seen,row.last_seen),share(row.laundering_rate)]));
   element('ring-list').querySelectorAll('tbody tr').forEach((tr,index)=>{
@@ -781,8 +789,7 @@ function selectRing(id,account=null) {
   const row=ringRow(id), graph=snapshot.network.graphs[id], roles=flowRoles(graph);
   const senders=Object.values(roles).filter(role=>role==='sender').length, receivers=Object.values(roles).filter(role=>role==='receiver').length;
   element('ring-rail').querySelectorAll?.('[data-ring]').forEach(button=>{
-    const current=button.dataset.ring===id;button.setAttribute('aria-current',String(current));
-    if(current) button.scrollIntoView?.({block:'nearest'});
+    button.setAttribute('aria-current',String(button.dataset.ring===id));
   });
   element('ring-title').textContent=`Ring #${row.rank} · lead account ${leadAccount(id)}`;
   element('ring-summary').textContent=row.hubs?`${plural(row.hubs,'hub')} collecting from ${plural(senders,'sender')} and paying ${plural(receivers,'receiver')}${row.loops?`, plus ${plural(row.loops,'timed loop')}`:''}. Treat it as one case.`
@@ -850,9 +857,9 @@ function layoutRing(graph) {
 
 // ---- Live ring graph: settling physics, flowing payments, zoom/pan and a hover card ----
 // layoutRing gives each account its rest position. The live layer moves accounts
-// around that rest position: they spread out from the centre on load, lean
-// toward a hovered account, pull their linked accounts along while dragged and
-// spring back afterwards. Dots travel along each link in the direction the money
+// around that rest position: they spread out from the centre on load, pull their
+// linked accounts along while dragged and spring back afterwards. Hovering only
+// highlights and enlarges the account's dot; nothing moves under the pointer. Dots travel along each link in the direction the money
 // moved. Without requestAnimationFrame, or with reduced motion, the graph is
 // drawn once at rest with direction arrows.
 const RING_GLOW={hub:'#ff6f5e',loop:'#b794ff',sender:'#4fa8ff',receiver:'#ffb648',both:'#a9bccb'};
@@ -886,7 +893,7 @@ function renderRing() {
   graph.links.forEach((link,i)=>{const count=1+Math.round(2*Math.log1p(link.txns)/Math.log1p(maxTxns));
     for(let k=0;k<count;k++) dots.push({link:i,u:(k/count+i*.618)%1,r:1.7+2.6*Math.sqrt(link.usd/maxLinkUsd)});});
   const scene=ringScene={ring:selectedRing,width,height,graph,layout,pos,roles,byId,radius,animate,dots,
-    ids:graph.nodes.map(node=>node.id),adjacent:Object.fromEntries(Object.entries(adjacent).map(([id,set])=>[id,[...set]])),adjacentSet:adjacent,
+    ids:graph.nodes.map(node=>node.id),adjacent:Object.fromEntries(Object.entries(adjacent).map(([id,set])=>[id,[...set]])),
     reverse:graph.links.map(link=>pairs.has(link.target+'\n'+link.source)),scale:Object.fromEntries(graph.nodes.map(node=>[node.id,1])),
     view:same?previous.view:null,hover:null,hoverLink:null,drag:null,gesture:null,settled:!animate,raf:null,last:0,geometry:[]};
 
@@ -922,6 +929,7 @@ function bindRingScene(scene) {
   scene.nodeEls=Object.fromEntries(all('[data-node]').map(mark=>[mark.dataset.node,mark]));
   scene.linkEls=all('[data-link]');scene.hitEls=all('[data-hit]');scene.dotEls=all('[data-dot]');
   scene.gradEls=scene.graph.links.map((link,i)=>svg.querySelector(`#ring-grad-${i}`));
+  scene.dotShapes=Object.fromEntries(Object.entries(scene.nodeEls).map(([id,mark])=>[id,[mark.querySelector('.ring-core'),mark.querySelector('.ring-halo')]]));
   if(!scene.view) fitRing(scene,false); else applyRingView(scene);
   drawRingNodes(scene);drawRingDots(scene,0);
 
@@ -1012,8 +1020,7 @@ function ringFrame(scene,time) {
 
 // One physics step. Each account springs toward its rest position, shifted by
 // part of its neighbours' average displacement (so a dragged account tows its
-// links) and, while another account is hovered, leaning slightly toward it.
-// Averaging keeps the coupling stable however many links a hub has.
+// links). Averaging keeps the coupling stable however many links a hub has.
 function stepRing(scene,dt) {
   const f=Math.min(dt/16.7,2.5), {pos,layout,adjacent,hover,drag}=scene, damping=Math.pow(.74,f);
   const shift=Object.fromEntries(scene.ids.map(id=>[id,{x:pos[id].x-layout[id].x,y:pos[id].y-layout[id].y}]));
@@ -1025,7 +1032,6 @@ function stepRing(scene,dt) {
     if(id===drag) continue;
     let tx=layout[id].x, ty=layout[id].y;
     if(near.length) {let sx=0, sy=0;for(const other of near) {sx+=shift[other].x;sy+=shift[other].y;}tx+=.45*sx/near.length;ty+=.45*sy/near.length;}
-    if(hover&&!drag&&id!==hover&&scene.adjacentSet[hover].has(id)) {tx+=(pos[hover].x-tx)*.1;ty+=(pos[hover].y-ty)*.1;}
     p.vx=(p.vx+(tx-p.x)*.07*f)*damping;p.vy=(p.vy+(ty-p.y)*.07*f)*damping;
     p.x+=p.vx*f;p.y+=p.vy*f;
     energy+=Math.abs(p.vx)+Math.abs(p.vy)+.05*(Math.abs(tx-p.x)+Math.abs(ty-p.y));
@@ -1046,7 +1052,13 @@ function ringGeometry(scene,i) {
 
 function drawRingNodes(scene) {
   if(!scene.nodeEls) return;
-  for(const id of scene.ids) {const p=scene.pos[id];scene.nodeEls[id]?.setAttribute('transform',`translate(${xy(p).replace(' ',',')}) scale(${scene.scale[id].toFixed(3)})`);}
+  // Only the dot grows on hover. The hit circle keeps its size, so the hovered
+  // account can't swell under the pointer and steal or drop the hover.
+  for(const id of scene.ids) {
+    const p=scene.pos[id], r=scene.radius[id]*scene.scale[id], [core,halo]=scene.dotShapes?.[id]||[];
+    scene.nodeEls[id]?.setAttribute('transform',`translate(${xy(p).replace(' ',',')})`);
+    core?.setAttribute('r',r.toFixed(1));halo?.setAttribute('r',(r+3).toFixed(1));
+  }
   scene.graph.links.forEach((link,i)=>{
     const g=scene.geometry[i]=ringGeometry(scene,i), mid=quadPoint(g.from,g.c,g.to,.5);
     const left={x:(g.from.x+g.c.x)/2,y:(g.from.y+g.c.y)/2}, right={x:(g.c.x+g.to.x)/2,y:(g.c.y+g.to.y)/2};

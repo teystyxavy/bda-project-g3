@@ -397,6 +397,12 @@ test('ring graph physics settles back on the tested layout and the hover card ex
     let energy=Infinity,steps=0;while(energy>=.03*s.ids.length&&steps<600){energy=stepRing(s,16.7);steps++;}
     return {steps,error:Math.max(...s.ids.map(id=>Math.hypot(s.pos[id].x-s.layout[id].x,s.pos[id].y-s.layout[id].y)))};})()`,h.context);
   assert.ok(settled.steps<600,'physics did not settle');assert.ok(settled.error<2,`accounts stopped ${settled.error}px from rest`);
+  // Hovering highlights only: no account moves, so nothing slides under the pointer.
+  const drift=vm.runInContext(`(()=>{const s=ringScene, start=JSON.stringify(s.pos), at=()=>JSON.stringify(s.ids.map(id=>[s.pos[id].x,s.pos[id].y]));
+    const run=hover=>{s.pos=JSON.parse(start);s.hover=hover;for(let i=0;i<120;i++) stepRing(s,16.7);return at();};
+    const plain=run(null), hovered=run('10:H'), scale=s.scale['10:H'];s.hover=null;
+    return {moved:hovered!==plain,scale};})()`,h.context);
+  assert.equal(drift.moved,false);assert.ok(drift.scale>1.3,'hovered account did not enlarge');
   // A dragged account tows its neighbours part of the way, and only part of the way.
   const towed=vm.runInContext(`(()=>{const s=ringScene;s.drag='10:H';s.pos['10:H'].x+=100;for(let i=0;i<300;i++) stepRing(s,16.7);
     const shift=s.pos['20:R1'].x-s.layout['20:R1'].x;s.drag=null;s.pos['10:H'].x-=100;return shift;})()`,h.context);
