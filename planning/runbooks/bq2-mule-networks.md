@@ -105,6 +105,19 @@ plus a root `_SUCCESS`.
   laptop (10.5 s building links, the rest under 3 s per step). It grows roughly
   linearly with rows, so HI-Medium (~6×) is a few minutes, well inside the
   export job's 60-minute limit.
+- **Plausibility gate.** After the Glue-vs-pandas comparison, the export stage
+  runs `network.check_shape`: it refuses to publish if one ring holds more than
+  1% of all accounts (floor 500), which would mean unrelated accounts were
+  glued together, for example by thresholds that do not suit a new dataset.
+  The counts (rings, largest ring, limit, loops, pairs) are stored in
+  `evidence/network.json` under `shape`. Full HI-Small: largest ring 33,
+  limit 4,228.
+- **Glue auto-scaling (network job only).** The job is started with
+  `--enable-auto-scaling true`, so the run profile's worker count is a maximum
+  and Glue releases idle workers; only the link aggregation is wide. Executors
+  holding `localCheckpoint` blocks count as busy and are kept. The saving shows
+  up as `DPUSeconds` in `evidence/compute.json`; it is unproven until an AWS
+  run, and removing the flag in `ingest_control.py` restores fixed workers.
 - **Measured cost per run.** At publish, the control Lambda writes
   `pipeline/runs/<run>/evidence/compute.json`: each Glue job's runtime, workers,
   DPU-hours and list-price cost (a cache hit is recorded as reused, USD 0), and

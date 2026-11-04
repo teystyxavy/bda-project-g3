@@ -425,9 +425,15 @@ def handle(event, config, clients):
                 '--OUTPUT': f"s3://{BUCKET}/{p['scored']}/", '--EXPECTED_ROWS': str(manifest['rows']),
                 '--TempDir': f's3://{BUCKET}/tmp/ingest/{run_id}/score/'},
             # BQ2 network job: curated Parquet in, small network tables out.
+            # Glue auto-scaling: glue_workers becomes the maximum and Glue
+            # releases idle workers, so the job pays for the workers it uses
+            # (only the link aggregation is wide; the ring stages are small).
+            # Executors holding localCheckpoint blocks count as busy, so they
+            # are kept. Remove this flag to go back to a fixed worker count.
             'network_arguments': {'--INPUT': f"s3://{BUCKET}/{p['curated']}/",
                 '--OUTPUT': f"s3://{BUCKET}/{p['network']}/", '--EXPECTED_ROWS': str(manifest['rows']),
                 '--SHUFFLE_PARTITIONS': str(profile['shuffle_partitions']),
+                '--enable-auto-scaling': 'true',
                 '--TempDir': f's3://{BUCKET}/tmp/ingest/{run_id}/network/'}}
     # ---- publish (early path): already published -> make the call idempotent ----
     # If a previous Publish attempt finished but its response was lost (e.g. a
