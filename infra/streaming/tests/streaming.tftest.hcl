@@ -80,3 +80,73 @@ run "reject_external_or_mutable_image" {
   variables { image_uri = "another-repository:latest" }
   expect_failures = [var.image_uri]
 }
+run "publisher_off_by_default" {
+  command = plan
+  variables { provision_streaming = true }
+  assert {
+    condition     = length(aws_lambda_function.publisher) == 0 && length(aws_scheduler_schedule.publisher) == 0 && output.publisher_configuration == null
+    error_message = "The dashboard publisher is opt-in."
+  }
+}
+run "publisher_reads_scores_and_writes_one_snapshot" {
+  # Existing local file supplies a hash for mock plans; no Lambda is deployed.
+  command = apply
+  variables {
+    provision_streaming  = true
+    provision_publisher  = true
+    lambda_zip_path      = "versions.tf"
+    replay_events_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+  assert {
+    condition     = aws_scheduler_schedule.publisher[0].state == "DISABLED" && aws_lambda_function.publisher[0].reserved_concurrent_executions == 1 && aws_lambda_function_event_invoke_config.publisher[0].maximum_retry_attempts == 0
+    error_message = "Create the publisher disarmed, with one writer and no queued retries."
+  }
+  assert {
+    condition = alltrue([for action in flatten([for statement in jsondecode(aws_iam_role_policy.publisher[0].policy).Statement : statement.Action]) :
+    contains(["dynamodb:Scan", "s3:GetObject", "s3:ListBucket", "s3:PutObject", "cloudwatch:DescribeAlarms", "logs:CreateLogStream", "logs:PutLogEvents"], action)])
+    error_message = "The publisher may only read scores, input, audit times and alarm state, and write its snapshot."
+  }
+  assert {
+    condition     = one([for statement in jsondecode(aws_iam_role_policy.publisher[0].policy).Statement : statement.Resource if contains(statement.Action, "s3:PutObject")]) == ["arn:aws:s3:::is459-g3-dashboard-588738581042-ap-southeast-1/dashboard/streaming/stream-smoke-20261006/snapshot.json"]
+    error_message = "Write only this run's dashboard snapshot."
+  }
+  assert {
+    condition     = aws_lambda_function.publisher[0].environment[0].variables.CONSUMER_ENABLED == "false" && aws_lambda_function.publisher[0].environment[0].variables.INPUT_SHA256 == var.replay_events_sha256 && output.publisher_configuration.snapshot_url == "/streaming/stream-smoke-20261006/snapshot.json"
+    error_message = "Publish the reviewed run's snapshot and report the consumer state."
+  }
+}
+run "publisher_requires_reviewed_events" {
+  command = plan
+  variables {
+    provision_streaming = true
+    provision_publisher = true
+    lambda_zip_path     = "versions.tf"
+  }
+  expect_failures = [var.provision_publisher]
+}
+run "publisher_schedule_needs_fixed_end" {
+  command = plan
+  variables {
+    provision_streaming  = true
+    provision_publisher  = true
+    lambda_zip_path      = "versions.tf"
+    replay_events_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    enable_publisher     = true
+  }
+  expect_failures = [var.enable_publisher]
+}
+run "armed_publisher_stops_at_end_time" {
+  command = plan
+  variables {
+    provision_streaming  = true
+    provision_publisher  = true
+    lambda_zip_path      = "versions.tf"
+    replay_events_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    enable_publisher     = true
+    publisher_end_time   = "2026-11-06T12:00:00"
+  }
+  assert {
+    condition     = aws_scheduler_schedule.publisher[0].state == "ENABLED" && aws_scheduler_schedule.publisher[0].end_date == "2026-11-06T12:00:00Z" && aws_scheduler_schedule.publisher[0].schedule_expression == "rate(1 minute)"
+    error_message = "An armed schedule fires once a minute and stops at the authorized end time."
+  }
+}
