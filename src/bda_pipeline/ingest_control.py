@@ -26,7 +26,8 @@ Workflow and the ``op`` values handled by ``handle``::
     PrepareExport (op=export)      check the network output, return export job request
     Export (SageMaker Processing)
     Publish (op=publish)           verify release, copy to dashboard bucket,
-                                   update pointer, invalidate CloudFront, unlock
+                                   update pointer, invalidate CloudFront,
+                                   record measured compute cost, unlock
     RecordFailure (op=failed)      on any error: record evidence, stop workers
 
 Two more entry points:
@@ -63,6 +64,14 @@ from .stage_cache import register, reuse
 
 # Glue stages whose verified outputs can be reused by an identical later run.
 CACHED_STAGES = ['curated', 'scored', 'network']
+# List prices used for the per-run cost estimate (ap-southeast-1, the rates in
+# planning/runbooks/hi-medium.md). Glue 5.0 bills per second with a one-minute
+# minimum; a G.1X worker is 1 DPU and a G.2X worker 2 DPU. Instance types
+# without a documented rate get a duration but no dollar figure.
+GLUE_USD_PER_DPU_HOUR = 0.44
+GLUE_DPU_PER_WORKER = {'G.1X': 1, 'G.2X': 2}
+SAGEMAKER_USD_PER_HOUR = {'ml.m5.2xlarge': 0.576}
+GLUE_STAGES = [('curated', 'curate', '--output'), ('scored', 'score', '--OUTPUT'), ('network', 'network', '--OUTPUT')]
 
 def get_json(s3, key, bucket=BUCKET):
     """Read a small JSON control document from S3.
@@ -192,6 +201,68 @@ def no_active_workers(clients, run_id):
             for job in page[key]:
                 if job[f'{kind.capitalize()}JobName'] == name and job[f'{kind.capitalize()}JobStatus'] in ['InProgress', 'Stopping']:
                     raise ValueError('A SageMaker worker is still active; preserve the lock')
+
+
+def compute_usage(clients, run_id, manifest, get_json, s3):
+    """Measured runtime and estimated cost of every paid job in one run.
+
+    Called at publish, when every job has finished. Glue runs are found the
+    same way as in ``no_active_workers`` (by their output argument); a stage
+    served from the stage cache has no Glue run and is recorded as reused at
+    USD 0. SageMaker jobs are found by their deterministic names.
+
+    Args:
+        clients: Dict of boto3 clients (``glue``, ``sagemaker``).
+        run_id: Run ID.
+        manifest: The run's validated manifest (``train`` decides whether a
+            training job is expected).
+        get_json: ``(s3, key) -> (dict | None, etag)`` reader.
+        s3: boto3 S3 client (to read ``evidence/stage-cache.json``).
+
+    Returns:
+        ``{'status': 'measured', 'glue': [...], 'sagemaker': [...], 'estimated_usd': total}``.
+        Dollar figures are list-price estimates, not an invoice; storage,
+        requests, logs and orchestration are excluded.
+    """
+    p = paths(run_id)
+    cached, _ = get_json(s3, p['evidence'] + '/stage-cache.json')
+    glue_jobs, total = [], 0.0
+    for stage, job, argument in GLUE_STAGES:
+        if (cached or {}).get(stage, {}).get('hit'):
+            glue_jobs.append({'stage': stage, 'reused': True, 'estimated_usd': 0.0})
+            continue
+        runs = [run for page in clients['glue'].get_paginator('get_job_runs').paginate(JobName='is459-g3-ingest-' + job)
+                for run in page['JobRuns'] if run.get('Arguments', {}).get(argument) == f's3://{BUCKET}/{p[stage]}/']
+        for run in runs:
+            seconds = run.get('ExecutionTime', 0)
+            dpu = run.get('NumberOfWorkers', 0) * GLUE_DPU_PER_WORKER.get(run.get('WorkerType'), 0)
+            # Glue reports DPUSeconds only for auto-scaling/Flex runs; otherwise workers x time.
+            dpu_seconds = run.get('DPUSeconds') or dpu * max(seconds, 60)
+            usd = round(dpu_seconds / 3600 * GLUE_USD_PER_DPU_HOUR, 4)
+            total += usd
+            glue_jobs.append({'stage': stage, 'reused': False, 'state': run['JobRunState'], 'seconds': seconds,
+                              'worker_type': run.get('WorkerType'), 'workers': run.get('NumberOfWorkers'),
+                              'dpu_hours': round(dpu_seconds / 3600, 4), 'estimated_usd': usd})
+    sm, sagemaker_jobs = clients['sagemaker'], []
+    for kind, stage in [('processing', 'baseline'), ('processing', 'export')] + ([('training', 'train')] if manifest['train'] else []):
+        name = f'is459-g3-{stage}-{run_id}'
+        if kind == 'processing':
+            job = sm.describe_processing_job(ProcessingJobName=name)
+            cluster = job['ProcessingResources']['ClusterConfig']
+            instance, count = cluster['InstanceType'], cluster['InstanceCount']
+            seconds = (job['ProcessingEndTime'] - job['ProcessingStartTime']).total_seconds()
+        else:
+            job = sm.describe_training_job(TrainingJobName=name)
+            instance, count = job['ResourceConfig']['InstanceType'], job['ResourceConfig']['InstanceCount']
+            seconds = job.get('BillableTimeInSeconds') or job.get('TrainingTimeInSeconds', 0)
+        rate = SAGEMAKER_USD_PER_HOUR.get(instance)
+        usd = round(seconds / 3600 * count * rate, 4) if rate is not None else None
+        total += usd or 0.0
+        sagemaker_jobs.append({'stage': stage, 'instance_type': instance, 'instances': count,
+                               'seconds': round(seconds, 1), 'estimated_usd': usd})
+    return {'status': 'measured', 'glue': glue_jobs, 'sagemaker': sagemaker_jobs, 'estimated_usd': round(total, 4),
+            'rates': {'glue_usd_per_dpu_hour': GLUE_USD_PER_DPU_HOUR, 'sagemaker_usd_per_hour': SAGEMAKER_USD_PER_HOUR},
+            'scope': 'List-price estimate of Glue and SageMaker compute only; not an invoice.'}
 
 
 def stop_owned_workers(clients, run_id):
@@ -503,9 +574,16 @@ def handle(event, config, clients):
         result = {'status': 'published', 'run_id': run_id, 'processing_sha256': manifest['processing_sha256'],
                   'dashboard_url': config['dashboard_url'], 'release_url': config['dashboard_url'] + f'releases/{run_id}/index.html',
                   'training_requested': manifest['train'], 'model_promoted': False}
-        # 5) Record results: the result cache (keyed by processing identity, so
-        # an identical future run can skip all work), this run's evidence,
-        # stage-cache receipts, and finally release the lock.
+        # 5) Record results: measured compute and cost, the result cache (keyed
+        # by processing identity, so an identical future run can skip all
+        # work), this run's evidence, stage-cache receipts, and finally release
+        # the lock. Cost reporting never blocks a release that already passed
+        # every check: a lookup failure is recorded instead of raised.
+        try:
+            usage = compute_usage(clients, run_id, manifest, get_json, s3)
+        except Exception as error:  # noqa: BLE001 - observability only
+            usage = {'status': 'unavailable', 'error': type(error).__name__}
+        put_json(s3, f"{p['evidence']}/compute.json", usage)
         put_json(s3, f"pipeline/cache/{manifest['processing_sha256']}.json", result)
         put_json(s3, f"{p['evidence']}/result.json", result)
         for stage in CACHED_STAGES:

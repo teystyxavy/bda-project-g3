@@ -7,7 +7,8 @@ import pytest
 from bda_pipeline.ingest_contract import BUCKET, canonical, paths, processing_request, sha
 from bda_pipeline.ingest_control import get_json, put_json, stop_owned_workers
 from bda_pipeline.stage_cache import register, reuse, stage_key
-from test_ingestion import MemoryS3, config, manifest, load_script
+from test_ingestion import MemoryS3, config, manifest, load_script, publication_inputs
+from bda_pipeline.ingest_control import compute_usage, handle
 
 
 class CacheS3(MemoryS3):
@@ -166,3 +167,61 @@ def test_cancellation_never_stops_another_run_or_completed_worker():
     sm = SimpleNamespace(get_paginator=lambda op: SimpleNamespace(paginate=sm_pages))
     assert stop_owned_workers({'glue': glue, 'sagemaker': sm}, 'test-run') == ['owned']
     assert stopped[0]['JobRunIds'] == ['owned']
+
+
+def usage_clients(train=False):
+    from datetime import datetime, timedelta, timezone
+    start = datetime(2026, 11, 4, tzinfo=timezone.utc)
+    out = lambda stage: f's3://{BUCKET}/{paths("test-run")[stage]}/'
+    runs = {
+        'is459-g3-ingest-curate': [{'JobRunState': 'SUCCEEDED', 'ExecutionTime': 30, 'WorkerType': 'G.1X', 'NumberOfWorkers': 2,
+                                    'Arguments': {'--output': out('curated')}}],
+        'is459-g3-ingest-score': [],
+        'is459-g3-ingest-network': [{'JobRunState': 'SUCCEEDED', 'ExecutionTime': 300, 'WorkerType': 'G.1X', 'NumberOfWorkers': 2,
+                                     'Arguments': {'--OUTPUT': out('network')}},
+                                    # another run's job must never be counted
+                                    {'JobRunState': 'SUCCEEDED', 'ExecutionTime': 9999, 'WorkerType': 'G.1X', 'NumberOfWorkers': 10,
+                                     'Arguments': {'--OUTPUT': f's3://{BUCKET}/pipeline/runs/other-run/network/'}}],
+    }
+    glue = SimpleNamespace(get_paginator=lambda op: SimpleNamespace(paginate=lambda JobName: [{'JobRuns': runs[JobName]}]))
+    sm = SimpleNamespace(
+        describe_processing_job=lambda ProcessingJobName: {
+            'ProcessingJobStatus': 'Completed', 'ProcessingStartTime': start, 'ProcessingEndTime': start + timedelta(minutes=30),
+            'ProcessingResources': {'ClusterConfig': {'InstanceType': 'ml.m5.2xlarge', 'InstanceCount': 1}}},
+        describe_training_job=lambda TrainingJobName: {
+            'BillableTimeInSeconds': 600, 'ResourceConfig': {'InstanceType': 'ml.m5.xlarge', 'InstanceCount': 1}})
+    return glue, sm
+
+
+def test_compute_usage_measures_each_job_counts_cache_hits_as_free_and_ignores_other_runs():
+    s3 = MemoryS3()
+    put_json(s3, paths('test-run')['evidence'] + '/stage-cache.json',
+             {'curated': {'hit': False}, 'scored': {'hit': True}, 'network': {'hit': False}})
+    glue, sm = usage_clients()
+    usage = compute_usage({'glue': glue, 'sagemaker': sm}, 'test-run', manifest() | {'train': True}, get_json, s3)
+    glue_jobs = {job['stage']: job for job in usage['glue']}
+    assert glue_jobs['scored'] == {'stage': 'scored', 'reused': True, 'estimated_usd': 0.0}
+    # 30 s is billed as Glue's one-minute minimum: 2 DPU x 60 s.
+    assert glue_jobs['curated']['dpu_hours'] == round(2 * 60 / 3600, 4)
+    assert glue_jobs['network']['estimated_usd'] == round(2 * 300 / 3600 * 0.44, 4)
+    assert len(usage['glue']) == 3
+    sagemaker = {job['stage']: job for job in usage['sagemaker']}
+    assert sagemaker['export']['estimated_usd'] == round(0.5 * 0.576, 4) and sagemaker['baseline']['seconds'] == 1800
+    # No documented rate for ml.m5.xlarge: duration recorded, no invented price.
+    assert sagemaker['train'] == {'stage': 'train', 'instance_type': 'ml.m5.xlarge', 'instances': 1, 'seconds': 600, 'estimated_usd': None}
+    expected = sum(job['estimated_usd'] for job in usage['glue']) + sagemaker['baseline']['estimated_usd'] + sagemaker['export']['estimated_usd']
+    assert usage['status'] == 'measured' and usage['estimated_usd'] == round(expected, 4)
+
+
+def test_publish_records_compute_evidence_and_never_fails_on_a_lookup_error():
+    s3, aws, _, _ = publication_inputs()
+    glue, sm = usage_clients()
+    measured = aws | {'glue': glue, 'sagemaker': sm}
+    assert handle({'op': 'publish', 'run_id': 'test-run'}, config(), measured)['status'] == 'published'
+    usage = json.loads(s3.data[BUCKET, paths('test-run')['evidence'] + '/compute.json'])
+    assert usage['status'] == 'measured' and usage['estimated_usd'] > 0
+
+    s3, aws, _, _ = publication_inputs()  # glue client missing -> lookup fails
+    assert handle({'op': 'publish', 'run_id': 'test-run'}, config(), aws)['status'] == 'published'
+    assert json.loads(s3.data[BUCKET, paths('test-run')['evidence'] + '/compute.json'])['status'] == 'unavailable'
+    assert 'pipeline/lock.json' in s3.deleted

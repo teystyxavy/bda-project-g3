@@ -105,6 +105,16 @@ plus a root `_SUCCESS`.
   laptop (10.5 s building links, the rest under 3 s per step). It grows roughly
   linearly with rows, so HI-Medium (~6×) is a few minutes, well inside the
   export job's 60-minute limit.
+- **Measured cost per run.** At publish, the control Lambda writes
+  `pipeline/runs/<run>/evidence/compute.json`: each Glue job's runtime, workers,
+  DPU-hours and list-price cost (a cache hit is recorded as reused, USD 0), and
+  each SageMaker job's instance type and duration. Rates are the ones in
+  [hi-medium.md](hi-medium.md) (Glue USD 0.44/DPU-hour with Glue's one-minute
+  minimum; `ml.m5.2xlarge` USD 0.576/hour); a type without a documented rate
+  gets a duration and no price. It is an estimate of compute only, not an
+  invoice. A lookup failure is recorded as `unavailable` and never blocks a
+  verified release. Failed runs do not get this file. It needs no new IAM:
+  the Lambda already has `glue:GetJobRuns` and `sagemaker:Describe*Job`.
 - **`localCheckpoint()` trade-off.** It keeps Spark plans short and fast, but
   a lost executor fails the job (there is no reliable copy to recompute from).
   That is acceptable because Glue jobs here run on standard capacity with no
