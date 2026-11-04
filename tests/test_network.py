@@ -147,3 +147,24 @@ def test_small_run_without_structures_still_builds_a_section():
     json.dumps(section, allow_nan=False)
     assert section['rings']['rings'] == 0 and section['ring_list'] == [] and section['graphs'] == {}
     assert compare_network(result, {name: result[name] for name in network.TABLES}, len(quiet))['status'] == 'passed'
+
+
+def test_shape_check_passes_plausible_results_and_reports_counts(result):
+    shape = network.check_shape(result)
+    sizes = result['ring_members'].groupby('ring_id').size()
+    assert shape['status'] == 'passed'
+    assert shape['largest_ring'] == sizes.max() and shape['rings'] == len(sizes)
+    assert shape['ring_limit'] == network.MIN_RING_LIMIT  # tiny fixture -> the floor applies
+    assert shape['loops'] == len(result['loops']) and shape['pairs'] == len(result['pairs'])
+
+
+def test_shape_check_refuses_one_giant_ring():
+    accounts = 100_000
+    limit = int(accounts * network.MAX_RING_SHARE)  # 1,000, above the 500 floor
+    giant = pd.DataFrame({'account': [f'1:{i}' for i in range(limit + 1)], 'ring_id': '1:0'})
+    fake = dict(totals=pd.DataFrame([{'accounts': accounts}]), ring_members=giant,
+                loops=pd.DataFrame(columns=['a', 'b', 'c']), pairs=pd.DataFrame(columns=['a', 'b']))
+    with pytest.raises(ValueError, match='Implausible network'):
+        network.check_shape(fake)
+    fake['ring_members'] = giant.iloc[:limit]
+    assert network.check_shape(fake)['largest_ring'] == limit
