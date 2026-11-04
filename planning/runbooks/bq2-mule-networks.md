@@ -60,6 +60,22 @@ of 572; top 50 → 67.3% of 654 touch laundering.
 > touch *some* laundering payment simply because they have thousands of
 > counterparties. The like-for-like mule figure is **16 of 20 (80%)**.
 
+### Out-of-sample check on HI-Medium (local run, 4 Nov 2026)
+
+Nothing was tuned on HI-Medium, so these rates test whether the HI-Small
+thresholds generalise. 31,898,238 payments · 1,758,597 accounts · base rate
+**2.4%**. Full numbers: [evidence](../evidence/bq2-mule-network-medium-local-20261104.json).
+
+| Signal | Accounts | Touch laundering |
+|---|---:|---:|
+| Three-account loops (2,280 loops) | — | 17.4% |
+| Ring accounts (1,381 rings) | 6,879 | 37.3% |
+| Top 50 rings | — | 61.3% |
+| **Mule-sized hubs, T = 10** | **125** | **94.4%** |
+
+Spark network job 2 min 19 s (local[8]); export check 6.6 min; Glue and pandas
+tables match exactly; largest ring 134 accounts (limit 17,586).
+
 ### Caveats
 
 - IBM planted these shapes in synthetic data, so results may look easier than on real data.
@@ -102,9 +118,9 @@ plus a root `_SUCCESS`.
   then validates every row and counts self-transfers in a single aggregation
   that also fills the cache the link aggregation reads.
 - **Export check cost.** `network.analyse_network` on full HI-Small: 23.5 s on a
-  laptop (10.5 s building links, the rest under 3 s per step). It grows roughly
-  linearly with rows, so HI-Medium (~6×) is a few minutes, well inside the
-  export job's 60-minute limit.
+  laptop (10.5 s building links, the rest under 3 s per step). Measured on full
+  HI-Medium: 6.6 minutes and 3.4 GB peak memory (about 2.7× a linear
+  scale-up), inside the export job's 60-minute limit and 32 GB instance.
 - **Plausibility gate.** After the Glue-vs-pandas comparison, the export stage
   runs `network.check_shape`: it refuses to publish if one ring holds more than
   1% of all accounts (floor 500), which would mean unrelated accounts were
