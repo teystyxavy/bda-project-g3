@@ -2,30 +2,31 @@
 
 Purpose
 -------
-The two Glue stages (``curated`` = clean/join/USD-convert, ``scored`` = XGBoost
-scoring) are the most expensive parts of a run. If a new run has exactly the
-same inputs, dataset version, stage code versions and model as an earlier run
-that was *fully verified and published*, this module copies that run's
-curated/scored Parquet into the new run's prefix instead of re-running Glue.
+The three Glue stages (``curated`` = clean/join/USD-convert, ``scored`` =
+XGBoost scoring, ``network`` = BQ2 mule-network tables) are the most expensive
+parts of a run. If a new run has exactly the same inputs, dataset version,
+stage code versions and model as an earlier run that was *fully verified and
+published*, this module copies that run's Parquet into the new run's prefix
+instead of re-running Glue.
 
 Important: only the Glue compute is skipped. The new run still goes through
 baseline verification (re-checking every curated row against the raw CSVs),
-score verification and the release checks in ``ingest_compute``, so a bad cache
-entry cannot be published unnoticed.
+score and network verification and the release checks in ``ingest_compute``,
+so a bad cache entry cannot be published unnoticed.
 
 Where it sits
 -------------
 Called by the control Lambda (``ingest_control.handle``):
 
-* ``op == 'begin'``   -> ``reuse()`` for 'curated' and 'scored'; the result
+* ``op == 'begin'``   -> ``reuse()`` for every cached stage; the result
   (hit/miss) is saved to ``evidence/stage-cache.json`` and decides whether the
-  Step Functions ``Curate`` / ``Score`` Glue tasks are skipped.
+  Step Functions ``Curate`` / ``Score`` / ``Network`` Glue tasks are skipped.
 * ``op == 'publish'`` -> ``register()`` writes a cache receipt for this run's
   verified outputs, so later runs can reuse them.
 
 S3 objects (all in ``BUCKET``):
 
-* reads  ``pipeline/runs/<run>/{raw,curated,scored,baseline,evidence,export}/...``
+* reads  ``pipeline/runs/<run>/{raw,curated,scored,network,baseline,evidence,export}/...``
 * writes ``pipeline/stage-cache/<stage>/<key>.json`` (receipts, 30-day expiry)
 * copies Parquet + ``_SUCCESS`` into ``pipeline/runs/<new run>/<stage>/``
 
@@ -46,10 +47,12 @@ def stage_key(stage, manifest, config):
     Kaggle dataset version, the schema version and the deployed curated-stage
     code version. For ``scored`` the key additionally includes the scoring code
     version and the frozen model's manifest hash, since a different model would
-    produce different scores.
+    produce different scores. ``network`` (BQ2) reads only curated Parquet, so
+    its key adds just the network job version (code + thresholds); a model
+    change does not invalidate it.
 
     Args:
-        stage: ``'curated'`` or ``'scored'``.
+        stage: ``'curated'``, ``'scored'`` or ``'network'``.
         manifest: Validated run manifest.
         config: Deployed configuration; ``config['stage_versions']`` maps stage
             name -> version string.
@@ -61,7 +64,7 @@ def stage_key(stage, manifest, config):
     Raises:
         ValueError: for an unsupported stage name.
     """
-    if stage not in ['curated', 'scored']: raise ValueError('Unsupported cached stage')
+    if stage not in ['curated', 'scored', 'network']: raise ValueError('Unsupported cached stage')
     version = config.get('stage_versions', {}).get(stage)
     # No configured version = caching switched off for this stage.
     if version is None: return None
@@ -71,6 +74,8 @@ def stage_key(stage, manifest, config):
     identity.update(schema_version=1, curated_version=config['stage_versions']['curated'])
     if stage == 'scored':
         identity.update(scored_version=version, model_manifest_sha256=manifest['model_manifest_sha256'])
+    if stage == 'network':
+        identity.update(network_version=version)
     return sha(identity)
 
 
@@ -123,7 +128,7 @@ def register(s3, stage, manifest, config, get_json, put_json):
 
     Args:
         s3: boto3 S3 client.
-        stage: ``'curated'`` or ``'scored'``.
+        stage: ``'curated'``, ``'scored'`` or ``'network'``.
         manifest: The run's validated manifest.
         config: Deployed configuration.
         get_json: ``(s3, key) -> (dict | None, etag)`` reader.
@@ -176,7 +181,7 @@ def reuse(s3, stage, manifest, config, get_json):
 
     Args:
         s3: boto3 S3 client.
-        stage: ``'curated'`` or ``'scored'``.
+        stage: ``'curated'``, ``'scored'`` or ``'network'``.
         manifest: The *new* run's validated manifest.
         config: Deployed configuration.
         get_json: ``(s3, key) -> (dict | None, etag)`` reader.

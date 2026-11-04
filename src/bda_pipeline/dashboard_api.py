@@ -34,7 +34,7 @@ STATE_STAGE = {
     'Acquire': 'acquire', 'Begin': 'curate', 'ReuseCurated': 'curate',
     'Curate': 'curate', 'PrepareBaseline': 'curate',
     'ReuseScores': 'score', 'Score': 'score', 'ScoresReused': 'score',
-    'Network': 'network', 'PrepareBranches': 'baseline',
+    'ReuseNetwork': 'network', 'Network': 'network', 'NetworkReused': 'network', 'PrepareBranches': 'baseline',
     'TrainRequested': 'train', 'ReuseFrozen': 'train', 'TrainDone': 'train',
     'PrepareExport': 'export', 'Publish': 'publish',
 }
@@ -42,9 +42,9 @@ for _prefix, _stage in [('Baseline', 'baseline'), ('Train', 'train'), ('Export',
     for _suffix in ['', 'PollInit', 'Wait', 'Status', 'Complete', 'PollIncrement', 'Failed']:
         STATE_STAGE[_prefix + _suffix] = _stage
 COMPLETION = {'Acquire': 'acquire', 'PrepareBaseline': 'curate', 'Score': 'score',
-              'ScoresReused': 'score', 'Network': 'network',
+              'ScoresReused': 'score', 'Network': 'network', 'NetworkReused': 'network',
               'PrepareBranches': 'baseline', 'TrainDone': 'train', 'Publish': 'publish'}
-SKIPS = {'ScoresReused': 'score', 'ReuseFrozen': 'train'}
+SKIPS = {'ScoresReused': 'score', 'NetworkReused': 'network', 'ReuseFrozen': 'train'}
 FAILURES = {'BaselineFailed': 'baseline', 'TrainFailed': 'train', 'ExportFailed': 'export'}
 SERVICE = {
     'Acquire': 'AWS Lambda', 'Begin': 'AWS Lambda', 'Curate': 'AWS Glue',
@@ -56,7 +56,8 @@ SERVICE = {
 for _state, _stage in STATE_STAGE.items():
     if _state.startswith(('Baseline', 'Train', 'Export')):
         SERVICE.setdefault(_state, 'Amazon SageMaker')
-for _state in ['ReuseCurated', 'ReuseScores', 'ScoresReused', 'TrainRequested', 'TrainDone', 'ReuseFrozen']:
+for _state in ['ReuseCurated', 'ReuseScores', 'ScoresReused', 'ReuseNetwork', 'NetworkReused',
+               'TrainRequested', 'TrainDone', 'ReuseFrozen']:
     SERVICE[_state] = 'AWS Step Functions'
 
 

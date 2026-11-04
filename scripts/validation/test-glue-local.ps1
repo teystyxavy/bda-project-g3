@@ -31,11 +31,14 @@ if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'output/aws-smoke/expec
 
 # Backticks (`) continue the docker command over several lines. -p no:cacheprovider
 # stops pytest writing a .pytest_cache folder into the read-only mount.
+# The pytest pin is in bash single quotes (written '' inside this PowerShell
+# string): Windows PowerShell 5.1 strips embedded double quotes from native
+# arguments, which made bash read ">=8,<10" as a file redirect.
 docker run --rm `
     --mount "type=bind,source=$projectRoot,target=/home/hadoop/workspace,readonly" `
     -w /home/hadoop/workspace `
     --entrypoint bash $Image `
-    -lc 'python3 -m pip install "pytest>=8,<10" && python3 -m pytest -q -p no:cacheprovider tests'
+    -lc 'python3 -m pip install ''pytest>=8,<10'' && python3 -m pytest -q -p no:cacheprovider tests'
 # $LASTEXITCODE holds the exit code of the last native command (docker).
 if ($LASTEXITCODE -ne 0) {
     throw "Glue container tests failed with exit code $LASTEXITCODE"

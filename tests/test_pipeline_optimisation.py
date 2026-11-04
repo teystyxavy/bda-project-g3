@@ -7,7 +7,8 @@ import pytest
 from bda_pipeline.ingest_contract import BUCKET, canonical, paths, processing_request, sha
 from bda_pipeline.ingest_control import get_json, put_json, stop_owned_workers
 from bda_pipeline.stage_cache import register, reuse, stage_key
-from test_ingestion import MemoryS3, config, manifest, load_script
+from test_ingestion import MemoryS3, config, manifest, load_script, publication_inputs
+from bda_pipeline.ingest_control import compute_usage, handle
 
 
 class CacheS3(MemoryS3):
@@ -31,8 +32,11 @@ class CacheS3(MemoryS3):
         self.copied.append(Key)
 
 
+NETWORK_FILES = ['candidates/part-0.parquet', 'loops/part-0.parquet', 'ring_members/part-0.parquet']
+
+
 def prepared():
-    cfg = config() | {'stage_versions': {'curated': 'curate-v1', 'scored': 'score-v1'}}
+    cfg = config() | {'stage_versions': {'curated': 'curate-v1', 'scored': 'score-v1', 'network': 'network-v1'}}
     original = manifest() | {'deployment_sha256': sha(cfg)}
     identity_fields = ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train']
     original['processing_sha256'] = sha({key: original[key] for key in identity_fields})
@@ -46,6 +50,13 @@ def prepared():
         s3.put_object(Bucket=BUCKET, Key=p[stage] + '/txn_date=2022-09-01/data.parquet', Body=b'fixture')
         s3.put_object(Bucket=BUCKET, Key=p[stage] + '/_SUCCESS', Body=b'')
         register(s3, stage, original, cfg, get_json, put_json)
+    # The network job writes one folder per table (each with Spark's own
+    # _SUCCESS) and a root _SUCCESS once every table exists.
+    for name in NETWORK_FILES:
+        s3.put_object(Bucket=BUCKET, Key=f"{p['network']}/{name}", Body=b'network-' + name.encode())
+        s3.put_object(Bucket=BUCKET, Key=f"{p['network']}/{name.split('/')[0]}/_SUCCESS", Body=b'')
+    s3.put_object(Bucket=BUCKET, Key=p['network'] + '/_SUCCESS', Body=b'')
+    register(s3, 'network', original, cfg, get_json, put_json)
     return s3, cfg, original
 
 
@@ -82,6 +93,47 @@ def test_rerun_bypasses_stage_cache_and_identical_scores_can_be_reused():
     assert s3.copied[-1].endswith('/_SUCCESS')
 
 
+def test_network_cache_survives_model_change_and_copies_every_table_marker_last():
+    s3, cfg, original = prepared()
+    changed = original | {'run_id': 'next-run', 'train': True, 'model_manifest_sha256': 'd' * 64}
+    result = reuse(s3, 'network', changed, cfg, get_json)
+    assert result['hit'] and result['objects'] == len(NETWORK_FILES) + 1
+    destination = paths('next-run')['network']
+    assert sorted(s3.copied[:-1]) == [f'{destination}/{name}' for name in NETWORK_FILES]
+    assert s3.copied[-1] == destination + '/_SUCCESS'
+    # Per-table Spark markers are not part of the inventory, so are never copied.
+    assert not any(key.endswith('/candidates/_SUCCESS') for key in s3.copied)
+
+
+def test_network_cache_key_follows_curated_and_network_versions_only():
+    _, cfg, original = prepared()
+    key = stage_key('network', original, cfg)
+    versions = cfg['stage_versions']
+    assert key != stage_key('network', original, cfg | {'stage_versions': versions | {'network': 'network-v2'}})
+    assert key != stage_key('network', original, cfg | {'stage_versions': versions | {'curated': 'curate-v2'}})
+    assert key == stage_key('network', original, cfg | {'stage_versions': versions | {'scored': 'score-v2'}})
+    assert key == stage_key('network', original | {'model_manifest_sha256': 'd' * 64}, cfg)
+    assert key not in {stage_key(stage, original, cfg) for stage in ['curated', 'scored']}
+
+
+def test_deployment_without_network_version_always_recomputes_network():
+    s3, cfg, original = prepared()
+    older = cfg | {'stage_versions': {'curated': 'curate-v1', 'scored': 'score-v1'}}
+    assert stage_key('network', original, older) is None
+    assert reuse(s3, 'network', original | {'run_id': 'next-run'}, older, get_json) == {'hit': False, 'reason': 'bypassed'}
+    assert not s3.copied
+
+
+def test_network_branch_skips_glue_only_on_a_cache_hit():
+    branch = load_script('infra/ingestion/build-workflow.py').workflow()['States']['ScoreAndAnalyze']['Branches'][2]
+    assert branch['StartAt'] == 'ReuseNetwork'
+    choice = branch['States']['ReuseNetwork']
+    assert choice['Choices'] == [{'Variable': '$.work.network_cache_hit', 'BooleanEquals': True, 'Next': 'NetworkReused'}]
+    assert choice['Default'] == 'Network'
+    assert branch['States']['NetworkReused'] == {'Type': 'Pass', 'End': True}
+    assert 'Retry' not in branch['States']['Network']
+
+
 def test_parallel_verification_training_dependency_and_bounded_processing_checks():
     workflow = load_script('infra/ingestion/build-workflow.py').workflow()
     states = workflow['States']
@@ -115,3 +167,61 @@ def test_cancellation_never_stops_another_run_or_completed_worker():
     sm = SimpleNamespace(get_paginator=lambda op: SimpleNamespace(paginate=sm_pages))
     assert stop_owned_workers({'glue': glue, 'sagemaker': sm}, 'test-run') == ['owned']
     assert stopped[0]['JobRunIds'] == ['owned']
+
+
+def usage_clients(train=False):
+    from datetime import datetime, timedelta, timezone
+    start = datetime(2026, 11, 4, tzinfo=timezone.utc)
+    out = lambda stage: f's3://{BUCKET}/{paths("test-run")[stage]}/'
+    runs = {
+        'is459-g3-ingest-curate': [{'JobRunState': 'SUCCEEDED', 'ExecutionTime': 30, 'WorkerType': 'G.1X', 'NumberOfWorkers': 2,
+                                    'Arguments': {'--output': out('curated')}}],
+        'is459-g3-ingest-score': [],
+        'is459-g3-ingest-network': [{'JobRunState': 'SUCCEEDED', 'ExecutionTime': 300, 'WorkerType': 'G.1X', 'NumberOfWorkers': 2,
+                                     'Arguments': {'--OUTPUT': out('network')}},
+                                    # another run's job must never be counted
+                                    {'JobRunState': 'SUCCEEDED', 'ExecutionTime': 9999, 'WorkerType': 'G.1X', 'NumberOfWorkers': 10,
+                                     'Arguments': {'--OUTPUT': f's3://{BUCKET}/pipeline/runs/other-run/network/'}}],
+    }
+    glue = SimpleNamespace(get_paginator=lambda op: SimpleNamespace(paginate=lambda JobName: [{'JobRuns': runs[JobName]}]))
+    sm = SimpleNamespace(
+        describe_processing_job=lambda ProcessingJobName: {
+            'ProcessingJobStatus': 'Completed', 'ProcessingStartTime': start, 'ProcessingEndTime': start + timedelta(minutes=30),
+            'ProcessingResources': {'ClusterConfig': {'InstanceType': 'ml.m5.2xlarge', 'InstanceCount': 1}}},
+        describe_training_job=lambda TrainingJobName: {
+            'BillableTimeInSeconds': 600, 'ResourceConfig': {'InstanceType': 'ml.m5.xlarge', 'InstanceCount': 1}})
+    return glue, sm
+
+
+def test_compute_usage_measures_each_job_counts_cache_hits_as_free_and_ignores_other_runs():
+    s3 = MemoryS3()
+    put_json(s3, paths('test-run')['evidence'] + '/stage-cache.json',
+             {'curated': {'hit': False}, 'scored': {'hit': True}, 'network': {'hit': False}})
+    glue, sm = usage_clients()
+    usage = compute_usage({'glue': glue, 'sagemaker': sm}, 'test-run', manifest() | {'train': True}, get_json, s3)
+    glue_jobs = {job['stage']: job for job in usage['glue']}
+    assert glue_jobs['scored'] == {'stage': 'scored', 'reused': True, 'estimated_usd': 0.0}
+    # 30 s is billed as Glue's one-minute minimum: 2 DPU x 60 s.
+    assert glue_jobs['curated']['dpu_hours'] == round(2 * 60 / 3600, 4)
+    assert glue_jobs['network']['estimated_usd'] == round(2 * 300 / 3600 * 0.44, 4)
+    assert len(usage['glue']) == 3
+    sagemaker = {job['stage']: job for job in usage['sagemaker']}
+    assert sagemaker['export']['estimated_usd'] == round(0.5 * 0.576, 4) and sagemaker['baseline']['seconds'] == 1800
+    # No documented rate for ml.m5.xlarge: duration recorded, no invented price.
+    assert sagemaker['train'] == {'stage': 'train', 'instance_type': 'ml.m5.xlarge', 'instances': 1, 'seconds': 600, 'estimated_usd': None}
+    expected = sum(job['estimated_usd'] for job in usage['glue']) + sagemaker['baseline']['estimated_usd'] + sagemaker['export']['estimated_usd']
+    assert usage['status'] == 'measured' and usage['estimated_usd'] == round(expected, 4)
+
+
+def test_publish_records_compute_evidence_and_never_fails_on_a_lookup_error():
+    s3, aws, _, _ = publication_inputs()
+    glue, sm = usage_clients()
+    measured = aws | {'glue': glue, 'sagemaker': sm}
+    assert handle({'op': 'publish', 'run_id': 'test-run'}, config(), measured)['status'] == 'published'
+    usage = json.loads(s3.data[BUCKET, paths('test-run')['evidence'] + '/compute.json'])
+    assert usage['status'] == 'measured' and usage['estimated_usd'] > 0
+
+    s3, aws, _, _ = publication_inputs()  # glue client missing -> lookup fails
+    assert handle({'op': 'publish', 'run_id': 'test-run'}, config(), aws)['status'] == 'published'
+    assert json.loads(s3.data[BUCKET, paths('test-run')['evidence'] + '/compute.json'])['status'] == 'unavailable'
+    assert 'pipeline/lock.json' in s3.deleted

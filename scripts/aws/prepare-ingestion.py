@@ -137,12 +137,15 @@ def prepare(output, models, wheels, image_uri):
         'processing_role_arn': f'arn:aws:iam::{ACCOUNT}:role/is459-g3-ingest-processing',
         'distribution_id': 'EU1WB6XM4GKHQ', 'dashboard_url': 'https://d1n61tlw9pcrog.cloudfront.net/'}
     # Stage versions feed the stage cache key (bda_pipeline.stage_cache): if
-    # the curate/score code, package, wheels or Glue runtime change, the
+    # the curate/score/network code, package, wheels or Glue runtime change, the
     # version changes and earlier cached Glue outputs are no longer reused.
+    # The network job is self-contained (its thresholds are constants in the
+    # script), so its own code hash is its whole version.
     config['stage_versions'] = {
         'curated': sha({'code': hashes['curate_transactions.py'], 'schema': 1, 'runtime': 'glue-5.0-python3.11'}),
         'scored': sha({'code': hashes['score_transactions.py'], 'package': hashes['bda_pipeline.zip'],
-                       'wheels': hashes['runtime.gluewheels.zip'], 'runtime': 'glue-5.0-python3.11'})}
+                       'wheels': hashes['runtime.gluewheels.zip'], 'runtime': 'glue-5.0-python3.11'}),
+        'network': sha({'code': hashes['network_mules.py'], 'runtime': 'glue-5.0-python3.11'})}
     (output / 'model/deployment.json').write_text(json.dumps(config, indent=2))
     (output / 'deployment.json').write_text(json.dumps(config, indent=2))
     # Terraform reads artifacts from artifact_directory (forward slashes so the
