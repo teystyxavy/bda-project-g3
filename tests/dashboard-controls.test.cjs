@@ -49,10 +49,12 @@ function networkSection() {
     rings:{rings:1,accounts:4,largest:4,coverage:0.8,laundering_accounts:4,laundering_rate:1,lift:100},
     top_rings:[{rings:1,accounts:4,laundering_rate:1,rings_with_laundering:1}],
     ring_list:[{rank:1,ring_id:'10:A',accounts:4,hubs:1,loops:1,red_flags:2,links:4,txns:9,usd:1234,first_seen:'2022-09-01T00:00:00',last_seen:'2022-09-03T00:00:00',laundering_rate:1}],
-    graphs:{'10:A':{nodes:[{id:'10:H',role:'hub',fan_in:10,fan_out:10,in_usd:500,out_usd:450},{id:'10:A',role:'loop',fan_in:1,fan_out:2,in_usd:5,out_usd:6},
-      {id:'10:B',role:'loop',fan_in:1,fan_out:1,in_usd:5,out_usd:5},{id:'20:R1',role:'counterparty',fan_in:1,fan_out:0,in_usd:45,out_usd:0}],
+    graphs:{'10:A':{nodes:[{id:'10:H',role:'hub',fan_in:10,fan_out:10,in_usd:500,out_usd:450,touches_laundering:true},{id:'10:A',role:'loop',fan_in:1,fan_out:2,in_usd:5,out_usd:6,touches_laundering:true},
+      {id:'10:B',role:'loop',fan_in:1,fan_out:1,in_usd:5,out_usd:5,touches_laundering:true},{id:'20:R1',role:'counterparty',fan_in:1,fan_out:0,in_usd:45,out_usd:0,touches_laundering:false}],
       links:[{source:'10:A',target:'10:B',txns:1,usd:5,loop:true},{source:'10:B',target:'10:A',txns:1,usd:5,loop:true},{source:'10:A',target:'10:H',txns:2,usd:9,loop:false},{source:'10:H',target:'20:R1',txns:5,usd:45,loop:false}],
-      total_accounts:4,shown_accounts:4,truncated:false}},
+      total_accounts:4,shown_accounts:4,truncated:false,loops:[],payment_start:'2022-09-01T00:00:00',payments_total:9,
+      payments:[[0,0,5,1],[2,10,4,0],[2,20,5,0],[1,30,5,1],[3,40,9,0],[3,50,9,0],[3,60,9,0],[3,70,9,0],[3,80,9,0]]}},
+    ring_sizes:[4],
     definitions:{hub:'Hub definition.',ranking:'Hubs first.'},verification:{status:'passed'}};
 }
 
@@ -416,6 +418,43 @@ test('ring graph physics settles back on the tested layout and the hover card ex
   assert.match(vm.runInContext('ringTipContent(ringScene,{link:0})',h.context),/Part of a timed loop/);
   vm.runInContext('toggleRingFlow()',h.context);
   assert.equal(h.el('ring-flow').textContent,'Play flow');assert.equal(h.el('ring-flow').attributes['aria-pressed'],'true');
+});
+
+test('presenter view turns the network section into replayable rings and tells the story from it',async()=>{
+  const h=await harness();
+  vm.runInContext(`snapshot=${JSON.stringify(snapshot())};selectDashboardView('network')`,h.context);
+  assert.equal(h.el('network-present').hidden,false);
+  const data=JSON.parse(vm.runInContext('JSON.stringify(presenterData(snapshot.network))',h.context));
+  assert.equal(data.rings.length,1);assert.equal(data.candidates,1);assert.deepEqual(data.sizes,[4]);
+  const ring=data.rings[0];
+  assert.deepEqual(ring.nodes.map(node=>node[1]),['hub','loop','loop','receiver']);
+  assert.deepEqual(ring.nodes.map(node=>node[2]),[1,1,1,0]);
+  assert.deepEqual(ring.links[2],[1,0,2,9]);assert.equal(ring.pays.length,9);assert.equal(ring.start,Date.UTC(2022,8,1));
+  // The replay reaches every payment and USD exactly, and rewinding resets it.
+  const replay=JSON.parse(vm.runInContext(`(()=>{PRES.data=presenterData(snapshot.network);presSetRing(PRES.data.rings[0]);
+    presSeek(presEnd());const end={paid:PRES.replay.paid,moved:PRES.replay.moved,recv:PRES.replay.recv};
+    presSeek(PRES.replay.t0+35);return JSON.stringify({end,mid:PRES.replay.paid});})()`,h.context));
+  assert.equal(replay.end.paid,9);assert.equal(replay.end.moved,64);assert.deepEqual(replay.end.recv,[9,5,5,45]);
+  assert.ok(replay.mid>0&&replay.mid<9);
+  const story=step=>vm.runInContext(`presStoryHTML(${step},PRES.data,PRES.ring,3)`,h.context);
+  assert.match(story(0),/500 accounts/);assert.match(story(1),/1<\/em> accounts collect from 5\+ senders/);
+  assert.match(story(3),/One hub, 3 other accounts/);assert.match(story(4),/3<\/span> of 4 accounts touched a laundering payment/);
+  assert.match(story(5),/1\.0% of all accounts touch laundering\. Inside the rings it's <span class="pres-dirty">100%/);
+});
+
+test('presenter loops close only in order and inside the loop window',async()=>{
+  const h=await harness();
+  const closes=pays=>JSON.parse(vm.runInContext(`JSON.stringify(presLoopCloses({links:[[0,1],[1,2],[2,0]],tri:[[0,1,2]],pays:${JSON.stringify(pays)}},7))`,h.context));
+  assert.deepEqual(closes([[0,0,1,0],[1,60,1,0],[2,1500,1,0]]),[{t:1500,days:1500/1440,nodes:[0,1,2]}]);
+  assert.deepEqual(closes([[1,0,1,0],[0,60,1,0],[2,120,1,0]]),[null]);
+  assert.deepEqual(closes([[0,0,1,0],[1,60,1,0],[2,8*1440,1,0]]),[null]);
+});
+
+test('older releases without payment timelines hide the presenter button',async()=>{
+  const h=await harness();
+  const old=snapshot();delete old.network.graphs['10:A'].payments;
+  vm.runInContext(`snapshot=${JSON.stringify(old)};selectDashboardView('network')`,h.context);
+  assert.equal(h.el('network-present').hidden,true);
 });
 
 test('releases from before the network analysis explain that BQ2 is missing',async()=>{

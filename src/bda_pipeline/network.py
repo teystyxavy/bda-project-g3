@@ -9,8 +9,11 @@ restrict and which alerts belong to the same case?*
 BQ1 ranks single payments. BQ2 looks at the shape of the payment network and
 finds **groups of accounts** (rings). One ring is one case to investigate.
 Detection uses only who paid whom, when and how much. The ``is_laundering``
-label is used afterwards, and only in aggregate, to check how well the
-network signals line up with confirmed laundering.
+label is never used to find, size or rank rings. It is used afterwards, to
+check how well the network signals line up with confirmed laundering: as
+aggregate rates everywhere, and as a per-account and per-payment flag on the
+drawn rings so the dashboard's presenter view can reveal, after the fact,
+which accounts in a ring really laundered.
 
 Where this sits in the pipeline
 -------------------------------
@@ -69,6 +72,8 @@ MIN_RING_ACCOUNTS = 3
 # Dashboard limits: rings listed and drawn, and nodes drawn per ring.
 TOP_RINGS = 50
 MAX_GRAPH_NODES = 120
+# Payments replayed per drawn ring (earliest first); the rest are counted.
+MAX_GRAPH_PAYMENTS = 2000
 # Plausibility gate (``check_shape``): a ring holding more than this share of
 # all accounts means unrelated accounts were glued together (e.g. thresholds
 # that do not suit a new dataset), so the run must not publish. The floor keeps
@@ -309,20 +314,28 @@ def analyse_network(batches_factory):
     needed = set(zip(pair_candidates.a, pair_candidates.b)) | set(zip(pair_candidates.b, pair_candidates.a))
     for a, b, c in loop_candidates.itertuples(index=False):
         needed.update([(a, b), (b, c), (c, a)])
-    wanted = pd.DataFrame(sorted(needed), columns=['src', 'dst'])
+    hubs = set(accounts.index[(accounts.fan_in >= HEADLINE_THRESHOLD) & (accounts.fan_out >= HEADLINE_THRESHOLD)
+                              & (accounts.links <= MAX_LINKS)])
+    hub_links = ordinary_links[ordinary_links.src.isin(hubs) | ordinary_links.dst.isin(hubs)]
+    # The second pass keeps the timestamps of loop/pair candidate links (for the
+    # timing checks) and every payment on a possible ring link (hub links and
+    # loop candidate links), so the drawn rings can be replayed payment by payment.
+    wanted = pd.DataFrame(sorted(needed), columns=['src', 'dst']).assign(timed=True)
+    wanted = wanted.merge(hub_links[['src', 'dst']], on=['src', 'dst'], how='outer')
+    wanted['timed'] = wanted.timed.notna() & wanted.timed.astype(bool)
     pieces = []
     for frame in batches_factory():
         src = account_key(frame.from_bank, frame.from_account)
         dst = account_key(frame.to_bank, frame.to_account)
-        part = pd.DataFrame({'src': src.to_numpy(), 'dst': dst.to_numpy(), 'ts': _naive_utc(frame.timestamp).to_numpy()})
+        part = pd.DataFrame({'src': src.to_numpy(), 'dst': dst.to_numpy(), 'ts': _naive_utc(frame.timestamp).to_numpy(),
+                             'usd': frame.amount_usd.to_numpy(dtype=float), 'lab': frame.is_laundering.to_numpy(dtype=np.int64)})
         pieces.append(part.merge(wanted, on=['src', 'dst']))
-    times = _times(pd.concat(pieces, ignore_index=True)) if pieces else {}
+    seen = (pd.concat(pieces, ignore_index=True) if pieces
+            else pd.DataFrame({'src': [], 'dst': [], 'ts': pd.Series([], dtype='datetime64[ns]'), 'usd': [], 'lab': [], 'timed': []}))
+    times = _times(seen[seen.timed.astype(bool)])
     pairs = find_pairs(ordinary_links, times)
     loops = find_loops(loop_candidates, times).sort_values(['a', 'b', 'c'], ignore_index=True)
 
-    hubs = set(accounts.index[(accounts.fan_in >= HEADLINE_THRESHOLD) & (accounts.fan_out >= HEADLINE_THRESHOLD)
-                              & (accounts.links <= MAX_LINKS)])
-    hub_links = ordinary_links[ordinary_links.src.isin(hubs) | ordinary_links.dst.isin(hubs)]
     loop_links = pd.DataFrame([(s, d) for a, b, c in loops.itertuples(index=False) for s, d in [(a, b), (b, c), (c, a)]],
                               columns=['src', 'dst'])
     ring_links = pd.concat([hub_links[['src', 'dst']], loop_links], ignore_index=True).drop_duplicates()
@@ -341,11 +354,40 @@ def analyse_network(batches_factory):
     ring_edges['ring_id'] = ring_edges.src.map(label)
     ring_edges = ring_edges[['src', 'dst', 'ring_id', 'txns', 'usd', 'first_ts', 'last_ts', 'laundering_txns']]
     ring_edges = ring_edges.sort_values(['src', 'dst'], ignore_index=True)
+    ring_payments = ring_payment_table(seen, ring_edges)
 
     totals = pd.DataFrame([dict(rows=rows, self_transfers=self_transfers, accounts=len(accounts), links=len(links),
                                 laundering_accounts=int(accounts.touches_laundering.sum()))])
     return dict(totals=totals, candidates=candidates, pairs=pairs, loops=loops, ring_members=members,
-                ring_edges=ring_edges, accounts=accounts)
+                ring_edges=ring_edges, accounts=accounts, ring_payments=ring_payments)
+
+
+def ring_payment_table(seen, ring_edges):
+    """Every individual payment on a ring link, checked against the link totals.
+
+    Args:
+        seen: payments kept by the second pass (``src, dst, ts, usd, lab``).
+        ring_edges: the ``ring_edges`` table.
+
+    Returns:
+        DataFrame ``ring_id, src, dst, ts, usd, lab`` sorted by ring, time and link.
+        Not one of the shared Glue ``TABLES``: it feeds the dashboard only.
+
+    Raises:
+        ValueError: if any ring link's payment count, USD total or labelled
+        payment count differs from ``ring_edges`` (the two are built from
+        different passes over the input, so this is a real cross-check).
+    """
+    payments = seen[['src', 'dst', 'ts', 'usd', 'lab']].merge(ring_edges[['src', 'dst', 'ring_id']], on=['src', 'dst'])
+    found = payments.groupby(['src', 'dst']).agg(n=('ts', 'size'), paid=('usd', 'sum'), labelled=('lab', 'sum'))
+    check = ring_edges.set_index(['src', 'dst'])[['txns', 'usd', 'laundering_txns']].join(found, how='left')
+    check = check.fillna({'n': 0, 'paid': 0.0, 'labelled': 0})
+    bad = ((check.n != check.txns) | (check.labelled != check.laundering_txns)
+           | ((check.paid - check.usd).abs() > 0.01 + 1e-9 * check.usd.abs()))
+    if bad.any():
+        raise ValueError('Ring payments do not reconcile with ring_edges')
+    payments = payments[['ring_id', 'src', 'dst', 'ts', 'usd', 'lab']]
+    return payments.sort_values(['ring_id', 'ts', 'src', 'dst', 'usd'], ignore_index=True)
 
 
 def ring_table(result):
@@ -372,11 +414,19 @@ def _rate(numerator, denominator):
     return float(numerator / denominator) if denominator else None
 
 
-def ring_graph(ring_id, result, limit=MAX_GRAPH_NODES):
-    """Nodes and links of one ring for the dashboard's network view.
+def ring_graph(ring_id, result, limit=MAX_GRAPH_NODES, payment_limit=MAX_GRAPH_PAYMENTS):
+    """Nodes, links and payment timeline of one ring for the dashboard's network view.
 
     Hubs and loop accounts are always drawn; counterparties are added by
-    payment volume until ``limit`` nodes. No per-account labels are included.
+    payment volume until ``limit`` nodes.
+
+    For the presenter view's replay and reveal, each node carries
+    ``touches_laundering`` and the graph carries ``payments``: one
+    ``[link index, minutes after payment_start, usd, laundering 0/1]`` row per
+    payment on a drawn link, earliest first, at most ``payment_limit`` rows
+    (``payments_total`` counts them all). ``loops`` lists the drawn timed
+    loops as ``[a, b, c]`` account IDs. These flags are shown only after the
+    ring was found; they never affect which accounts are drawn or their order.
     """
     members = result['ring_members'][result['ring_members'].ring_id.eq(ring_id)]
     edges = result['ring_edges'][result['ring_edges'].ring_id.eq(ring_id)]
@@ -390,19 +440,33 @@ def ring_graph(ring_id, result, limit=MAX_GRAPH_NODES):
     loops = result['loops']
     loop_edges = {(s, d) for a, b, c in loops.itertuples(index=False) if a in keep
                   for s, d in [(a, b), (b, c), (c, a)]}
+    touches = result['accounts'].touches_laundering
     nodes = [dict(id=row.account, role=row.role, fan_in=int(row.fan_in), fan_out=int(row.fan_out),
-                  in_usd=float(row.in_usd), out_usd=float(row.out_usd)) for row in shown.itertuples(index=False)]
+                  in_usd=float(row.in_usd), out_usd=float(row.out_usd), touches_laundering=bool(touches.get(row.account, False)))
+             for row in shown.itertuples(index=False)]
     links = [dict(source=row.src, target=row.dst, txns=int(row.txns), usd=float(row.usd),
                   loop=(row.src, row.dst) in loop_edges) for row in drawn.itertuples(index=False)]
+    link_index = {(link['source'], link['target']): i for i, link in enumerate(links)}
+    paid = result['ring_payments']
+    paid = paid[paid.ring_id.eq(ring_id)]
+    paid = paid[[pair in link_index for pair in zip(paid.src, paid.dst)]]
+    start = paid.ts.min().floor('min') if len(paid) else None
+    payments = [[link_index[(row.src, row.dst)], int((row.ts - start) // pd.Timedelta(minutes=1)), round(float(row.usd), 2), int(row.lab)]
+                for row in paid.head(payment_limit).itertuples(index=False)]
+    drawn_loops = [[a, b, c] for a, b, c in loops.itertuples(index=False) if a in keep and b in keep and c in keep]
     return dict(nodes=nodes, links=links, total_accounts=len(members), shown_accounts=len(shown),
-                truncated=len(shown) < len(members))
+                truncated=len(shown) < len(members), loops=drawn_loops,
+                payment_start=start.isoformat() if start is not None else None,
+                payments=payments, payments_total=int(len(paid)))
 
 
 def dashboard_section(result, top=TOP_RINGS):
-    """The ``network`` section of ``dashboard.json``.
+    """The ``network`` section of ``dashboard.json`` (schema 2).
 
-    Labels appear only as aggregate rates ("share of these accounts that
-    touch a laundering payment"), never per account or per payment.
+    Labels appear as aggregate rates ("share of these accounts that touch a
+    laundering payment") and, inside the drawn ring graphs only, as a
+    per-account and per-payment flag for the presenter view's reveal step
+    (see ``ring_graph``). They never change detection or ranking.
     """
     accounts, totals = result['accounts'], result['totals'].iloc[0]
     base = _rate(totals.laundering_accounts, totals.accounts)
@@ -440,7 +504,7 @@ def dashboard_section(result, top=TOP_RINGS):
                           rings_with_laundering=int((chosen.laundering_accounts > 0).sum())))
     in_rings = set(members.account)
     return dict(
-        schema_version=1,
+        schema_version=2,
         question='Which accounts collect money from many sources and quickly pass it on, or move it in loops, '
                  'so we know which accounts to restrict and which alerts belong to the same case?',
         audience='Mule-account and network investigations team',
@@ -455,6 +519,7 @@ def dashboard_section(result, top=TOP_RINGS):
                    coverage=_rate(int(touches.reindex(list(in_rings)).sum()), totals.laundering_accounts),
                    **{key: value for key, value in group(in_rings).items() if key != 'accounts'}),
         top_rings=top_k,
+        ring_sizes=[int(size) for size in rings.accounts],
         ring_list=ring_rows,
         graphs={row['ring_id']: ring_graph(row['ring_id'], result) for row in ring_rows},
         definitions=dict(
@@ -463,7 +528,8 @@ def dashboard_section(result, top=TOP_RINGS):
             loop=f'A -> B -> C -> A with payments in that order within {LOOP_WINDOW.days} days, among accounts with at most {MAX_LINKS} links.',
             ring=f'Accounts connected through a hub (threshold {HEADLINE_THRESHOLD}) or a loop. One ring = one case; at least {MIN_RING_ACCOUNTS} accounts.',
             ranking='Hubs first, then loops, then payments. Labels never change the order.',
-            evaluation='Laundering rate = share of accounts with at least one labelled laundering payment. Used only to check results.'),
+            evaluation='Laundering rate = share of accounts with at least one labelled laundering payment. Used only to check results; '
+                       'the presenter view also reveals it per account in the drawn rings, after they were found.'),
     )
 
 

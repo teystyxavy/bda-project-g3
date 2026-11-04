@@ -9,8 +9,10 @@ belong to the same case?*
 This replaces the treasury-corridor BQ2 (team decision, 25 Oct 2026). BQ1 scores
 single payments; BQ2 looks at the payment network and finds **groups of
 accounts**. One ring = one case. Detection uses only who paid whom, when and how
-much. The `is_laundering` label is used afterwards, and only as aggregate rates,
-to check the results.
+much. The `is_laundering` label is used afterwards to check the results: as
+aggregate rates everywhere, and per account and per payment on the drawn rings
+so the dashboard's presenter view can reveal, after a ring is found, which of
+its accounts really laundered. Labels never change detection or ranking.
 
 ## Method
 
@@ -184,3 +186,22 @@ Nothing on this branch has been deployed. To ship it:
    network job to take a few minutes on 2 × G.1X.
 
 The legacy `infra/orchestration` stack still uses the Athena corridor SQL and is unchanged.
+
+## Presenter view
+
+The Mule networks tab has a **Present rings** button: a full-screen,
+keyboard-driven story for a class or briefing (→/← or a clicker, Space to
+play, R to reveal labels, F full screen, Esc to close).
+
+1. Every account as one dot; 2. the fan-in/fan-out candidates; 3. the rings;
+4. replay of one ring's real payments in time order (timed loops flash as they
+close); 5. reveal of which accounts touched laundering; 6. base rate against
+ring and hub rates; 7. all drawn rings, click one to replay it.
+
+Data: `network.ring_graph` adds `payments` (`[link, minutes after
+payment_start, usd, laundering 0/1]`, earliest first, at most
+`MAX_GRAPH_PAYMENTS` per ring), `loops` and `touches_laundering` per node
+(network section schema 2). `ring_payment_table` rebuilds these payments in the
+second pass over the input and refuses to publish if any ring link's payment
+count, USD or labelled count differs from `ring_edges`. Releases published
+before schema 2 hide the button.

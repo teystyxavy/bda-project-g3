@@ -67,16 +67,50 @@ def test_rings_group_hub_counterparties_and_loops(result):
     assert s0.txns == 2 and s0.usd == pytest.approx(60.0)
 
 
-def test_dashboard_section_is_json_and_label_free_per_account(result):
+def test_dashboard_section_is_json_and_flags_labels_only_on_drawn_rings(result):
     section = dashboard_section(result)
     text = json.dumps(section, allow_nan=False)
-    assert 'is_laundering' not in text and 'touches_laundering' not in text
+    assert section['schema_version'] == 2 and 'is_laundering' not in text
     graph = section['graphs'][section['ring_list'][0]['ring_id']]
-    assert {'id', 'role', 'fan_in', 'fan_out', 'in_usd', 'out_usd'} == set(graph['nodes'][0])
+    assert {'id', 'role', 'fan_in', 'fan_out', 'in_usd', 'out_usd', 'touches_laundering'} == set(graph['nodes'][0])
     assert all(set(link) == {'source', 'target', 'txns', 'usd', 'loop'} for link in graph['links'])
     loop_ring = next(row for row in section['ring_list'] if row['loops'])
     assert all(link['loop'] for link in section['graphs'][loop_ring['ring_id']]['links'])
     assert section['rings']['rings'] == 3 and section['loops']['three_account']['loops'] == 2
+    assert section['ring_sizes'] == [row['accounts'] for row in section['ring_list']]
+    # Per-account flags match the aggregate ring rate shown in the ring list.
+    for row in section['ring_list']:
+        nodes = section['graphs'][row['ring_id']]['nodes']
+        assert sum(node['touches_laundering'] for node in nodes) / len(nodes) == pytest.approx(row['laundering_rate'])
+
+
+def test_ring_graph_replays_every_payment_on_drawn_links(result):
+    section = dashboard_section(result)
+    for row in section['ring_list']:
+        graph = section['graphs'][row['ring_id']]
+        payments = graph['payments']
+        assert graph['payments_total'] == len(payments) == sum(link['txns'] for link in graph['links']) == row['txns']
+        assert [p[1] for p in payments] == sorted(p[1] for p in payments) and payments[0][1] == 0
+        for i, link in enumerate(graph['links']):
+            mine = [p for p in payments if p[0] == i]
+            assert len(mine) == link['txns'] and sum(p[2] for p in mine) == pytest.approx(link['usd'], abs=0.01 * len(mine))
+        assert all(p[3] in (0, 1) for p in payments)
+    loop_ring = next(row for row in section['ring_list'] if row['loops'])
+    loops = section['graphs'][loop_ring['ring_id']]['loops']
+    assert len(loops) == loop_ring['loops'] and all(len(loop) == 3 for loop in loops)
+
+
+def test_ring_graph_caps_the_replay_but_counts_every_payment(result):
+    ring_id = result['ring_members'].set_index('account').ring_id['10:H']
+    graph = network.ring_graph(ring_id, result, payment_limit=2)
+    assert len(graph['payments']) == 2 and graph['payments_total'] > 2
+
+
+def test_ring_payments_must_reconcile_with_ring_edges(result):
+    seen = result['ring_payments'].drop(columns='ring_id')
+    network.ring_payment_table(seen, result['ring_edges'])
+    with pytest.raises(ValueError, match='reconcile'):
+        network.ring_payment_table(seen.iloc[1:], result['ring_edges'])
 
 
 def test_graph_truncates_to_node_limit(result):

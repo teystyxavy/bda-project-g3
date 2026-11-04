@@ -745,8 +745,10 @@ function renderNetwork() {
   element('network-terms').innerHTML=Object.entries(data.definitions).map(([term,text])=>`<dt>${escapeText(term.replace('_',' '))}</dt><dd>${escapeText(text)}</dd>`).join('');
   element('network-verification').textContent=data.verification?JSON.stringify(data.verification,null,2):'';
   renderRingList(data);
+  element('network-present').hidden=!presenterAvailable(data);
   if(!networkReady) {
     networkReady=true;
+    bindPresenter();
     element('ring-picker').onchange=()=>selectRing(element('ring-picker').value);
     element('ring-search').oninput=()=>findAccount(element('ring-search').value);
     element('ring-reset').onclick=()=>{if(selectedRing){delete ringLayouts[selectedRing];stopRingScene();ringScene=null;renderRing();}};
@@ -1180,4 +1182,399 @@ function showAccount(id) {
   const action={hub:'Collects from many accounts and pays many others. Restricting it cuts the most flows in this ring.',loop:'Part of a timed loop: money it sends comes back within seven days.',
     sender:'Pays money into the ring.',receiver:'Receives money paid out of the ring.',both:'Both pays into and receives from the ring.'}[role];
   element('ring-node').innerHTML=`<span class="role-chip" style="background:${ROLE[role].color}">${escapeText(ROLE[role].label)}</span><h3 class="account-id">${escapeText(node.id)}</h3><p>${escapeText(action)}</p><div class="ring-facts"><span><small>Distinct senders</small>${integer(node.fan_in)}</span><span><small>Distinct receivers</small>${integer(node.fan_out)}</span><span><small>Received</small>${dollars(node.in_usd)}</span><span><small>Sent</small>${dollars(node.out_usd)}</span></div><h4>Money in, within this ring</h4>${list(inn,'source','←')}<h4>Money out, within this ring</h4>${list(out,'target','→')}<p class="field-help">Sender, receiver and USD figures cover the whole dataset.</p>`;
+}
+
+// ---- BQ2 presenter view: a full-screen, keyboard-driven story for a class or briefing ----
+// Seven steps: every account as a dot -> the fan-in/fan-out candidates -> the
+// rings -> replay of one ring's real payments in time order -> reveal of which
+// accounts touched laundering -> base rate versus ring rates -> all drawn rings.
+// Data comes only from snapshot.network (schema 2: payments, loops and
+// touches_laundering on each drawn ring graph). Labels are shown only after a
+// ring is found and never change detection or ranking.
+const PRES_STEPS=7, PRES_SCENE_START=[0,3,4,6];
+const PRES_COLOR={...RING_GLOW,dirty:'#ff2e55',clean:'#3d5468'};
+const PRES_ROLE_NAME={hub:'Hub',loop:'Loop account',sender:'Sender',receiver:'Receiver',both:'Sends and receives'};
+const PRES={open:false,step:0,data:null,ring:null,raf:null,last:0,W:0,H:0,DPR:1,hay:null,clusters:[],layouts:{},
+  anim:{bg:1,cand:0,gather:0,zoom:0,graph:0,wall:0,dim:0},replay:null,reveal:{on:false,at:0,order:[],dur:0},wallAt:0,wallCells:[],wallHover:-1,lastCount:-1,returnFocus:null};
+
+// Whether a release carries what the presenter needs (older releases do not).
+function presenterAvailable(net) {
+  return Boolean(net?.ring_list?.length&&net.graphs?.[net.ring_list[0].ring_id]?.payments);
+}
+
+// snapshot.network -> compact rings: nodes [id, display role, touched 0/1],
+// links [from, to, payments, usd], pays [link, minute, usd, laundering 0/1], tri [a, b, c].
+function presenterData(net) {
+  const rings=net.ring_list.filter(row=>net.graphs[row.ring_id]?.payments).map(row=>{
+    const graph=net.graphs[row.ring_id], roles=flowRoles(graph), index=new Map(graph.nodes.map((node,i)=>[node.id,i]));
+    return {rank:row.rank,id:row.ring_id,hubs:row.hubs,loops:row.loops,usd:row.usd,rate:row.laundering_rate??0,graph,
+      start:Date.parse(String(graph.payment_start)+'Z'),total:graph.payments_total??graph.payments.length,
+      nodes:graph.nodes.map(node=>[node.id,roles[node.id],node.touches_laundering?1:0]),
+      links:graph.links.map(link=>[index.get(link.source),index.get(link.target),link.txns,link.usd]),
+      pays:graph.payments,tri:(graph.loops||[]).map(loop=>loop.map(id=>index.get(id))).filter(loop=>loop.every(i=>i!=null))};
+  });
+  const low=net.thresholds.reduce((a,b)=>a.threshold<=b.threshold?a:b), head=net.thresholds.find(row=>row.headline)||net.thresholds[0];
+  return {rings,totals:net.totals,summary:net.rings,low,head,candidates:low.hubs.accounts+low.high_volume.accounts,
+    sizes:net.ring_sizes||net.ring_list.map(row=>row.accounts),loopDays:net.parameters.loop_window_days,headline:net.parameters.headline_threshold};
+}
+
+function presRandom(seed) {return ()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return ((t^t>>>14)>>>0)/4294967296;};}
+const presClamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const presEase=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const presUsd=n=>n>=1e6?`$${(n/1e6).toFixed(n>=1e7?1:2)}M`:n>=1e3?`$${(n/1e3).toFixed(n>=1e5?0:1)}K`:`$${Math.round(n)}`;
+const presPct=x=>x==null?'n/a':`${(x*100).toFixed(x<.1&&x>0?1:0)}%`;
+function presRgba(hex,a) {const n=parseInt(hex.slice(1),16);return `rgba(${n>>16},${n>>8&255},${n&255},${a})`;}
+
+// Earliest moment each drawn A->B->C->A loop completes, in order, within the loop window.
+function presLoopCloses(ring,windowDays=7) {
+  const byLink=new Map(ring.links.map((link,i)=>[`${link[0]}>${link[1]}`,i])), at=ring.links.map(()=>[]);
+  ring.pays.forEach(pay=>at[pay[0]].push(pay[1]));
+  const window=windowDays*1440;
+  return ring.tri.map(([a,b,c])=>{
+    const ab=at[byLink.get(`${a}>${b}`)]||[], bc=at[byLink.get(`${b}>${c}`)]||[], ca=at[byLink.get(`${c}>${a}`)]||[];
+    let best=null;
+    for(const t1 of ab) for(const t2 of bc) {if(t2<t1) continue;for(const t3 of ca) if(t3>=t2&&t3-t1<=window&&(!best||t3<best.t)) best={t:t3,days:(t3-t1)/1440,nodes:[a,b,c]};}
+    return best;
+  });
+}
+
+// Replay clock in minutes after the ring's first payment.
+function presSetRing(ring) {
+  const pays=ring.pays, t0=pays.length?pays[0][1]:0, t1=pays.length?pays[pays.length-1][1]:0, span=Math.max(t1-t0,60);
+  PRES.ring=ring;
+  PRES.replay={t:Infinity,t0,t1,span,mps:span/presClamp(9+pays.length*.075,11,26),speed:1,playing:false,next:0,recv:[],lastLink:[],moved:0,paid:0,
+    loops:presLoopCloses(ring,PRES.data?.loopDays||7),loopShown:new Set(),flash:[],loopFlash:null};
+  presSeek(t0-span*.03);
+}
+const presFlight=()=>PRES.replay.mps*PRES.replay.speed*.9;
+const presEnd=()=>PRES.replay.t1+presFlight()+1;
+function presSeek(t) {
+  const r=PRES.replay, ring=PRES.ring;
+  if(t<r.t) {r.next=0;r.recv=ring.nodes.map(()=>0);r.lastLink=ring.links.map(()=>-1e9);r.moved=0;r.paid=0;r.loopShown=new Set();r.flash=[];}
+  r.t=t;const flight=presFlight(), now=typeof performance==='object'?performance.now():0;
+  while(r.next<ring.pays.length&&ring.pays[r.next][1]+flight<=t) {
+    const pay=ring.pays[r.next], link=ring.links[pay[0]];
+    r.recv[link[1]]+=pay[2];r.moved+=pay[2];r.paid++;r.lastLink[pay[0]]=pay[1]+flight;r.next++;r.flash.push({node:link[1],at:now});
+  }
+  if(r.flash.length>60) r.flash.splice(0,r.flash.length-60);
+  r.loops.forEach((loop,k)=>{if(loop&&loop.t+flight<=t&&!r.loopShown.has(k)) {r.loopShown.add(k);if(r.playing) presLoopToast(loop);}});
+}
+let presToastTimer=0;
+function presLoopToast(loop) {
+  const tail=i=>escapeText(PRES.ring.nodes[i][0].split(':')[1]?.slice(-4)||PRES.ring.nodes[i][0]), el=element('pres-toast');
+  el.innerHTML=`Loop closed: …${tail(loop.nodes[0])} → …${tail(loop.nodes[1])} → …${tail(loop.nodes[2])} → back in <b>${loop.days.toFixed(1)} days</b>`;
+  el.hidden=false;clearTimeout(presToastTimer);presToastTimer=setTimeout(()=>{el.hidden=true;},2600);
+  PRES.replay.loopFlash={nodes:loop.nodes,at:performance.now()};
+}
+function presSetPlaying(on) {
+  const r=PRES.replay;if(on&&r.t>=presEnd()-1) presSeek(r.t0-r.span*.03);
+  r.playing=on;const play=element('pres-play');play.textContent=on?'❚❚':'▶';play.setAttribute('aria-label',on?'Pause':'Play');
+}
+
+function presReveal(on) {
+  const n=PRES.ring.nodes.length, order=Array.from({length:n},(_,i)=>i), random=presRandom(PRES.ring.rank*7);
+  for(let i=n-1;i>0;i--) {const j=Math.floor(random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}
+  PRES.reveal={on,at:performance.now()-(motionAllowed()?0:1e5),order:order.reduce((acc,node,k)=>(acc[node]=k,acc),[]),dur:Math.min(1600,70*n)};
+  PRES.lastCount=-1;
+}
+function presRevealP(i) {const v=PRES.reveal;if(!v.on) return 0;return presClamp((performance.now()-v.at-v.order[i]/PRES.ring.nodes.length*v.dur)/380);}
+
+// Story text for the current step (also used by tests).
+function presStoryHTML(step=PRES.step,data=PRES.data,ring=PRES.ring,revealed=0) {
+  const t=data.totals, s=data.summary, n=ring.nodes.length, dirty=ring.nodes.filter(node=>node[2]).length;
+  switch(step) {
+    case 0:return `<div class="pres-eyebrow">This release · ${integer(t.rows)} payments</div><h2>${integer(t.accounts)} accounts. A few hundred of them are working together.</h2><p>Every dot is one real account. Where it sits means nothing yet. The job: find the ones that move money as a team.</p>`;
+    case 1:return `<div class="pres-eyebrow">Step 1 · fan-in and fan-out</div><h2><em>${integer(data.candidates)}</em> accounts collect from ${data.low.threshold}+ senders and pay ${data.low.threshold}+ receivers.</h2><p>Counted over ${integer(t.links)} account-to-account links. Pooling money from many and passing it on to many is what a mule does.</p>`;
+    case 2:return `<div class="pres-eyebrow">Step 2 · hubs, loops, rings</div><h2>${integer(s.accounts)} accounts fall into <em>${integer(s.rings)} rings</em>.</h2><p>Hubs with ${data.headline}+ senders and ${data.headline}+ receivers, timed loops (A → B → C → A within ${data.loopDays} days), and the accounts they deal with. Each cluster is one case to review. Ring #1 sits in the middle.</p>`;
+    case 3:return `<div class="pres-eyebrow">Ring #${ring.rank} · lead account ${escapeText(ring.nodes[0]?.[0]||ring.id)}</div><h2>${ring.hubs?`${ring.hubs===1?'One hub':`${ring.hubs} hubs`}, ${integer(n-ring.hubs)} other accounts, <em>${presUsd(ring.usd)}</em> moved.`:`${integer(n)} accounts passing money in <em>${plural(ring.loops,'timed loop')}</em>.`}</h2><p>${integer(ring.pays.length)}${ring.total>ring.pays.length?` of ${integer(ring.total)}`:''} real payments, replayed in the order they happened. ${ring.hubs?'Senders sit on the left and receivers on the right. Watch the hub collect, then pay out.':`Each purple flash is a loop closing: money leaves an account and comes back within ${data.loopDays} days.`}</p>`;
+    case 4:return dirty?`<div class="pres-eyebrow">Ring #${ring.rank} · ground truth</div><h2><span class="pres-dirty" id="pres-count">${revealed}</span> of ${integer(n)} accounts touched a laundering payment.</h2><p>The detector never saw these labels. They come with the dataset and are only shown after the ring was found.</p>`
+      :`<div class="pres-eyebrow">Ring #${ring.rank} · ground truth</div><h2><span id="pres-count">${revealed}</span> of ${integer(n)} accounts touched a laundering payment.</h2><p>Dense structure is not proof. Payroll, payment processors and escrow accounts look like this too, so an analyst still makes the call.</p>`;
+    case 5:return `<div class="pres-eyebrow">Does it hold up?</div><h2>${presPct(t.laundering_rate)} of all accounts touch laundering. Inside the rings it's <span class="pres-dirty">${presPct(s.laundering_rate)}</span>.</h2><p>That is ${s.lift==null?'well above':`${s.lift.toFixed(0)}×`} the base rate, found without using a single label.</p>`;
+    default:return `<div class="pres-eyebrow">The case list</div><h2>The top ${integer(data.rings.length)} rings, ranked.</h2><p>Red accounts touched a laundering payment. Click any ring to replay it.</p>`;
+  }
+}
+
+function openPresenter() {
+  const net=snapshot?.network;if(!presenterAvailable(net)) return;
+  PRES.data=presenterData(net);PRES.layouts={};PRES.hay=null;PRES.open=true;PRES.returnFocus=document.activeElement;
+  const pick=element('pres-ring');selectOptions('pres-ring',PRES.data.rings.map(ring=>String(ring.rank)),rank=>{const ring=PRES.data.rings.find(item=>String(item.rank)===rank);return `#${ring.rank} · ${ring.nodes.length} accounts · ${ring.hubs?plural(ring.hubs,'hub'):plural(ring.loops,'loop')} · ${presUsd(ring.usd)}`;});
+  pick.onchange=()=>presChooseRing(+pick.value);
+  const loopRing=PRES.data.rings.find(ring=>ring.loops&&!ring.hubs), clean=PRES.data.rings.find(ring=>ring.rate===0);
+  element('pres-quick').innerHTML=[[PRES.data.rings[0],'biggest'],[loopRing,'loops'],[clean,'clean']].filter(([ring])=>ring)
+    .map(([ring,label])=>`<button type="button" data-rank="${ring.rank}">#${ring.rank} ${label}</button>`).join('');
+  element('pres-quick').onclick=event=>{const button=event.target.closest('[data-rank]');if(button) presChooseRing(+button.dataset.rank);};
+  presSetRing(PRES.data.rings[0]);pick.value=String(PRES.data.rings[0].rank);
+  element('presenter').hidden=false;document.body?.classList?.add('pres-lock');
+  presResize();presGo(0,true);
+  element('pres-next').focus?.();
+  if(!PRES.raf&&typeof requestAnimationFrame==='function') PRES.raf=requestAnimationFrame(presFrame);
+}
+function closePresenter() {
+  PRES.open=false;element('presenter').hidden=true;document.body?.classList?.remove('pres-lock');
+  if(PRES.replay) PRES.replay.playing=false;
+  if(PRES.raf&&typeof cancelAnimationFrame==='function') cancelAnimationFrame(PRES.raf);PRES.raf=null;
+  if(document.fullscreenElement) document.exitFullscreen?.().catch?.(()=>{});
+  PRES.returnFocus?.focus?.();
+}
+function presChooseRing(rank) {
+  presSetRing(PRES.data.rings.find(ring=>ring.rank===rank));element('pres-ring').value=String(rank);
+  if(PRES.step===4||PRES.step===5) {presSeek(presEnd());presReveal(true);} else {PRES.reveal.on=false;presSetPlaying(motionAllowed());}
+  presUpdateText();
+}
+
+function presGo(n,force=false) {
+  n=presClamp(n,0,PRES_STEPS-1);if(n===PRES.step&&!force) return;
+  const previous=PRES.step;PRES.step=n;
+  const replayish=n>=3&&n<=5;
+  element('pres-readout').hidden=!replayish||(n===5&&PRES.W<820);element('pres-timeline').hidden=!replayish;
+  element('pres-verdict').hidden=n!==5;element('pres-toast').hidden=true;
+  if(n===3) {if(PRES.reveal.on) PRES.reveal.on=false;if(previous!==3||force) {presSeek(PRES.replay.t0-PRES.replay.span*.03);presSetPlaying(motionAllowed()&&!force);}}
+  if(n===4) {presSetPlaying(false);presSeek(presEnd());if(!PRES.reveal.on||previous!==5) presReveal(true);}
+  if(n===5) {if(!PRES.reveal.on) {presSeek(presEnd());presReveal(true);}presVerdict();}
+  if(n===6) {PRES.wallAt=performance.now();presSetPlaying(false);}
+  if(n<3) presSetPlaying(false);
+  presUpdateText();
+  element('pres-back').disabled=n===0;element('pres-next').disabled=n===PRES_STEPS-1;element('pres-next').textContent=n===PRES_STEPS-1?'End':'Next →';
+  element('pres-steps').innerHTML=Array.from({length:PRES_STEPS},(_,i)=>`<i class="${i<=n?'on':''}"></i>`).join('');
+  const scene=n<3?0:n===3?3:n<6?4:6;
+  element('presenter').querySelectorAll?.('[data-pres-step]').forEach(button=>button.setAttribute('aria-current',+button.dataset.presStep===scene?'step':'false'));
+}
+function presUpdateText() {
+  element('pres-story').innerHTML=`<div class="pres-fade">${presStoryHTML()}</div>`;PRES.lastCount=-1;
+  presLegend();presMeters();presTimeline();
+}
+function presMeters() {
+  const r=PRES.replay, ring=PRES.ring;
+  element('pres-pays').textContent=`${integer(r.paid)} / ${integer(ring.pays.length)}`;element('pres-usd').textContent=presUsd(r.moved);
+  if(PRES.step===4||PRES.step===5) return;
+  element('pres-third-label').textContent=ring.tri.length?'Timed loops closed':'Accounts paid so far';
+  element('pres-third').textContent=ring.tri.length?`${r.loopShown.size} / ${ring.tri.length}`:`${r.recv.filter(v=>v>0).length} / ${ring.nodes.length}`;
+}
+function presRevealCount() {
+  const ring=PRES.ring, n=ring.nodes.reduce((sum,node,i)=>sum+(node[2]&&presRevealP(i)>=.5?1:0),0);
+  if(n===PRES.lastCount) return;PRES.lastCount=n;
+  element('pres-third-label').textContent='Touched a laundering payment';element('pres-third').textContent=`${n} of ${ring.nodes.length}`;
+  const count=element('pres-count');if(count) count.textContent=n;
+}
+function presLegend() {
+  const item=(color,label)=>`<span style="color:${color}"><i></i><span>${escapeText(label)}</span></span>`;
+  element('pres-legend').innerHTML=PRES.reveal.on?item(PRES_COLOR.dirty,'Touched laundering')+item(PRES_COLOR.clean,'No laundering found')
+    :['hub','loop','sender','receiver','both'].filter(role=>PRES.ring.nodes.some(node=>node[1]===role)).map(role=>item(PRES_COLOR[role],PRES_ROLE_NAME[role])).join('');
+}
+function presVerdict() {
+  const d=PRES.data, t=d.totals, s=d.summary, h=d.head.hubs;
+  const rows=[['All accounts',`${integer(t.laundering_accounts)} of ${integer(t.accounts)}`,t.laundering_rate,false],
+    ['Accounts in rings',`${integer(s.laundering_accounts)} of ${integer(s.accounts)}`,s.laundering_rate,true],
+    [`Hubs (${d.headline}+ in, ${d.headline}+ out)`,`${integer(h.laundering_accounts)} of ${integer(h.accounts)}`,h.laundering_rate,true]];
+  element('pres-verdict').innerHTML=rows.map(([label,count,value,hot])=>`<div class="pres-vrow${hot?' hot':''}"><div class="pres-vlab">${escapeText(label)}<small>${escapeText(count)}</small></div><div class="pres-vtrack"><div class="pres-vfill" data-w="${(value||0)*100}"></div></div><strong>${presPct(value)}</strong></div>`).join('')
+    +'<p>Share of accounts that touched at least one laundering payment. Labels were used only to check these results.</p>';
+  const fill=()=>element('pres-verdict').querySelectorAll?.('.pres-vfill').forEach(el=>{el.style.width=`${el.dataset.w}%`;});
+  typeof requestAnimationFrame==='function'?requestAnimationFrame(()=>requestAnimationFrame(fill)):fill();
+}
+
+// ---- drawing ----
+function presResize() {
+  const canvas=element('pres-canvas');if(!canvas?.getBoundingClientRect) return;
+  const box=canvas.getBoundingClientRect();PRES.DPR=Math.min(window.devicePixelRatio||1,2);PRES.W=box.width;PRES.H=box.height;
+  canvas.width=Math.round(box.width*PRES.DPR);canvas.height=Math.round(box.height*PRES.DPR);
+  const tl=element('pres-tl'), tb=tl.getBoundingClientRect();tl.width=Math.round(tb.width*PRES.DPR);tl.height=Math.round(tb.height*PRES.DPR);
+  presBuildHaystack();presTimeline();
+}
+function presDisc() {const {W,H}=PRES;return {cx:W*.56,cy:H*.52,rx:Math.min(W*.47,H*.78),ry:H*.44};}
+function presBuildHaystack() {
+  const {W,H,DPR}=PRES, data=PRES.data;if(!W||!data) return;
+  if(!PRES.points||PRES.points.n!==data.totals.accounts) {
+    // Every dot is one real account (positions are arbitrary); the highlighted sets have their real sizes.
+    const n=data.totals.accounts, random=presRandom(459), px=new Float32Array(n), py=new Float32Array(n), pb=new Uint8Array(n);
+    for(let i=0;i<n;i++) {const a=random()*Math.PI*2, r=Math.pow(random(),.62);px[i]=.5+Math.cos(a)*r*.5;py[i]=.5+Math.sin(a)*r*.5;pb[i]=40+random()*90|0;}
+    const pick=(k,avoid)=>{const set=new Set();k=Math.min(k,n-(avoid?.size||0));while(set.size<k) {const i=random()*n|0;if(!avoid||!avoid.has(i)) set.add(i);}return [...set];};
+    const cand=pick(data.candidates), ringDots=pick(data.summary.accounts,new Set(cand));
+    PRES.points={n,px,py,pb,cand,ringDots};
+  }
+  const P=PRES.points, d=presDisc(), xy=i=>[d.cx+(P.px[i]-.5)*2*d.rx,d.cy+(P.py[i]-.5)*2*d.ry];PRES.hayXY=xy;
+  const w=Math.round(W*DPR), h=Math.round(H*DPR), hay=document.createElement('canvas');hay.width=w;hay.height=h;
+  const hc=hay.getContext('2d'), image=hc.createImageData(w,h), pixels=image.data;
+  for(let i=0;i<P.n;i++) {
+    const [x,y]=xy(i), X=x*DPR|0, Y=y*DPR|0;if(X<0||Y<0||X>=w||Y>=h) continue;
+    const k=(Y*w+X)*4, b=P.pb[i];pixels[k]=Math.min(255,pixels[k]+b*.55);pixels[k+1]=Math.min(255,pixels[k+1]+b*.8);pixels[k+2]=Math.min(255,pixels[k+2]+b);pixels[k+3]=255;
+  }
+  hc.putImageData(image,0,0);PRES.hay=hay;
+  // Rings as a sunflower in rank order, ring #1 in the centre.
+  const sizes=data.sizes, golden=Math.PI*(3-Math.sqrt(5)), step=Math.min(d.ry*.96/Math.sqrt(sizes.length),d.rx*.96/Math.sqrt(sizes.length)/1.15), clusters=[];
+  let at=0;
+  sizes.forEach((size,k)=>{
+    const rr=step*Math.sqrt(k+.35), cx=d.cx+Math.cos(k*golden)*rr*1.15, cy=d.cy+Math.sin(k*golden)*rr, spread=step*.085*Math.sqrt(size);
+    for(let j=0;j<size&&at<P.ringDots.length;j++) {const q=Math.sqrt((j+.5)/size)*spread;clusters[at++]=[cx+Math.cos(j*golden)*q,cy+Math.sin(j*golden)*q];}
+  });
+  PRES.clusters=clusters;PRES.clusterCenter=[d.cx,d.cy];
+}
+const presSprites=new Map();
+function presGlow(color) {
+  if(presSprites.has(color)) return presSprites.get(color);
+  const c=document.createElement('canvas'), s=64;c.width=c.height=s;const g=c.getContext('2d'), grad=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
+  grad.addColorStop(0,presRgba(color,.9));grad.addColorStop(.25,presRgba(color,.35));grad.addColorStop(1,presRgba(color,0));
+  g.fillStyle=grad;g.fillRect(0,0,s,s);presSprites.set(color,c);return c;
+}
+function presDot(ctx,x,y,r,color,glow) {
+  if(glow) {const mode=ctx.globalCompositeOperation;ctx.globalCompositeOperation='lighter';ctx.drawImage(presGlow(color),x-glow,y-glow,glow*2,glow*2);ctx.globalCompositeOperation=mode;}
+  ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();
+}
+const presCurve=(a,b,bend=.14)=>[(a[0]+b[0])/2-(b[1]-a[1])*bend,(a[1]+b[1])/2+(b[0]-a[0])*bend];
+const presQuad=(a,c,b,u)=>{const v=1-u;return [v*v*a[0]+2*v*u*c[0]+u*u*b[0],v*v*a[1]+2*v*u*c[1]+u*u*b[1]];};
+// Rest positions come from the explorer's own deterministic layout (layoutRing).
+function presLayout(ring) {
+  if(PRES.layouts[ring.id]) return PRES.layouts[ring.id];
+  const pos=layoutRing(ring.graph), pts=ring.nodes.map(node=>[pos[node[0]].x,pos[node[0]].y]), xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]);
+  return PRES.layouts[ring.id]={pts,minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys)};
+}
+function presFit(layout,box,cap=2.4) {
+  const w=Math.max(layout.maxX-layout.minX,1), h=Math.max(layout.maxY-layout.minY,1), s=Math.min(box.w/w,box.h/h,cap);
+  const ox=box.x+box.w/2-(layout.minX+w/2)*s, oy=box.y+box.h/2-(layout.minY+h/2)*s;
+  return {s,pts:layout.pts.map(([x,y])=>[ox+x*s,oy+y*s])};
+}
+function presGraphBox() {
+  const {W,H}=PRES;if(W<820) return {x:26,y:150,w:W-52,h:Math.max(H-270,120)};
+  const left=Math.min(W*.3,470);return {x:40+left*.35,y:70,w:W-300-60-left*.35,h:H-110};
+}
+function presNodeColor(ring,i) {const p=presRevealP(i);return p>=.5?(ring.nodes[i][2]?PRES_COLOR.dirty:PRES_COLOR.clean):PRES_COLOR[ring.nodes[i][1]];}
+
+function presDrawHaystack(ctx,t) {
+  const A=PRES.anim, alpha=1-A.zoom;if(alpha<=.01||!PRES.hay) return;
+  ctx.save();
+  if(A.zoom>0) {const z=1+presEase(A.zoom)*14, [cx,cy]=PRES.clusterCenter;ctx.translate(cx,cy);ctx.scale(z,z);ctx.translate(-cx,-cy);}
+  ctx.globalAlpha=alpha*A.bg;ctx.drawImage(PRES.hay,0,0,PRES.W,PRES.H);ctx.globalAlpha=alpha;
+  const P=PRES.points, xy=PRES.hayXY;
+  if(A.cand>.01) P.cand.forEach((i,k)=>{const [x,y]=xy(i);presDot(ctx,x,y,1.3+A.cand*.9,PRES_COLOR.receiver,A.cand*(5+2*Math.sin(t/400+k)));});
+  if(A.gather>.01) {
+    const g=presEase(A.gather), first=PRES.data.sizes[0]||0;
+    P.ringDots.forEach((i,k)=>{const target=PRES.clusters[k];if(!target) return;const [x0,y0]=xy(i), u=presEase(presClamp(g*1.6-(k%97)/97*.6));
+      presDot(ctx,x0+(target[0]-x0)*u,y0+(target[1]-y0)*u,1.5,k<first?PRES_COLOR.hub:'#9fd6ff',4.5);});
+  }
+  ctx.restore();
+}
+function presDrawGraph(ctx,t,alpha) {
+  if(alpha<=.01) return;
+  const ring=PRES.ring, r=PRES.replay, box=presGraphBox(), F=presFit(presLayout(ring),box), P=F.pts, s=presClamp(F.s,.7,2.2);
+  const flight=presFlight(), maxRecv=Math.max(...r.recv,1), now=performance.now();
+  ctx.save();ctx.globalAlpha=alpha*(1-.72*PRES.anim.dim);
+  if(ring.hubs&&PRES.W>=820) {ctx.font='600 11px ui-monospace,Menlo,monospace';ctx.fillStyle='rgba(120,150,175,.55)';ctx.textAlign='center';
+    ctx.fillText('SENDERS  →',box.x+box.w*.12,box.y+box.h-4);ctx.fillText('→  RECEIVERS',box.x+box.w*.88,box.y+box.h-4);}
+  ring.links.forEach((link,i)=>{
+    const a=P[link[0]], b=P[link[1]], c=presCurve(a,b), heat=presClamp(1-(r.t-r.lastLink[i])/(r.mps*r.speed*2.2)), seen=r.lastLink[i]>-1e8;
+    ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.quadraticCurveTo(c[0],c[1],b[0],b[1]);
+    ctx.strokeStyle=heat>0?presRgba('#cfe3f2',.18+heat*.6):presRgba('#7f9db5',seen?.3:.1);ctx.lineWidth=(1+heat*1.6+Math.log1p(link[2])*.35)*Math.min(s,1.4);ctx.stroke();
+  });
+  if(r.loopFlash) {const age=(now-r.loopFlash.at)/1600;if(age<1) {const [a,b,c]=r.loopFlash.nodes.map(i=>P[i]);ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.lineTo(c[0],c[1]);ctx.closePath();
+    ctx.fillStyle=presRgba(PRES_COLOR.loop,.22*(1-age));ctx.fill();ctx.strokeStyle=presRgba(PRES_COLOR.loop,.9*(1-age));ctx.lineWidth=2.5;ctx.stroke();}}
+  for(let k=r.next;k<ring.pays.length;k++) {
+    const pay=ring.pays[k];if(pay[1]>r.t) break;const u=(r.t-pay[1])/flight;if(u<0||u>=1) continue;
+    const link=ring.links[pay[0]], a=P[link[0]], b=P[link[1]], [x,y]=presQuad(a,presCurve(a,b),b,presEase(u)), role=ring.nodes[link[0]][1];
+    const color=PRES.reveal.on?(pay[3]?PRES_COLOR.dirty:'#9fb6c8'):role==='both'?'#d7e4ee':PRES_COLOR[role];
+    presDot(ctx,x,y,(1.6+Math.sqrt(pay[2]/2e5)*2.2)*Math.min(s,1.3),color,9*Math.min(s,1.3));
+  }
+  ring.nodes.forEach((node,i)=>{
+    const [x,y]=P[i], base=node[1]==='hub'?9:node[1]==='loop'?5.5:4.2, flash=r.flash.reduce((m,e)=>e.node===i?Math.max(m,1-(now-e.at)/500):m,0);
+    const radius=(base+7*Math.sqrt(r.recv[i]/maxRecv))*Math.min(s,1.5)*(1+.35*presClamp(flash)), p=presRevealP(i), hot=p>=.5&&node[2];
+    ctx.save();ctx.translate(x,y);ctx.scale(PRES.reveal.on?Math.max(Math.abs(Math.cos(p*Math.PI)),.06):1,1);
+    presDot(ctx,0,0,radius,presNodeColor(ring,i),(node[1]==='hub'?34:hot?22:14)*Math.min(s,1.4)*(hot?1+.15*Math.sin(t/220+i):1));
+    ctx.lineWidth=1.5;ctx.strokeStyle='rgba(7,13,20,.9)';ctx.stroke();ctx.restore();
+    if(node[1]==='hub'&&p<.5) {const phase=(t/1800)%1;ctx.beginPath();ctx.arc(x,y,radius*(1.2+phase*1.6),0,Math.PI*2);ctx.strokeStyle=presRgba(PRES_COLOR.hub,.55*(1-phase));ctx.lineWidth=1.5;ctx.stroke();}
+  });
+  ctx.restore();
+}
+function presWallLayout() {
+  const {W,H}=PRES, cols=W<820?5:10, rows=Math.ceil(PRES.data.rings.length/cols), top=150, cw=(W-40)/cols, ch=(H-top-20)/rows;
+  return PRES.data.rings.map((ring,k)=>({ring,x:20+(k%cols)*cw,y:top+Math.floor(k/cols)*ch,w:cw,h:ch}));
+}
+function presDrawWall(ctx) {
+  if(PRES.anim.wall<=.01) return;
+  PRES.wallCells=presWallLayout();const now=performance.now();ctx.save();
+  PRES.wallCells.forEach((cell,k)=>{
+    const a=PRES.anim.wall*presClamp((now-PRES.wallAt-k*22)/350);if(a<=0) return;
+    const ring=cell.ring, hover=k===PRES.wallHover;ctx.globalAlpha=a;
+    ctx.fillStyle=hover?'rgba(63,208,184,.08)':'rgba(13,24,36,.55)';ctx.strokeStyle=hover?'rgba(63,208,184,.7)':'rgba(31,51,70,.8)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.roundRect?ctx.roundRect(cell.x+3,cell.y+3,cell.w-6,cell.h-6,8):ctx.rect(cell.x+3,cell.y+3,cell.w-6,cell.h-6);ctx.fill();ctx.stroke();
+    const P=presFit(presLayout(ring),{x:cell.x+10,y:cell.y+10,w:cell.w-20,h:cell.h-32},1.2).pts;
+    ctx.lineWidth=.6;ctx.strokeStyle='rgba(127,157,181,.28)';
+    ring.links.forEach(link=>{ctx.beginPath();ctx.moveTo(P[link[0]][0],P[link[0]][1]);ctx.lineTo(P[link[1]][0],P[link[1]][1]);ctx.stroke();});
+    ring.nodes.forEach((node,i)=>{ctx.beginPath();ctx.arc(P[i][0],P[i][1],node[1]==='hub'?3.2:1.9,0,Math.PI*2);ctx.fillStyle=node[2]?PRES_COLOR.dirty:'#4f6a80';ctx.fill();});
+    ctx.font='500 11px ui-monospace,Menlo,monospace';ctx.fillStyle='#8aa1b4';ctx.textAlign='left';ctx.fillText(`#${ring.rank}`,cell.x+10,cell.y+cell.h-10);
+    ctx.fillStyle=ring.rate>=.5?PRES_COLOR.dirty:ring.rate>0?'#e7a3b1':'#5f7a8e';ctx.textAlign='right';ctx.fillText(presPct(ring.rate),cell.x+cell.w-10,cell.y+cell.h-10);
+  });
+  ctx.restore();
+}
+function presTimeline() {
+  const canvas=element('pres-tl');if(!canvas?.getContext||!canvas.width||!PRES.replay) return;
+  const g=canvas.getContext('2d'), w=canvas.width, h=canvas.height, r=PRES.replay, D=PRES.DPR, bins=90, lo=r.t0, hi=r.t1+1;
+  const counts=new Array(bins).fill(0), dirty=new Array(bins).fill(0);
+  PRES.ring.pays.forEach(pay=>{const b=Math.min(bins-1,Math.floor((pay[1]-lo)/(hi-lo)*bins));counts[b]++;if(pay[3]) dirty[b]++;});
+  const max=Math.max(...counts,1), bw=w/bins;g.clearRect(0,0,w,h);
+  counts.forEach((n,b)=>{if(!n) return;const bh=Math.max(2*D,n/max*(h-8*D)), x=b*bw;
+    g.fillStyle=lo+(b+.5)/bins*(hi-lo)<=r.t?'rgba(63,208,184,.85)':'rgba(110,140,165,.45)';g.fillRect(x+1,h-bh,Math.max(bw-2,1),bh);
+    if(PRES.reveal.on&&dirty[b]) {const dh=bh*dirty[b]/n;g.fillStyle=PRES_COLOR.dirty;g.fillRect(x+1,h-dh,Math.max(bw-2,1),dh);}});
+  g.fillStyle='rgba(138,161,180,.35)';
+  const startDay=new Date(PRES.ring.start).getUTCHours()*60+new Date(PRES.ring.start).getUTCMinutes();
+  for(let m=1440-startDay;m<=hi;m+=1440) if(m>=lo) g.fillRect((m-lo)/(hi-lo)*w,0,1,4*D);
+  g.fillStyle='#e4edf4';g.fillRect(presClamp((r.t-lo)/(hi-lo))*w-D,0,2*D,h);
+  const date=new Date(PRES.ring.start+Math.max(r.t,0)*60000), month=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][date.getUTCMonth()];
+  element('pres-clock').innerHTML=`${month} ${date.getUTCDate()} · ${String(date.getUTCHours()).padStart(2,'0')}:${String(date.getUTCMinutes()).padStart(2,'0')}<small>UTC · ${date.getUTCFullYear()}</small>`;
+}
+function presFrame(t) {
+  PRES.raf=null;if(!PRES.open) return;
+  const n=PRES.step, target={bg:[1,.4,.07,0,0,0,0][n],cand:n===1?1:0,gather:n>=2?1:0,zoom:n>=3?1:0,graph:n>=3&&n<=5?1:0,wall:n===6?1:0,dim:n===5?1:0}, still=!motionAllowed();
+  for(const key in PRES.anim) {
+    const rate=key==='gather'?.035:key==='zoom'?(target.zoom>PRES.anim.zoom?.045:.13):.1, d=target[key]-PRES.anim[key];
+    PRES.anim[key]=still||Math.abs(d)<.002?target[key]:PRES.anim[key]+d*rate;
+  }
+  const r=PRES.replay;
+  if(r.playing&&n>=3&&n<=5) {
+    const dt=Math.min((t-(PRES.last||t))/1000,.25), next=r.t+dt*r.mps*r.speed;
+    if(next>=presEnd()) {presSeek(presEnd());presSetPlaying(false);} else presSeek(next);
+    presMeters();presTimeline();
+  }
+  PRES.last=t;
+  const canvas=element('pres-canvas'), ctx=canvas.getContext('2d');
+  ctx.setTransform(PRES.DPR,0,0,PRES.DPR,0,0);ctx.clearRect(0,0,PRES.W,PRES.H);
+  presDrawHaystack(ctx,t);presDrawGraph(ctx,t,PRES.anim.graph*presClamp(PRES.anim.zoom*1.4-.3));presDrawWall(ctx);
+  if(n===4&&PRES.reveal.on) presRevealCount();
+  PRES.raf=requestAnimationFrame(presFrame);
+}
+
+// ---- controls ----
+function presScrub(event) {
+  const box=element('pres-tl').getBoundingClientRect(), u=presClamp((event.clientX-box.left)/box.width), r=PRES.replay;
+  presSeek(r.t0+u*(r.t1+1-r.t0));presMeters();presTimeline();
+}
+function presFullscreen() {const promise=document.fullscreenElement?document.exitFullscreen?.():element('presenter').requestFullscreen?.();promise?.catch?.(()=>{});}
+function presKey(event) {
+  if(!PRES.open||event.target?.matches?.('select,input')) return;
+  if(event.target?.closest?.('button')&&(event.key===' '||event.key==='Enter')) return;
+  const replayish=PRES.step>=3&&PRES.step<=5;
+  if(event.key==='ArrowRight'||event.key==='PageDown') {event.preventDefault();presGo(PRES.step+1);}
+  else if(event.key==='ArrowLeft'||event.key==='PageUp') {event.preventDefault();presGo(PRES.step-1);}
+  else if(event.key===' ') {event.preventDefault();if(replayish) presSetPlaying(!PRES.replay.playing);}
+  else if(event.key==='r'||event.key==='R') {if(replayish) {presReveal(!PRES.reveal.on);presLegend();presTimeline();if(!PRES.reveal.on) presMeters();}}
+  else if(event.key==='f'||event.key==='F') presFullscreen();
+  else if(event.key==='Escape') {if(!document.fullscreenElement) closePresenter();}
+  else if(/^[1-4]$/.test(event.key)) presGo(PRES_SCENE_START[+event.key-1]);
+}
+function presWallCell(event) {
+  const box=element('pres-canvas').getBoundingClientRect(), x=event.clientX-box.left, y=event.clientY-box.top;
+  return PRES.wallCells.findIndex(cell=>x>=cell.x&&x<cell.x+cell.w&&y>=cell.y&&y<cell.y+cell.h);
+}
+function bindPresenter() {
+  element('network-present').onclick=openPresenter;
+  element('pres-close').onclick=closePresenter;element('pres-fs').onclick=presFullscreen;
+  element('pres-next').onclick=()=>presGo(PRES.step+1);element('pres-back').onclick=()=>presGo(PRES.step-1);
+  element('pres-scenes').onclick=event=>{const button=event.target.closest?.('[data-pres-step]');if(button) presGo(+button.dataset.presStep);};
+  element('pres-play').onclick=()=>presSetPlaying(!PRES.replay.playing);
+  element('pres-speed').onclick=()=>{const r=PRES.replay;r.speed=r.speed===1?3:r.speed===3?.5:1;element('pres-speed').textContent=`${r.speed}×`;};
+  const tl=element('pres-tl'), canvas=element('pres-canvas');
+  tl.onpointerdown=event=>{tl.setPointerCapture?.(event.pointerId);presScrub(event);tl.onpointermove=presScrub;};
+  tl.onpointerup=()=>{tl.onpointermove=null;};
+  canvas.onpointermove=event=>{if(PRES.step!==6) return;PRES.wallHover=presWallCell(event);canvas.style.cursor=PRES.wallHover>=0?'pointer':'';};
+  canvas.onclick=event=>{if(PRES.step!==6) return;const k=presWallCell(event);if(k>=0) {PRES.reveal.on=false;presSetRing(PRES.data.rings[k]);element('pres-ring').value=String(PRES.data.rings[k].rank);presGo(3,false);presSetPlaying(motionAllowed());}};
+  document.addEventListener?.('keydown',presKey);
+  if(typeof ResizeObserver==='function') new ResizeObserver(()=>{if(PRES.open) presResize();}).observe(element('pres-stage'));
+  else window.addEventListener?.('resize',()=>{if(PRES.open) presResize();});
 }
