@@ -45,7 +45,7 @@ param(
     [ValidateSet('Small', 'Medium', 'Large')][string]$Size = '',
     [ValidateSet('Transactions', 'Accounts', 'Patterns')][string[]]$Files = @(),
     [switch]$IncludePatterns, [switch]$DownloadOnly, [switch]$DryRun, [switch]$ListOptions,
-    [string]$FxFile = '', [string]$Deployment = '', [string]$RunId = '',
+    [string]$FxFile = '', [string]$Deployment = '', [string]$RunId = '', [string]$ExportDatesFile = '',
     [switch]$PrepareOnly, [switch]$Train, [switch]$Refresh, [switch]$Rerun,
     [switch]$NoWait, [switch]$LocalAcquisition, [ValidateSet('Direct', 'EventBridge')][string]$Trigger = 'Direct',
     [string]$Status = '', [string]$Unlock = ''
@@ -100,7 +100,8 @@ else {
     # and -Rows are also forwarded when explicitly passed as 0, so ingest.py can
     # reject the invalid value instead of it being silently dropped.
     foreach ($pair in @(@('--dataset-version', $DatasetVersion), @('--rows', $Rows),
-                         @('--fx-file', $FxFile), @('--deployment', $Deployment), @('--run-id', $RunId))) {
+                         @('--fx-file', $FxFile), @('--deployment', $Deployment), @('--run-id', $RunId),
+                         @('--export-dates-file', $ExportDatesFile))) {
         if ($pair[1] -or ($pair[0] -eq '--dataset-version' -and $PSBoundParameters.ContainsKey('DatasetVersion')) -or
             ($pair[0] -eq '--rows' -and $PSBoundParameters.ContainsKey('Rows'))) {
             $arguments += @($pair[0], [string]$pair[1])

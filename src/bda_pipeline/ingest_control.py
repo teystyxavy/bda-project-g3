@@ -447,6 +447,12 @@ def handle(event, config, clients):
         return stage_request(run_id, 'export', config, extra, subset=manifest['subset'], rows=manifest['rows'])
     # ---- publish: verify the release, then make it live on the dashboard ----
     if op == 'publish':
+        # A date-subset run's export stage skips building a release entirely (see
+        # ingest_compute.export_stage) - the Export Glue job still exits 0, so the workflow
+        # reaches Publish regardless. Mirror that skip here instead of failing on a release
+        # that was never meant to exist.
+        if manifest.get('export_dates'):
+            return {'status': 'publish-skipped', 'run_id': run_id, 'reason': 'date-subset run has no public release'}
         assert_glue_stage(glue, s3, run_id, 'export', stage_run_id(event), config)
         release, _ = get_json(s3, f"{p['export']}/release/manifest.json")
         # The release must come from a completed export of *this* run, with

@@ -192,6 +192,22 @@ def test_lock_ownership_and_published_retry_cleanup():
     assert handle(dict(op='publish', run_id='test-run'), config(), clients(s3)) == result
 
 
+def test_publish_skips_cleanly_for_a_date_subset_run_without_a_release():
+    # The Export Glue job always exits 0 even when export_stage skips building a release (see
+    # ingest_compute.export_stage), so Publish is still invoked next - it must recognise the
+    # same export_dates selection and skip too, rather than failing on a release that was never
+    # meant to exist (export/release/manifest.json is deliberately absent here).
+    export_dates = {'dates': ['2022-09-01', '2022-09-07', '2022-09-09'], 'tail_start': None}
+    identity_fields = ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train']
+    subset_manifest = dict(manifest(), train=True, export_dates=export_dates)
+    subset_manifest['processing_sha256'] = sha({**{key: subset_manifest[key] for key in identity_fields}, 'export_dates': export_dates})
+    s3 = MemoryS3()
+    s3.put_object(Bucket=BUCKET, Key='pipeline/lock.json', Body=canonical({'run_id': 'test-run'}))
+    s3.put_object(Bucket=BUCKET, Key=paths('test-run')['raw']+'/manifest.json', Body=canonical(subset_manifest))
+    result = handle(dict(op='publish', run_id='test-run'), config(), clients(s3))
+    assert result == {'status': 'publish-skipped', 'run_id': 'test-run', 'reason': 'date-subset run has no public release'}
+
+
 def test_workflow_never_retries_compute_and_has_failure_path():
     module = load_script('infra/ingestion/build-workflow.py')
     workflow = module.workflow()
