@@ -82,3 +82,53 @@ variable "provision_failure_bucket" {
     error_message = "The isolated failure bucket is part of the streaming stack."
   }
 }
+# provision_publisher: create the dashboard publisher (Lambda, disabled
+# schedule, alarm). It reads committed scores and writes one public snapshot;
+# it cannot score, replay or change state. Needs the packaged zip and the
+# reviewed replay events' SHA-256, which the publisher checks before use.
+variable "provision_publisher" {
+  type    = bool
+  default = false
+  validation {
+    condition     = !var.provision_publisher || (var.provision_streaming && var.lambda_zip_path != null && var.replay_events_sha256 != null)
+    error_message = "The publisher needs the streaming stack, its packaged zip and the reviewed replay events digest."
+  }
+}
+# lambda_zip_path: the publisher's zip, from scripts/aws/prepare-dashboard-streaming.py.
+# Named like dashboard-status's input so scripts/aws/get-terraform-inputs.ps1 can
+# fill it with the deployed package on another machine.
+variable "lambda_zip_path" {
+  type    = string
+  default = null
+}
+# replay_events_sha256: events_sha256 from the replay package's
+# verification.json; the same file must be uploaded to
+# s3://<pipeline bucket>/streaming/<run_id>/input/events.jsonl.
+variable "replay_events_sha256" {
+  type    = string
+  default = null
+  validation {
+    condition     = var.replay_events_sha256 == null ? true : can(regex("^[0-9a-f]{64}$", var.replay_events_sha256))
+    error_message = "Use the events_sha256 recorded in the reviewed replay package."
+  }
+}
+# enable_publisher: arm the once-a-minute schedule. Only for an authorized
+# demo or recording window, so a fixed end time is required.
+variable "enable_publisher" {
+  type    = bool
+  default = false
+  validation {
+    condition     = !var.enable_publisher || (var.provision_publisher && var.publisher_end_time != null)
+    error_message = "Enabling the publisher schedule requires the publisher and a fixed UTC end time."
+  }
+}
+# publisher_end_time: UTC time YYYY-MM-DDTHH:MM:SS after which the schedule
+# stops firing, even if nobody disables it.
+variable "publisher_end_time" {
+  type    = string
+  default = null
+  validation {
+    condition     = var.publisher_end_time == null ? true : can(formatdate("YYYY-MM-DD'T'hh:mm:ss", "${var.publisher_end_time}Z"))
+    error_message = "Supply a valid UTC date/time without a timezone suffix."
+  }
+}
