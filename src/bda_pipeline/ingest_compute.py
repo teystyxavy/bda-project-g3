@@ -116,8 +116,9 @@ def verify_curated(curated, raw, manifest):
         manifest: Validated run manifest.
 
     Returns:
-        A proof dict (``status='passed'``, row/positive counts, total USD and a
-        description of what was compared). Written to ``proof.json`` by the caller.
+        A proof dict (``status='passed'``, row/positive counts, total USD, a
+        per-``txn_date`` breakdown of the same (``daily``) and a description
+        of what was compared). Written to ``proof.json`` by the caller.
 
     Raises:
         ValueError / AssertionError: on the first mismatch.
@@ -155,6 +156,10 @@ def verify_curated(curated, raw, manifest):
     seen = np.zeros(n, dtype=bool)  # which source rows have been matched so far
     positives = 0
     amount_usd = 0.
+    # Per-day breakdown (rows/positives/amount_usd), independently recomputed from the raw CSV here
+    # alongside the whole-population totals above - lets export_verified_batch verify a date-subset
+    # export against an independently-verified figure instead of trusting the curated file's own metadata.
+    daily = {}
     histories, receiver_histories = [], []
     # exclude_invalid_files skips non-Parquet objects such as _SUCCESS.
     dataset = ds.dataset(curated, format='parquet', partitioning='hive', exclude_invalid_files=True)
@@ -188,12 +193,17 @@ def verify_curated(curated, raw, manifest):
             if keep.any(): cohort.append(frame.loc[keep, COLUMNS])
         positives += int(frame.is_laundering.sum())
         amount_usd += float(frame.amount_usd.sum())
+        for day, group in frame.groupby(frame.txn_date.astype(str)):
+            entry = daily.setdefault(day, {'rows': 0, 'positives': 0, 'amount_usd': 0.})
+            entry['rows'] += len(group)
+            entry['positives'] += int(group.is_laundering.sum())
+            entry['amount_usd'] += float(group.amount_usd.sum())
     # Every raw row must have appeared exactly once, with the same labels.
     if not seen.all() or positives != positives_raw:
         raise ValueError('Curated census or label count differs from source')
     # 10. Recompute behaviour features for each cohort's full history.
     checked_rows = verify_behaviour(histories, receiver_histories)
-    return {'status': 'passed', 'rows': n, 'positives': positives, 'amount_usd': amount_usd,
+    return {'status': 'passed', 'rows': n, 'positives': positives, 'amount_usd': amount_usd, 'daily': daily,
             'subset': manifest.get('subset', 'HI-Small'), 'start_date': manifest['start_date'], 'end_date': manifest['end_date'],
             'raw_identity_comparison': 'Every source row: ordered SHA256 fingerprint',
             'fx_comparison': 'All same-day and prior-day valuations',
@@ -233,14 +243,22 @@ def baseline_stage(inputs, output, assets):
     proof = verify_curated(inputs / 'curated', inputs / 'raw', manifest)
     proof_path = output / 'proof.json'
     proof_path.write_text(json.dumps(proof, allow_nan=False))
-    counts = daily_row_counts(ds.dataset(inputs / 'curated', format='parquet', partitioning='hive')) if manifest['train'] else None
+    # export_dates restricts baseline/export/training to a chosen set of txn_date partitions out of
+    # an otherwise fully-curated run (curate itself always processes the full population). Absent,
+    # behaviour is unchanged from before this field existed.
+    export_dates = manifest.get('export_dates')
+    dates = export_dates['dates'] if export_dates else None
+    counts = daily_row_counts(ds.dataset(inputs / 'curated', format='parquet', partitioning='hive'), dates) if manifest['train'] else None
     # Scoring only proceeds if proof.json says 'passed' (checked inside export_verified_batch).
     export_verified_batch(inputs / 'curated', proof_path, output / 'baseline', assets, serving_only=True, subset=manifest.get('subset', 'HI-Small'), end_date=manifest['end_date'],
-                         splits=run_splits(manifest, inputs / 'model', counts))
-    # Label where the snapshot was produced, for the dashboard's provenance panel.
+                         splits=run_splits(manifest, inputs / 'model', counts), dates=dates)
+    # Label where the snapshot was produced, and record the tail boundary (if any) for compare_models'
+    # dense-vs-tail reporting, for the dashboard's provenance panel.
     snapshot = output / 'baseline/dashboard/dashboard.json'
     data = json.loads(snapshot.read_text())
     data['provenance']['scoring_location'] = 'aws-glue rule baseline'
+    if export_dates:
+        data['provenance']['tail_start'] = export_dates.get('tail_start')
     snapshot.write_text(json.dumps(data, allow_nan=False))
     (output / 'manifest').mkdir()
     shutil.copyfile(snapshot, output / 'manifest/dashboard.json')
@@ -365,9 +383,17 @@ def export_stage(inputs, output, assets):
     """
     inputs, output = Path(inputs), Path(output)
     manifest = json.loads((inputs / 'run/manifest.json').read_text())
+    output.mkdir(parents=True, exist_ok=True)
+    # export/release only ever cover the full population (release.py requires aml_scope=='full');
+    # a date-subset run is a training-candidate exploration and has no public release to build.
+    # Skip explicitly here rather than letting verify_scores/release raise partway through, so the
+    # Step Functions execution reports this stage as a clean, intentional no-op, not a failure.
+    if manifest.get('export_dates'):
+        result = {'status': 'skipped', 'reason': 'date-subset run has no public release'}
+        (output / 'skipped.json').write_text(json.dumps(result))
+        return result
     reference = inputs / 'baseline/baseline/bq1_scored.parquet'
     reference_hash = digest(reference)
-    output.mkdir(parents=True, exist_ok=True)
     # ---- 1. BQ1: model scores ----
     scores, score_proof = verify_scores(reference, inputs / 'scored', inputs / 'model', manifest, output / 'evidence')
     # ---- 2. BQ2: Athena corridors vs independent pandas recomputation ----

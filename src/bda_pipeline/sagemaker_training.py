@@ -24,14 +24,16 @@ def validate_name(name):
 
 
 def validate_inputs(scored, snapshot):
-    """Proves the training input is the hash-verified full-population baseline export and returns ``{'rows', 'scored_sha256', 'snapshot_sha256'}``.
-    Raises ValueError if the snapshot is not full-scope, the hash differs or the row count is zero or differs."""
+    """Proves the training input is a hash-verified baseline export - either the full population, or an
+    explicitly selected, independently verified date subset (``aml_scope=='date-subset'``, see
+    ``batch.export_verified_batch``) - and returns ``{'rows', 'scored_sha256', 'snapshot_sha256'}``.
+    Raises ValueError if the snapshot is neither scope, the hash differs or the row count is zero or differs."""
     snapshot_data = json.loads(Path(snapshot).read_text(encoding='utf-8'))
     # Find the hash the snapshot recorded for bq1_scored.parquet (None if absent).
     expected = next((item['sha256'] for item in snapshot_data['sources']
                      if item['file'] == 'bq1_scored.parquet'), None)
-    if snapshot_data.get('aml_scope') != 'full' or digest(scored) != expected:
-        raise ValueError('Requires a hash-verified full-population baseline export')
+    if snapshot_data.get('aml_scope') not in ('full', 'date-subset') or digest(scored) != expected:
+        raise ValueError('Requires a hash-verified full-population or date-subset baseline export')
     # count_rows reads Parquet metadata only, so it is cheap even for large files.
     rows = ds.dataset(scored, format='parquet').count_rows()
     if rows <= 0 or rows != snapshot_data['full_rows']:

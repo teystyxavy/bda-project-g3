@@ -359,8 +359,12 @@ def compare_models(scored, snapshot_path, output, rounds=300, threads=4, batch_r
     if output.exists():
         raise ValueError('Use a fresh output directory')
     snapshot = json.loads(Path(snapshot_path).read_text(encoding='utf-8'))
-    if snapshot.get('aml_scope') != 'full':
-        raise ValueError('Full-population snapshot required')
+    # 'date-subset' is a deliberately chosen selection of dates out of an otherwise fully-curated
+    # run (see batch.export_verified_batch); training candidates may use it, but release.py/
+    # model_dashboard.py/dashboard_exploration.py still require 'full' and reject it, so a
+    # date-subset candidate can never be published or promoted.
+    if snapshot.get('aml_scope') not in ('full', 'date-subset'):
+        raise ValueError('Full-population or date-subset snapshot required')
     expected_hash = next((item['sha256'] for item in snapshot['sources']
                           if item['file'] == 'bq1_scored.parquet'), None)
     actual_hash = digest(scored)
@@ -440,7 +444,11 @@ def compare_models(scored, snapshot_path, output, rounds=300, threads=4, batch_r
     gc.collect()
     # Days holding under SPARSE_FRACTION of the median day, at the end of the data, are reported apart from the dense days.
     counts = daily_timestamp_counts(dataset, batch_rows)
-    tail_start = sparse_tail_start(counts)
+    # A date-subset selection can carry an explicit tail boundary (set when the dates were chosen),
+    # since sparse_tail_start's median-based heuristic is skewed when sparse days outnumber dense
+    # ones - exactly the case for a subset deliberately built to include a disproportionate tail.
+    explicit_tail_start = snapshot.get('provenance', {}).get('tail_start')
+    tail_start = explicit_tail_start or sparse_tail_start(counts)
     sparse_tail = None if tail_start is None else dict(
         fraction=SPARSE_FRACTION, start=tail_start, median_daily_rows=float(np.median(list(counts.values()))))
     metrics = {}

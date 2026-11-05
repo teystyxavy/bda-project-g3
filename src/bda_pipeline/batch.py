@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
@@ -50,15 +51,22 @@ def evaluation_periods(splits, end_date):
     return periods
 
 
-def daily_row_counts(dataset):
-    """Rows per ``txn_date``: from Parquet metadata for hive partitions, otherwise by counting the column."""
+def daily_row_counts(dataset, dates=None):
+    """Rows per ``txn_date``: from Parquet metadata for hive partitions, otherwise by counting the column.
+    ``dates``, when given, restricts the result to just those ``txn_date`` partitions (other fragments are skipped)."""
     counts = Counter()
     for fragment in dataset.get_fragments():
         keys = ds.get_partition_keys(fragment.partition_expression)
         if 'txn_date' in keys:
-            counts[str(keys['txn_date'])] += fragment.count_rows()
+            day = str(keys['txn_date'])
+            if dates is not None and day not in dates:
+                continue
+            counts[day] += fragment.count_rows()
         else:
-            counts.update(fragment.to_table(columns=['txn_date']).to_pandas().txn_date.astype(str).value_counts().to_dict())
+            frame = fragment.to_table(columns=['txn_date']).to_pandas().txn_date.astype(str)
+            if dates is not None:
+                frame = frame[frame.isin(dates)]
+            counts.update(frame.value_counts().to_dict())
     return dict(counts)
 
 
@@ -113,11 +121,12 @@ class AmlSummary:
                     histogram=[dict(risk_score=s, transactions=self.scores[s]) for s in sorted(self.scores)])
 
 
-def fit_thresholds(dataset, train_window):
+def fit_thresholds(dataset, train_window, date_filter=None):
     """Per-payment-format P99 of ``amount_usd_asof`` over the half-open ``train_window``, so later periods never leak in.
-    Uses one exact ``np.quantile`` per format; raises ValueError if there are no training rows."""
+    Uses one exact ``np.quantile`` per format; raises ValueError if there are no training rows.
+    ``date_filter``, when given, is a pyarrow filter expression restricting which rows are scanned."""
     amounts = {}
-    for batch in dataset.to_batches(columns=['timestamp', 'payment_format', 'amount_usd_asof'], batch_size=100_000):
+    for batch in dataset.to_batches(columns=['timestamp', 'payment_format', 'amount_usd_asof'], batch_size=100_000, filter=date_filter):
         frame = batch.to_pandas()
         training = frame.loc[frame.timestamp.ge(train_window[0]) & frame.timestamp.lt(train_window[1])]
         for name, group in training.groupby('payment_format'):
@@ -127,8 +136,8 @@ def fit_thresholds(dataset, train_window):
     return {name: float(np.quantile(np.concatenate(values), .99)) for name, values in amounts.items()}
 
 
-def export_verified_batch(curated, verification, output, assets, *, serving_only=False, subset='HI-Small', end_date='2022-09-18', splits=None):
-    """Score the full verified curated population and write BQ1/BQ2 outputs.
+def export_verified_batch(curated, verification, output, assets, *, serving_only=False, subset='HI-Small', end_date='2022-09-18', splits=None, dates=None):
+    """Score the verified curated population (or, when ``dates`` is given, just those ``txn_date`` partitions of it) and write BQ1/BQ2 outputs.
 
     Args:
         curated: path to the hive-partitioned curated Parquet directory.
@@ -141,6 +150,12 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
             and later verification need; skip CSV reports and asset copies.
         splits: chronological windows (see ``splits.py``); defaults to
             ``row_share_splits`` over the daily row counts, and is recorded in the snapshot.
+        dates: optional iterable of ISO ``txn_date`` strings. When given, only
+            those partitions are scored, completeness is checked against
+            ``proof['daily']`` for exactly those dates (not the full
+            population), and the resulting snapshot is marked
+            ``aml_scope='date-subset'`` instead of ``'full'`` so it can never
+            be published or promoted (see ``release.py``/``model_dashboard.py``).
 
     Returns:
         The ``run_report.json`` content as a dict (row counts, P99
@@ -160,27 +175,36 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
     proof = json.loads(Path(verification).read_text(encoding='utf-8'))
     if proof.get('status') != 'passed' or proof.get('rows', 0) <= 0:
         raise ValueError('Successful full-run verification is required')
+    dates = sorted(dates) if dates is not None else None
+    # txn_date may be stored as a plain string (test fixtures) or a date32 column (real curated
+    # Parquet written by Spark); cast to string so the comparison works either way.
+    date_filter = pc.field('txn_date').cast(pa.string()).isin(dates) if dates is not None else None
+    if dates is not None:
+        missing_proof = [day for day in dates if day not in proof.get('daily', {})]
+        if missing_proof:
+            raise ValueError(f'No verified proof for selected dates: {missing_proof}')
     # hive partitioning restores the txn_date column.
     dataset = ds.dataset(curated, format='parquet', partitioning='hive')
     missing = set(COLUMNS) - set(dataset.schema.names)
     if missing:
         raise ValueError(f'Missing scoring columns: {sorted(missing)}')
-    splits = splits or row_share_splits(daily_row_counts(dataset))
-    thresholds = fit_thresholds(dataset, splits['train'])
+    splits = splits or row_share_splits(daily_row_counts(dataset, dates))
+    thresholds = fit_thresholds(dataset, splits['train'], date_filter)
     periods = evaluation_periods(splits, end_date)
     validation_window = periods['validation']
     # One summary per evaluation period, plus one per rule variant for the
     # validation-only ablation ("which rule components actually help?").
     summaries = {period: AmlSummary() for period in periods}
     variants = {name: AmlSummary() for name in ['Current baseline', 'ACH only', 'ACH + amount', 'ACH + behaviour']}
-    # One boolean per source CSV row: proves every row is scored exactly once.
+    # One boolean per source CSV row (sized by the full population even in subset mode): catches
+    # any out-of-range or duplicate source_row_index regardless of which dates are selected.
     seen = np.zeros(proof['rows'], dtype=bool)
     aggregates, manifest = [], []
     rows = positives = 0
     output.mkdir(parents=True)
     writer = None
     try:
-        for batch in dataset.to_batches(columns=COLUMNS, batch_size=100_000):
+        for batch in dataset.to_batches(columns=COLUMNS, batch_size=100_000, filter=date_filter):
             frame = batch.to_pandas()
             # source_row_index must be in range, unseen and unique.
             indices = frame.source_row_index.to_numpy(dtype=np.int64)
@@ -227,14 +251,23 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
         # Close the writer so the Parquet footer is written even if a check failed.
         if writer is not None:
             writer.close()
-    # Every source row scored once, with row and positive totals matching the proof.
-    if not seen.all() or rows != proof['rows'] or positives != proof['positives']:
+    # Every selected row scored once, with row and positive totals matching the proof - the whole
+    # population's totals by default, or (when dates is given) the independently-verified per-date
+    # breakdown summed over just those dates, never a count derived from the curated file itself.
+    if dates is None:
+        expected_rows, expected_positives, expected_amount_usd = proof['rows'], proof['positives'], proof['amount_usd']
+    else:
+        daily_proof = [proof['daily'][day] for day in dates]
+        expected_rows = sum(day['rows'] for day in daily_proof)
+        expected_positives = sum(day['positives'] for day in daily_proof)
+        expected_amount_usd = sum(day['amount_usd'] for day in daily_proof)
+    if rows != expected_rows or positives != expected_positives:
         raise ValueError('Source counts differ from verification')
     # A corridor can span batches, so regroup and sum.
     keys = ['txn_date', 'from_bank', 'to_bank', 'payment_currency', 'receiving_currency']
     daily = pd.concat(aggregates, ignore_index=True).groupby(keys, observed=True)[['transaction_count', 'volume_usd']].sum().reset_index()
     # Corridor totals must reconcile with the verified rows and USD total (tolerance for float order).
-    if int(daily.transaction_count.sum()) != rows or not np.isclose(daily.volume_usd.sum(), proof['amount_usd'], rtol=1e-10, atol=.01):
+    if int(daily.transaction_count.sum()) != rows or not np.isclose(daily.volume_usd.sum(), expected_amount_usd, rtol=1e-10, atol=.01):
         raise ValueError('Treasury totals do not reconcile')
     daily.to_parquet(output / 'bq2_daily_corridors.parquet', index=False)
     if not serving_only:
@@ -263,12 +296,16 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
     for name in ['bq1_scored.parquet', 'bq2_daily_corridors.parquet']:
         with (output / name).open('rb') as source:
             manifest.append(dict(file=name, sha256=hashlib.file_digest(source, 'sha256').hexdigest()))
+    # A date-subset export can never be published or promoted (release.py/model_dashboard.py/
+    # dashboard_exploration.py all require aml_scope=='full'); this scope value deliberately differs.
+    aml_scope = 'full' if dates is None else 'date-subset'
     provenance = dict(curated=str(curated), verification_sha256=hashlib.sha256(Path(verification).read_bytes()).hexdigest(),
-                      training_p99=thresholds, aml_scope='full', scoring_location='local export from verified AWS Glue output')
+                      training_p99=thresholds, aml_scope=aml_scope, scoring_location='local export from verified AWS Glue output',
+                      export_dates=dates)
     # schema_version=1 is the snapshot format the dashboard.js front end reads.
     snapshot = dict(schema_version=1, generated_at=datetime.now(timezone.utc).isoformat(), aml=aml,
                     treasury=treasury, treasury_daily=trends, diagnostics=diagnostics,
-                    cohort_rows=rows, full_rows=rows, aml_scope='full', sources=manifest, provenance=provenance,
+                    cohort_rows=rows, full_rows=rows, aml_scope=aml_scope, sources=manifest, provenance=provenance,
                     splits=splits)
     dashboard = output / 'dashboard'
     dashboard.mkdir()

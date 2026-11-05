@@ -252,7 +252,9 @@ def acquire(event, clients, root, context=None, downloader=None, getter=None, se
     # processing_sha256 used for result caching (see ingest_contract).
     identity = {**{key: info[key] for key in ['rows', 'files', 'start_date', 'end_date']},
                 'subset': 'HI-Small', 'dataset_version': resolved,
-                'deployment_sha256': sha(config), 'train': options['train']}
+                'deployment_sha256': sha(config), 'train': options['train'],
+                # This cloud-acquisition path never selects a date subset.
+                'export_dates': None}
     manifest = {**identity, 'schema_version': 1, 'run_id': run_id,
                 'processing_sha256': sha(identity), 'rerun': options['rerun'],
                 'source_scope': info['scope'], 'currencies': info['currencies'],

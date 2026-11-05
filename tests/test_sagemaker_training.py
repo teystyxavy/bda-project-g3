@@ -40,6 +40,22 @@ def cli():
     return module
 
 
+def test_prepare_bundle_accepts_a_date_subset_snapshot(tmp_path):
+    # A date-subset baseline export (see batch.export_verified_batch) is a legitimate training
+    # candidate input, same as a full-population one - only release.py/model_dashboard.py reject it.
+    frame = sample()
+    scored = tmp_path / 'scored.parquet'
+    frame.to_parquet(scored, index=False)
+    snapshot = tmp_path / 'snapshot.json'
+    snapshot.write_text(json.dumps(dict(aml_scope='date-subset', full_rows=len(frame),
+        sources=[dict(file='bq1_scored.parquet', sha256=digest(scored))],
+        aml={name: dict(metrics=dict(positives=int(frame.iloc[start:end].is_laundering.sum())))
+             for name, start, end in [('validation', 80, 160), ('test', 160, 240), ('tail', 240, 320)]})))
+    output = tmp_path / 'prepared'
+    prepare_bundle(scored, snapshot, output, JOB, IMAGE, rounds=3, max_runtime=120)
+    assert validate_bundle(output)
+
+
 def test_contract_rejects_unbounded_or_unpinned_jobs():
     request = build_request(JOB, IMAGE, 320)
     assert request['EnableNetworkIsolation']

@@ -34,7 +34,7 @@ class CacheS3(MemoryS3):
 def prepared():
     cfg = config() | {'stage_versions': {'curated': 'curate-v1', 'scored': 'score-v1'}}
     original = manifest() | {'deployment_sha256': sha(cfg)}
-    identity_fields = ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train']
+    identity_fields = ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train', 'export_dates']
     original['processing_sha256'] = sha({key: original[key] for key in identity_fields})
     s3 = CacheS3()
     p = paths(original['run_id'])

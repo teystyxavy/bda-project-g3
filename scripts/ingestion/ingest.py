@@ -162,13 +162,18 @@ def prepare(args, config):
     info = prepare_inputs(args.dataset_directory / f'{subset}_Trans.csv',
                           args.dataset_directory / f'{subset}_accounts.csv', output,
                           rows=args.rows, fx_file=args.fx_file)
+    # export_dates restricts baseline/export/training to a chosen set of txn_date
+    # partitions out of an otherwise fully-curated run; curate always processes
+    # the full population either way. Omitted = today's full-population behavior.
+    export_dates = json.loads(args.export_dates_file.read_text()) if getattr(args, 'export_dates_file', None) else None
     # "identity" = everything that determines the pipeline's *output*: row count,
-    # file hashes, date range, dataset version, deployment hash and training mode.
-    # Its SHA-256 (processing_sha256) is the cache key - two runs with the same
-    # identity would produce the same results, so the second can reuse the first.
+    # file hashes, date range, dataset version, deployment hash, training mode
+    # and which dates are selected. Its SHA-256 (processing_sha256) is the cache
+    # key - two runs with the same identity would produce the same results, so
+    # the second can reuse the first.
     identity = {**{key: info[key] for key in ['rows', 'files', 'start_date', 'end_date']},
                 'subset': subset, 'dataset_version': record['dataset_version'],
-                'deployment_sha256': sha(config), 'train': args.train}
+                'deployment_sha256': sha(config), 'train': args.train, 'export_dates': export_dates}
     # The manifest adds run-specific metadata (run ID, timestamps, provenance,
     # currencies) that does NOT affect results and so is not part of the hash.
     manifest = {**identity, 'schema_version': 1, 'run_id': run_id,
@@ -395,6 +400,9 @@ def main():
         command.add_argument('--run-id')
         command.add_argument('--train', action='store_true')
         command.add_argument('--rerun', action='store_true')
+        command.add_argument('--export-dates-file', type=Path,
+                             help="JSON {'dates': [...], 'tail_start': '...'|null}; restricts baseline/export/"
+                                  'training to those txn_date partitions. Default: the full population.')
         if action == 'run':
             command.add_argument('--no-wait', action='store_true')
             command.add_argument('--local-acquisition', action='store_true', help='Explicit compatibility path: acquire/upload on this computer')

@@ -65,6 +65,66 @@ def test_full_export_matches_baseline_and_does_not_expose_labels(tmp_path):
         export_verified_batch(curated, verification, tmp_path / 'export', assets, splits=LEGACY_SPLITS)
 
 
+def daily_proof(frame):
+    """Per-``txn_date`` rows/positives/amount_usd, matching ``verify_curated``'s new ``proof['daily']``."""
+    return {day: dict(rows=len(group), positives=int(group.is_laundering.sum()), amount_usd=float(group.amount_usd.sum()))
+            for day, group in frame.groupby('txn_date')}
+
+
+def test_date_subset_export_scores_only_the_selected_dates(tmp_path):
+    frame = fixture()
+    curated = tmp_path / 'input.parquet'
+    frame.to_parquet(curated, index=False)
+    verification = tmp_path / 'verified.json'
+    verification.write_text(json.dumps(dict(status='passed', rows=len(frame), positives=int(frame.is_laundering.sum()),
+                                            amount_usd=float(frame.amount_usd.sum()), daily=daily_proof(frame))))
+    assets = Path(__file__).resolve().parents[1] / 'dashboard'
+    dates = ['2022-09-01', '2022-09-07']
+    report = export_verified_batch(curated, verification, tmp_path / 'export', assets, splits=LEGACY_SPLITS, dates=dates)
+    actual = pd.read_parquet(tmp_path / 'export/bq1_scored.parquet')
+    # Only the selected dates' rows are present - the other two days (240 - 120 = 120 rows) are excluded,
+    # with no false failure from their rows existing in `curated` but outside the selection.
+    assert len(actual) == 120
+    assert set(actual.txn_date) == set(dates)
+    snapshot = json.loads((tmp_path / 'export/dashboard/dashboard.json').read_text())
+    assert snapshot['aml_scope'] == 'date-subset'
+    assert snapshot['full_rows'] == 120
+    assert snapshot['provenance']['export_dates'] == dates
+
+
+def test_date_subset_export_rejects_a_tampered_selected_date(tmp_path):
+    frame = fixture()
+    curated = tmp_path / 'input.parquet'
+    frame.to_parquet(curated, index=False)
+    proof = dict(status='passed', rows=len(frame), positives=int(frame.is_laundering.sum()),
+                amount_usd=float(frame.amount_usd.sum()), daily=daily_proof(frame))
+    # Tamper the selected date's expected row count - should be caught the same way a dropped/
+    # duplicated row is caught for a full-population export.
+    proof['daily']['2022-09-01']['rows'] -= 1
+    verification = tmp_path / 'verified.json'
+    verification.write_text(json.dumps(proof))
+    assets = Path(__file__).resolve().parents[1] / 'dashboard'
+    with pytest.raises(ValueError, match='Source counts differ'):
+        export_verified_batch(curated, verification, tmp_path / 'export', assets, splits=LEGACY_SPLITS,
+                              dates=['2022-09-01', '2022-09-07'])
+
+
+def test_date_subset_export_rejects_a_date_with_no_verified_proof(tmp_path):
+    frame = fixture()
+    curated = tmp_path / 'input.parquet'
+    frame.to_parquet(curated, index=False)
+    verification = tmp_path / 'verified.json'
+    # 'daily' omits 2022-09-07 entirely, as if that date was never independently verified.
+    daily = daily_proof(frame)
+    del daily['2022-09-07']
+    verification.write_text(json.dumps(dict(status='passed', rows=len(frame), positives=int(frame.is_laundering.sum()),
+                                            amount_usd=float(frame.amount_usd.sum()), daily=daily)))
+    assets = Path(__file__).resolve().parents[1] / 'dashboard'
+    with pytest.raises(ValueError, match='No verified proof'):
+        export_verified_batch(curated, verification, tmp_path / 'export', assets, splits=LEGACY_SPLITS,
+                              dates=['2022-09-01', '2022-09-07'])
+
+
 def test_export_derives_row_share_splits_from_the_data_by_default(tmp_path):
     frame = fixture()
     curated = tmp_path / 'input.parquet'

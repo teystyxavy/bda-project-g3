@@ -45,9 +45,9 @@ def manifest():
     value = dict(schema_version=1, run_id='test-run', subset='HI-Small', rows=320, train=False, rerun=False,
         start_date='2022-09-01', end_date='2022-09-12', dataset_version=1,
         files={name: dict(bytes=1, sha256='c'*64) for name in ['transactions.csv', 'accounts.csv', 'fx.csv']},
-        deployment_sha256=sha(config()), model_manifest_sha256='b'*64,
+        deployment_sha256=sha(config()), model_manifest_sha256='b'*64, export_dates=None,
         currencies=['US Dollar'], source_scope='synthetic-fixture')
-    value['processing_sha256'] = sha({key: value[key] for key in ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train']})
+    value['processing_sha256'] = sha({key: value[key] for key in ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train', 'export_dates']})
     return value
 
 
@@ -111,6 +111,34 @@ def test_manifest_identity_and_sdk_shapes():
     assert 'run_test_run' in corridor_query('test-run', value['start_date'], value['end_date'])
     with pytest.raises(ValueError, match='ISO'):
         corridor_query('test-run', '2022-09-01', "2022-09-12' OR '1'='1")
+
+
+def test_export_dates_validation_and_identity(tmp_path):
+    base = manifest()
+    export_dates = {'dates': ['2022-09-01', '2022-09-07'], 'tail_start': '2022-09-07'}
+    identity_fields = ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train']
+    valid = dict(base, export_dates=export_dates)
+    valid['processing_sha256'] = sha({**{key: valid[key] for key in identity_fields}, 'export_dates': export_dates})
+    validate_manifest(valid, sha(config()))  # a well-formed, correctly-hashed selection passes
+    for bad_dates in [
+        {'dates': [], 'tail_start': None},  # empty selection
+        {'dates': ['2022-09-01', '2022-09-01'], 'tail_start': None},  # duplicate
+        {'dates': ['2022-13-01'], 'tail_start': None},  # not a real date
+        {'dates': ['2022-08-01'], 'tail_start': None},  # outside [start_date, end_date]
+        {'dates': ['2022-09-01'], 'tail_start': '2022-09-07'},  # tail_start not among dates
+        {'dates': 'not-a-list', 'tail_start': None},
+    ]:
+        broken = dict(base, export_dates=bad_dates)
+        broken['processing_sha256'] = sha({**{key: broken[key] for key in identity_fields}, 'export_dates': bad_dates})
+        with pytest.raises(ValueError):
+            validate_manifest(broken, sha(config()))
+    # Different selections are different identities: same base manifest, different export_dates,
+    # must not share a processing_sha256 (so the stage cache correctly treats them as distinct runs).
+    other_dates = {'dates': ['2022-09-07', '2022-09-09'], 'tail_start': None}
+    other = dict(base, export_dates=other_dates)
+    other['processing_sha256'] = sha({**{key: other[key] for key in identity_fields}, 'export_dates': other_dates})
+    validate_manifest(other, sha(config()))
+    assert valid['processing_sha256'] != other['processing_sha256']
 
 
 class MemoryS3:
@@ -273,6 +301,9 @@ def test_source_to_release_and_tamper_rejected(tmp_path, subset):
     baseline = inputs / 'baseline'
     proof = baseline_stage(inputs, baseline, ROOT / 'dashboard')
     assert proof['rows'] == 320
+    # Independent per-day breakdown (used by a date-subset export) sums back to the whole population.
+    assert sum(day['rows'] for day in proof['daily'].values()) == 320
+    assert set(proof['daily']) == {'2022-09-01', '2022-09-07', '2022-09-09', '2022-09-12'}
     reference, cloud = serve_inputs(tmp_path, inputs, baseline, value)
     result = export_stage(inputs, tmp_path / 'export', ROOT / 'dashboard')
     assert result['verification']['scores']['rows'] == 320
@@ -326,3 +357,28 @@ def test_training_run_splits_by_row_share_and_verifies_the_candidate(tmp_path):
     cloud.loc[0, 'model_score'] = 0.987654321
     cloud.to_parquet(inputs / 'scored/data.parquet', index=False)
     with pytest.raises(AssertionError): export_stage(inputs, tmp_path / 'bad-export', ROOT / 'dashboard')
+
+
+def test_baseline_stage_restricts_to_an_export_dates_selection(tmp_path):
+    # row_share_splits needs >= 3 days, so select 3 of the fixture's 4 days (excludes 2022-09-12).
+    dates = ['2022-09-01', '2022-09-07', '2022-09-09']
+    inputs, value = staged_run(tmp_path, 'HI-Small', train=True, export_dates={'dates': dates, 'tail_start': None})
+    baseline = inputs / 'baseline'
+    proof = baseline_stage(inputs, baseline, ROOT / 'dashboard')
+    # verify_curated still independently verifies the whole raw population...
+    assert proof['rows'] == 320
+    # ...but baseline/export/training only cover the three selected days (80 rows each).
+    scored = pd.read_parquet(baseline / 'baseline/bq1_scored.parquet')
+    assert len(scored) == 240
+    assert set(scored.txn_date.astype(str)) == set(dates)
+    snapshot = json.loads((baseline / 'manifest/dashboard.json').read_text())
+    assert snapshot['aml_scope'] == 'date-subset'
+    assert snapshot['full_rows'] == 240
+    assert snapshot['provenance']['tail_start'] is None
+    # Splits are computed only over the selected dates, not the whole 4-day population.
+    assert snapshot['splits']['train'][0] == '2022-09-01'
+    assert snapshot['splits'][list(snapshot['splits'])[-1]][1] <= '2022-09-10'
+    # export/release explicitly skips rather than failing - a date-subset run has no public release.
+    result = export_stage(inputs, tmp_path / 'export', ROOT / 'dashboard')
+    assert result['status'] == 'skipped'
+    assert not (tmp_path / 'export/release').exists()

@@ -153,7 +153,7 @@ def test_real_baseline_through_s3_boundary(tmp_path, subset):
     frame.to_parquet(data, index=False)
     s3, cfg, value = staged_inputs()
     value.update(info, subset=subset)
-    fields = ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train']
+    fields = ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train', 'export_dates']
     value['processing_sha256'] = sha({key: value[key] for key in fields})
     p = paths('test-run')
     s3.data[BUCKET, p['raw'] + '/manifest.json'] = canonical(value)

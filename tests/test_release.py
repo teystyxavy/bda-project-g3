@@ -19,6 +19,19 @@ def fixture(tmp_path):
     return source, snapshot
 
 
+def test_date_subset_snapshot_is_never_released(tmp_path):
+    # A date-subset baseline export (see batch.export_verified_batch) is a training-candidate
+    # exploration, never a publishable release - this locks that in as a tested contract.
+    source, _ = fixture(tmp_path)
+    for name in ASSETS:
+        if name.endswith('.json'):
+            data = json.loads((source / name).read_text())
+            data['aml_scope'] = 'date-subset'
+            (source / name).write_text(json.dumps(data), encoding='utf-8')
+    with pytest.raises(ValueError):
+        prepare_release(source, tmp_path / 'release')
+
+
 def test_allowlist_and_preservation(tmp_path):
     source, original = fixture(tmp_path)
     manifest = prepare_release(source, tmp_path / 'release')

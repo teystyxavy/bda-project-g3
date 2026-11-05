@@ -23,7 +23,7 @@ def medium_manifest(**updates):
     value.update(updates)
     value['processing_sha256'] = sha({key: value[key] for key in [
         'subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version',
-        'deployment_sha256', 'train']})
+        'deployment_sha256', 'train', 'export_dates']})
     return value
 
 

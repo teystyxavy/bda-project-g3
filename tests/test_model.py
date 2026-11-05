@@ -366,6 +366,30 @@ def test_windows_reaching_the_sparse_tail_report_dense_and_tail_metrics(tmp_path
     assert compare_models(scored, snapshot, other / 'model', rounds=5, threads=1, batch_rows=400)['sparse_tail'] is None
 
 
+def test_date_subset_snapshot_uses_its_explicit_tail_start_over_auto_detection(tmp_path):
+    pytest.importorskip('xgboost')
+    # Tail (5 days) outnumbers dense (2 days), so sparse_tail_start's median-based heuristic would be
+    # skewed into tail-scale territory and silently fail to find the tail - exactly the scenario a
+    # date-subset selection (e.g. our validated dense+tail HI-Large window) can create.
+    frame = streaming_sample(dense_days=2, tail_days=5)
+    scored, snapshot_path, _ = write_run(tmp_path, frame)
+    data = json.loads(snapshot_path.read_text())
+    assert data['aml_scope'] == 'full'
+    auto = compare_models(scored, snapshot_path, tmp_path / 'auto', rounds=5, threads=1, batch_rows=400)
+    assert auto['sparse_tail'] is None  # confirms the heuristic really is fooled here
+    # A date-subset export marks its scope and can carry the tail boundary it was built with.
+    data['aml_scope'] = 'date-subset'
+    data['provenance'] = {'tail_start': '2022-09-03'}
+    snapshot_path.write_text(json.dumps(data))
+    explicit = compare_models(scored, snapshot_path, tmp_path / 'explicit', rounds=5, threads=1, batch_rows=400)
+    assert explicit['sparse_tail']['start'] == '2022-09-03'
+    # The whole test window falls on the tail side of that boundary, so there is nothing to split
+    # within it (tail_breakdown returns {} when a window lies wholly on one side) - that in itself
+    # confirms the explicit tail_start was honoured rather than the (fooled) auto-detection.
+    assert explicit['metrics']['test']['model']['rows'] == 15
+    assert 'tail' not in explicit['metrics']['test']
+
+
 def test_early_stopping_metric_is_selectable_and_aucpr_is_the_default(tmp_path):
     pytest.importorskip('xgboost')
     scored, snapshot, _ = write_run(tmp_path, streaming_sample())

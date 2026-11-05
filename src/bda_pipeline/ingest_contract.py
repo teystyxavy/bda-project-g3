@@ -194,6 +194,39 @@ def validate_dates(start, end):
         raise ValueError('Date range is reversed')
 
 
+def validate_export_dates(value, start, end):
+    """Validate an optional ``export_dates`` selection (``None`` = full population, unchanged behavior).
+
+    Restricts baseline/export/training to a chosen set of ``txn_date``
+    partitions out of an otherwise fully-curated run; curate itself always
+    processes the full raw population.
+
+    Args:
+        value: ``None``, or ``{'dates': [...ISO dates...], 'tail_start': 'YYYY-MM-DD' | None}``.
+        start: The run's ``start_date`` (``export_dates`` must stay within range).
+        end: The run's ``end_date``.
+
+    Raises:
+        ValueError: on any malformed or out-of-range selection.
+    """
+    if value is None:
+        return
+    if not isinstance(value, dict) or set(value) - {'dates', 'tail_start'}:
+        raise ValueError('Invalid export_dates shape')
+    dates = value.get('dates')
+    if not isinstance(dates, list) or not dates:
+        raise ValueError('export_dates.dates must be a non-empty list')
+    if len(set(dates)) != len(dates):
+        raise ValueError('export_dates.dates has duplicates')
+    for day in dates:
+        validate_dates(day, day)
+        if day < start or day > end:
+            raise ValueError('export_dates.dates outside the run\'s date range')
+    tail_start = value.get('tail_start')
+    if tail_start is not None and tail_start not in dates:
+        raise ValueError('export_dates.tail_start must be one of export_dates.dates')
+
+
 def validate_manifest(value, deployment_hash):
     """Validate a run manifest (``pipeline/runs/<run_id>/raw/manifest.json``).
 
@@ -209,8 +242,12 @@ def validate_manifest(value, deployment_hash):
     4. Exactly the three allowed input files exist, each with a SHA-256 and a
        positive size.
     5. Dates form a valid, non-reversed range (``validate_dates``).
-    6. ``processing_sha256`` is recomputed from the identity fields and must
-       match - this detects any tampering or accidental edits.
+    6. The optional ``export_dates`` selection, if present, is well-formed and
+       within range (``validate_export_dates``); absent means the full
+       population, unchanged from before this field existed.
+    7. ``processing_sha256`` is recomputed from the identity fields (which
+       include ``export_dates``) and must match - this detects any tampering
+       or accidental edits.
 
     Args:
         value: The parsed manifest dict.
@@ -243,11 +280,14 @@ def validate_manifest(value, deployment_hash):
                 or type(info.get('bytes')) is not int or info['bytes'] <= 0):
             raise ValueError('Invalid source size/hash')
     validate_dates(value['start_date'], value['end_date'])
+    validate_export_dates(value.get('export_dates'), value['start_date'], value['end_date'])
     # Recompute the run identity. Only fields that change the *output* are
     # included (not run_id, rerun or created_at), so identical inputs on a new
     # run ID share the same processing_sha256 and can hit the result cache.
+    # export_dates is part of identity: a different selection is different output.
     identity = {key: value[key] for key in ['subset', 'rows', 'files', 'start_date', 'end_date',
                                            'dataset_version', 'deployment_sha256', 'train']}
+    identity['export_dates'] = value.get('export_dates')
     if sha(identity) != value['processing_sha256']:
         raise ValueError('Processing identity mismatch')
     return value
