@@ -14,7 +14,7 @@ run "bounded_and_separate_from_existing_pipeline" {
     error_message = "Paid jobs must not retry; training and both business answers must be orchestrated."
   }
   assert {
-    condition     = length(aws_s3_object.deployment_artifact) == 15 && aws_s3_object.configuration.key == "pipeline/deployment.json"
+    condition     = length(aws_s3_object.deployment_artifact) == 16 && aws_s3_object.configuration.key == "pipeline/deployment.json"
     error_message = "Only allowlisted artifacts and the deployment pointer may be uploaded."
   }
 }
@@ -28,5 +28,17 @@ run "glue_reference_and_training_only_sagemaker" {
   assert {
     condition = !strcontains(file("${path.module}/main.tf"), "sagemaker:CreateProcessingJob") && !strcontains(file("${path.module}/main.tf"), "sagemaker:DescribeProcessingJob") && !strcontains(file("${path.module}/workflow.asl.json"), "createProcessingJob")
     error_message = "SageMaker must be limited to training."
+  }
+}
+
+run "network_replaces_athena_corridors" {
+  command = plan
+  assert {
+    condition     = aws_glue_job.job["network"].worker_type == "G.1X" && endswith(aws_glue_job.job["network"].command[0].script_location, "network_mules.py")
+    error_message = "The mule-network job must run network_mules.py on a G.1X Spark worker, like curate/score."
+  }
+  assert {
+    condition     = !strcontains(file("${path.module}/main.tf"), "athena:") && !strcontains(file("${path.module}/workflow.asl.json"), "athena:")
+    error_message = "The retired Athena corridor query must not be wired into any IAM policy or the workflow."
   }
 }

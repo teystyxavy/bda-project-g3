@@ -24,7 +24,7 @@ STAGES = [
     ('acquire', 'Acquire dataset and historical FX'),
     ('curate', 'Clean transactions and compute features'),
     ('score', 'Score transactions'),
-    ('corridors', 'Analyse treasury corridors'),
+    ('network', 'Find mule networks'),
     ('baseline', 'Verify rule baseline'),
     ('train', 'Train candidate model'),
     ('export', 'Verify results and build dashboard'),
@@ -34,7 +34,8 @@ STATE_STAGE = {
     'Acquire': 'acquire', 'Begin': 'curate', 'ReuseCurated': 'curate',
     'Curate': 'curate', 'PrepareBaseline': 'curate',
     'ReuseScores': 'score', 'Score': 'score', 'ScoresReused': 'score',
-    'Corridors': 'corridors', 'PrepareBranches': 'baseline',
+    'ReuseNetwork': 'network', 'Network': 'network', 'NetworkReused': 'network',
+    'PrepareBranches': 'baseline',
     'TrainRequested': 'train', 'ReuseFrozen': 'train', 'TrainDone': 'train',
     'PrepareExport': 'export', 'Publish': 'publish',
 }
@@ -42,21 +43,22 @@ for _prefix, _stage in [('Baseline', 'baseline'), ('Train', 'train'), ('Export',
     for _suffix in ['', 'PollInit', 'Wait', 'Status', 'Complete', 'PollIncrement', 'Failed']:
         STATE_STAGE[_prefix + _suffix] = _stage
 COMPLETION = {'Acquire': 'acquire', 'PrepareBaseline': 'curate', 'Score': 'score',
-              'ScoresReused': 'score', 'Corridors': 'corridors',
+              'ScoresReused': 'score', 'Network': 'network', 'NetworkReused': 'network',
               'PrepareBranches': 'baseline', 'TrainDone': 'train', 'Publish': 'publish'}
-SKIPS = {'ScoresReused': 'score', 'ReuseFrozen': 'train'}
+SKIPS = {'ScoresReused': 'score', 'NetworkReused': 'network', 'ReuseFrozen': 'train'}
 FAILURES = {'BaselineFailed': 'baseline', 'TrainFailed': 'train', 'ExportFailed': 'export'}
 SERVICE = {
     'Acquire': 'AWS Lambda', 'Begin': 'AWS Lambda', 'Curate': 'AWS Glue',
     'PrepareBaseline': 'AWS Lambda', 'PrepareBranches': 'AWS Lambda',
-    'Score': 'AWS Glue', 'Corridors': 'Amazon Athena',
+    'Score': 'AWS Glue', 'Network': 'AWS Glue',
     'PrepareExport': 'AWS Lambda',
     'Publish': 'AWS Lambda (publishing to S3 and CloudFront)',
 }
 for _state, _stage in STATE_STAGE.items():
     if _state.startswith(('Baseline', 'Train', 'Export')):
         SERVICE.setdefault(_state, 'Amazon SageMaker' if _state.startswith('Train') else 'AWS Glue')
-for _state in ['ReuseCurated', 'ReuseScores', 'ScoresReused', 'TrainRequested', 'TrainDone', 'ReuseFrozen']:
+for _state in ['ReuseCurated', 'ReuseScores', 'ScoresReused', 'ReuseNetwork', 'NetworkReused',
+               'TrainRequested', 'TrainDone', 'ReuseFrozen']:
     SERVICE[_state] = 'AWS Step Functions'
 
 
@@ -220,7 +222,7 @@ def stage_progress(parent, child, events, train):
                         e.get('stateEnteredEventDetails', {}).get('name') == 'Curate' for e in events):
                     stages['curate']['status'] = 'reused'
             if name == 'ScoreAndAnalyze':
-                for stage in ['score', 'corridors', 'baseline']:
+                for stage in ['score', 'network', 'baseline']:
                     if stages[stage]['status'] == 'running':
                         stages[stage]['status'] = 'complete'
             if name == 'PrepareExport':

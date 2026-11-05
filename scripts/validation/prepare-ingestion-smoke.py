@@ -2,9 +2,10 @@
 
 No AWS calls. With --stage prepare, builds input channels from existing local
 HI-Small files. --stage baseline runs the same baseline function as Glue;
---stage finish adds native frozen scores and independent corridor reference;
---stage export runs the same export function as Glue. These are local numerical
-checks, not proof of S3/IAM or a deployed Glue run.
+--stage finish adds native frozen scores and an independent mule-network
+reference (standing in for the Glue network job's output); --stage export
+runs the same export function as Glue. These are local numerical checks, not
+proof of S3/IAM or a deployed Glue run.
 
 All stages take --output, --deployment, --models and --fx-file. Execute them in
 order: prepare, baseline, finish, export. Use the offline Glue container regression
@@ -21,8 +22,8 @@ from bda_pipeline.ingest_contract import sha
 from bda_pipeline.ingest_compute import baseline_stage, export_stage
 from bda_pipeline.inference import SCORING_COLUMNS
 from bda_pipeline.model import SavedRanker
+from bda_pipeline.network import COLUMNS as NETWORK_COLUMNS, TABLES as NETWORK_TABLES, analyse_network
 from bda_pipeline.transform import read_transactions, read_accounts, build_curated_transactions
-from bda_pipeline.treasury_verification import expected_corridors
 
 
 def main():
@@ -84,12 +85,21 @@ def main():
         cloud = frame[SCORING_COLUMNS].assign(model_score=ranker.predict(frame), txn_date=frame.txn_date)
         (inputs / 'scored').mkdir()
         cloud.to_parquet(inputs / 'scored/data.parquet', index=False)
-        # Stand-in for the Athena BQ2 query: an independent pandas corridor
-        # computation in the CSV format Athena would write.
-        (inputs / 'athena').mkdir()
-        expected_corridors([frame.assign(txn_date=frame.txn_date.astype(str))], len(frame)).to_csv(inputs / 'athena/result.csv', index=False)
+        # Stand-in for the Glue network job: an independent pandas mule-network
+        # computation, written in the same per-table Parquet layout plus
+        # _SUCCESS marker that bda_pipeline.network.read_tables expects.
+        network = inputs / 'network'
+        network.mkdir()
+
+        def network_batches():
+            yield frame[NETWORK_COLUMNS]
+        tables = analyse_network(network_batches)
+        for name in NETWORK_TABLES:
+            (network / name).mkdir()
+            tables[name].to_parquet(network / name / 'part.parquet', index=False)
+        (network / '_SUCCESS').touch()
         (args.output / 'export-output').mkdir()
-        print('Prepared native scoring and independent corridor reference; next run --stage export')
+        print('Prepared native scoring and independent network reference; next run --stage export')
 
 
 if __name__ == '__main__': main()

@@ -4,9 +4,9 @@ What this file is
 -----------------
 The "contract" for one pipeline run: the fixed AWS names (account, region,
 buckets, state machine, Glue database), the S3 layout of a run, the rules a run
-manifest must satisfy, the reviewed Athena corridor SQL (business question 2),
-and the Glue stage job request used for the baseline and export
-stages.
+manifest must satisfy, and the Glue stage job request used for the baseline
+and export stages (the network stage's Glue arguments are built directly in
+``ingest_control.handle``'s ``begin`` op, alongside curate/score).
 
 Why it is separate
 ------------------
@@ -41,7 +41,7 @@ from datetime import date
 # ---- Fixed deployment coordinates (one AWS account, Singapore region) ----
 ACCOUNT = '588738581042'
 REGION = 'ap-southeast-1'
-# Main data lake bucket: raw uploads, curated/scored Parquet, evidence, Athena results.
+# Main data lake bucket: raw uploads, curated/scored/network Parquet, evidence.
 BUCKET = f'is459-g3-{ACCOUNT}-{REGION}'
 # Separate bucket that CloudFront serves the static dashboard from.
 SITE_BUCKET = f'is459-g3-dashboard-{ACCOUNT}-{REGION}'
@@ -175,7 +175,7 @@ def validate_dates(start, end):
     """Validate an inclusive ISO date range.
 
     Each run carries its observed start/end dates for exact curation, FX
-    coverage and corridor reconciliation. Comparing ISO ``YYYY-MM-DD``
+    coverage and network reconciliation. Comparing ISO ``YYYY-MM-DD``
     strings works because they sort chronologically.
 
     Args:
@@ -302,6 +302,7 @@ def paths(run_id):
       manifest.json, upload-claim.json)
     * ``curated``  - Glue curate job output (Parquet partitioned by txn_date)
     * ``scored``   - Glue score job output (XGBoost model scores)
+    * ``network``  - Glue network job output (BQ2 mule-network tables)
     * ``baseline`` - Glue baseline proof and rule-based snapshot
     * ``evidence`` - control-plane receipts (stage-cache.json, failure.json, result.json)
     * ``export``   - Glue export: verified dashboard + release manifest
@@ -315,56 +316,8 @@ def paths(run_id):
     """
     valid_run(run_id)
     prefix = f'pipeline/runs/{run_id}'
-    return {name: f'{prefix}/{name}' for name in ['raw', 'curated', 'scored', 'baseline',
+    return {name: f'{prefix}/{name}' for name in ['raw', 'curated', 'scored', 'network', 'baseline',
                                                 'evidence', 'export', 'release']}
-
-
-def corridor_query(run_id, start, end):
-    """Build the reviewed Athena SQL for business question 2 (treasury corridors).
-
-    The query reads the run's curated table ``is459_g3_ingest.run_<run_id>``
-    (registered by ``ingest_control`` with partition projection on ``txn_date``)
-    and, for every day, produces two kinds of directed corridors:
-
-    * ``bank``     - from_bank -> to_bank
-    * ``currency`` - payment_currency -> receiving_currency
-
-    For each corridor/day it reports the transaction count and USD volume, the
-    corridor's share of that day's volume (``volume_share``), and the daily
-    Herfindahl-Hirschman Index ``daily_hhi = sum(volume_share^2)`` - a standard
-    concentration measure (close to 1 = flows concentrated in few corridors,
-    close to 0 = spread out). ``nullif(..., 0)`` avoids division by zero.
-
-    The same exact text is later compared with what Athena reports it ran, and
-    the results are re-computed independently in pandas
-    (``treasury_verification``) before release. Interpolating values into SQL
-    is safe here only because ``run_id`` and the dates are strictly validated
-    first.
-
-    Args:
-        run_id: Run ID; hyphens become underscores in the table name.
-        start: Inclusive first date ``'YYYY-MM-DD'``.
-        end: Inclusive last date ``'YYYY-MM-DD'``.
-
-    Returns:
-        The SQL string.
-    """
-    valid_run(run_id)
-    validate_dates(start, end)
-    # Athena/Glue table names cannot contain hyphens.
-    table = 'run_' + run_id.replace('-', '_')
-    return f"""WITH directed AS (
- SELECT 'bank' AS corridor_type, txn_date, from_bank AS from_node, to_bank AS to_node,
- count(*) AS transactions, sum(amount_usd) AS volume_usd FROM {DATABASE}.{table}
- WHERE txn_date BETWEEN '{start}' AND '{end}' GROUP BY txn_date, from_bank, to_bank
- UNION ALL
- SELECT 'currency', txn_date, payment_currency, receiving_currency, count(*), sum(amount_usd)
- FROM {DATABASE}.{table} WHERE txn_date BETWEEN '{start}' AND '{end}'
- GROUP BY txn_date, payment_currency, receiving_currency
-), shares AS (SELECT *, volume_usd / nullif(sum(volume_usd) OVER
- (PARTITION BY corridor_type, txn_date), 0) AS volume_share FROM directed)
-SELECT *, sum(volume_share*volume_share) OVER (PARTITION BY corridor_type, txn_date)
- AS daily_hhi FROM shares ORDER BY corridor_type, txn_date, volume_usd DESC, from_node, to_node"""
 
 
 def stage_request(run_id, stage, config, extra_inputs=None, subset='HI-Small', rows=1):
@@ -386,10 +339,10 @@ def stage_request(run_id, stage, config, extra_inputs=None, subset='HI-Small', r
         sources.update({'baseline': p['baseline'] + '/baseline/bq1_scored.parquet',
                         'baseline_manifest': p['baseline'] + '/manifest/', 'scored': p['scored'] + '/'})
         extra = extra_inputs or {}
-        if set(extra) - {'athena', 'candidate'}:
+        if set(extra) - {'network', 'candidate'}:
             raise ValueError('Unsupported export input')
-        if 'athena' in extra and not re.fullmatch(r'athena-results/[A-Za-z0-9-]+\.csv', extra['athena']):
-            raise ValueError('Unexpected Athena input')
+        if 'network' in extra and extra['network'] != p['network'] + '/':
+            raise ValueError('Unexpected network input')
         if 'candidate' in extra and extra['candidate'] != f'sagemaker/outputs/is459-g3-train-{run_id}/output/model.tar.gz':
             raise ValueError('Unexpected candidate input')
         sources.update(extra)

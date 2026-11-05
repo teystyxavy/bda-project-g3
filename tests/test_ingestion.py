@@ -14,15 +14,15 @@ import pandas as pd
 import pytest
 
 from bda_pipeline.acquisition import HEADER, acquire_dataset, prepare_inputs, validate_fx
-from bda_pipeline.ingest_contract import sha, canonical, paths, stage_request, validate_manifest, corridor_query
+from bda_pipeline.ingest_contract import sha, canonical, paths, stage_request, validate_manifest
 from bda_pipeline.ingest_control import handle, BUCKET, SITE_BUCKET, release_lock
 from bda_pipeline.ingest_compute import baseline_stage, export_stage
 from bda_pipeline.analytics import add_behaviour
 from bda_pipeline.transform import read_transactions, read_accounts, build_curated_transactions
 from bda_pipeline.inference import SCORING_COLUMNS, prepare_inference
 from bda_pipeline.model import compare_models, SavedRanker, digest
+from bda_pipeline.network import COLUMNS as NETWORK_COLUMNS, TABLES as NETWORK_TABLES, analyse_network
 from bda_pipeline.sagemaker_training import train_channels
-from bda_pipeline.treasury_verification import expected_corridors
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -103,14 +103,13 @@ def test_manifest_identity_and_sdk_shapes():
     validate_manifest(value, sha(config()))
     for changed in [dict(value, rows=321), dict(value, run_id='x; DROP TABLE y')]:
         with pytest.raises(ValueError): validate_manifest(changed, sha(config()))
-    request = stage_request('test-run', 'export', config(), {'athena': 'athena-results/q.csv'})
+    request = stage_request('test-run', 'export', config(), {'network': paths('test-run')['network'] + '/'})
     client = boto3.client('glue', region_name='ap-southeast-1', aws_access_key_id='fixture', aws_secret_access_key='fixture')
     validate_parameters(request, client.meta.service_model.operation_model('StartJobRun').input_shape)
     assert request['WorkerType'] == 'G.2X'
     assert request['Timeout'] == 30
-    assert 'run_test_run' in corridor_query('test-run', value['start_date'], value['end_date'])
-    with pytest.raises(ValueError, match='ISO'):
-        corridor_query('test-run', '2022-09-01', "2022-09-12' OR '1'='1")
+    with pytest.raises(ValueError, match='network'):
+        stage_request('test-run', 'export', config(), {'network': 'wrong-prefix/'})
 
 
 def test_export_dates_validation_and_identity(tmp_path):
@@ -176,7 +175,7 @@ class MemoryS3:
 
 
 def clients(s3):
-    return {name: None for name in ['glue', 'sagemaker', 'athena', 'stepfunctions', 'cloudfront']} | {'s3': s3}
+    return {name: None for name in ['glue', 'sagemaker', 'stepfunctions', 'cloudfront']} | {'s3': s3}
 
 
 def test_lock_ownership_and_published_retry_cleanup():
@@ -230,7 +229,7 @@ def publication_inputs():
     assets = {'index.html': b'<html>fixture</html>', 'dashboard.js': b'console.log(1);', 'dashboard.css': b'body {}',
               'dashboard.json': canonical({'pipeline': {'run_id': 'test-run'}, 'buildStatus': 'complete'})}
     release = dict(pipeline_run_id='test-run', processing_sha256=manifest()['processing_sha256'],
-        verification={'scores': {'status': 'passed'}, 'corridors': {'status': 'passed'}},
+        verification={'scores': {'status': 'passed'}, 'network': {'status': 'passed'}},
         files=[dict(file=name, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()) for name, data in assets.items()])
     s3.put_object(Bucket=BUCKET, Key=p['export']+'/release/manifest.json', Body=canonical(release))
     for name, data in assets.items(): s3.put_object(Bucket=BUCKET, Key=p['export']+'/release/site/'+name, Body=data)
@@ -289,7 +288,7 @@ def staged_run(tmp_path, subset, **updates):
 
 
 def serve_inputs(tmp_path, inputs, baseline, value):
-    """Stands in for the deployed model, Glue scoring and the Athena corridor query; returns the reference file and Glue's scores."""
+    """Stands in for the deployed model, Glue scoring and the Glue network job; returns the reference file and Glue's scores."""
     reference = baseline / 'baseline/bq1_scored.parquet'
     model = tmp_path / 'model'
     compare_models(reference, baseline / 'manifest/dashboard.json', model, rounds=3, threads=1)
@@ -305,9 +304,18 @@ def serve_inputs(tmp_path, inputs, baseline, value):
     cloud = scored[SCORING_COLUMNS].assign(model_score=ranker.predict(scored), txn_date=scored.txn_date)
     (inputs / 'scored').mkdir()
     cloud.to_parquet(inputs / 'scored/data.parquet', index=False)
-    (inputs / 'athena').mkdir()
-    expected = expected_corridors([scored.assign(txn_date=scored.txn_date.astype(str))], 320)
-    expected.to_csv(inputs / 'athena/result.csv', index=False)
+    # Stand-in for the Glue network job's output: same per-table Parquet
+    # layout plus _SUCCESS marker that bda_pipeline.network.read_tables expects.
+    network = inputs / 'network'
+    network.mkdir()
+
+    def network_batches():
+        yield scored[NETWORK_COLUMNS]
+    tables = analyse_network(network_batches)
+    for name in NETWORK_TABLES:
+        (network / name).mkdir()
+        tables[name].to_parquet(network / name / 'part.parquet', index=False)
+    (network / '_SUCCESS').touch()
     return reference, cloud
 
 

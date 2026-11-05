@@ -296,20 +296,34 @@
           }
         },
         {
-          "StartAt": "Corridors",
+          "StartAt": "ReuseNetwork",
           "States": {
-            "Corridors": {
-              "Type": "Task",
-              "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
-              "Parameters": {
-                "QueryString.$": "$.work.query",
-                "ClientRequestToken.$": "$.work.query_token",
-                "WorkGroup": "is459-g3-analysis",
-                "QueryExecutionContext": {
-                  "Database": "is459_g3_ingest"
+            "ReuseNetwork": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.work.network_cache_hit",
+                  "BooleanEquals": true,
+                  "Next": "NetworkReused"
                 }
+              ],
+              "Default": "Network"
+            },
+            "Network": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::glue:startJobRun.sync",
+              "Parameters": {
+                "JobName": "is459-g3-ingest-network",
+                "Arguments.$": "$.work.network_arguments",
+                "WorkerType": "G.1X",
+                "NumberOfWorkers.$": "$.work.glue_workers",
+                "Timeout.$": "$.work.glue_timeout"
               },
               "ResultPath": null,
+              "End": true
+            },
+            "NetworkReused": {
+              "Type": "Pass",
               "End": true
             }
           }
@@ -332,8 +346,7 @@
       "Resource": "${control_arn}",
       "Parameters": {
         "op": "export",
-        "run_id.$": "$.run_id",
-        "work.$": "$.work"
+        "run_id.$": "$.run_id"
       },
       "ResultPath": "$.export_request",
       "Next": "Export",

@@ -44,8 +44,6 @@ function snapshot() {
   const view={metrics,flagged:0,daily:[],histogram:[],queue:[]};
   return {schema_version:1,generated_at:'2026-10-06',full_rows:1000,cohort_rows:1000,aml_scope:'full',
     aml:{test:view,validation:view,tail:view},diagnostics:{variants:[],top100_reasons:[]},
-    treasury_daily:[{day:'2022-09-01',volume_usd:5,hhi:1}],
-    treasury:{all:{transactions:1000,volume_usd:5,top5_share:1,bank_pairs:1,hhi:1,banks:[],currencies:[]}},
     pipeline:{run_id:'verified-run',start_date:'2022-09-01',end_date:'2022-09-01',refresh_time:'2026-10-06'}};
 }
 
@@ -56,7 +54,7 @@ async function harness({configured=true,authenticated=true,stored={},search='',h
     const node=new Element();node.dataset.stage=match[1];node.statusElement=new Element();return node;
   });
   el('ingestion-size').value='demo';el('ingestion-subset').value='HI-Small';
-  el('split').value='test';el('scoring').value='rules';el('day').value='all';el('day').options=[new Element()];
+  el('split').value='test';el('scoring').value='rules';
   const storage=new Map(Object.entries(stored).map(([key,value])=>['is459-ingestion-'+key,JSON.stringify(value)]));
   if(authenticated) storage.set('is459-ingestion-auth',JSON.stringify({access_token:'fixture-access-token',
     expires_at:Date.now()+3600000,client_id:configuration.client_id}));
@@ -288,7 +286,8 @@ test('later evaluation labels follow Medium and Small snapshot dates without spa
   vm.runInContext("snapshot={pipeline:{end_date:'2022-09-28'}};updateEvaluationLabels()",h.context);
   assert.equal(h.el('split').options[2].textContent,'Later period · Sep 11–28');
   assert.match(h.el('evaluation-methods').textContent,/Later period: Sep 11–28/);
-  vm.runInContext("snapshot={treasury_daily:[{day:'2022-09-18'}]};updateEvaluationLabels()",h.context);
+  // Without a pipeline end date at all, the later period falls back to the fixed default.
+  vm.runInContext("snapshot={};updateEvaluationLabels()",h.context);
   assert.equal(h.el('split').options[2].textContent,'Later period · Sep 11–18');
   assert.equal(h.el('split').options[0].textContent,'Test · Sep 9–10');
 });
