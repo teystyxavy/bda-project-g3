@@ -7,8 +7,8 @@ import pytest
 from bda_pipeline.ingest_contract import BUCKET, canonical, paths, processing_request, sha
 from bda_pipeline.ingest_control import get_json, put_json, stop_owned_workers
 from bda_pipeline.stage_cache import register, reuse, stage_key
-from test_ingestion import MemoryS3, config, manifest, load_script, publication_inputs
-from bda_pipeline.ingest_control import compute_usage, handle
+from test_ingestion import MemoryS3, ROOT, config, manifest, load_script, publication_inputs
+from bda_pipeline.ingest_control import CACHED_STAGES, compute_usage, handle
 
 
 class CacheS3(MemoryS3):
@@ -225,3 +225,43 @@ def test_publish_records_compute_evidence_and_never_fails_on_a_lookup_error():
     assert handle({'op': 'publish', 'run_id': 'test-run'}, config(), aws)['status'] == 'published'
     assert json.loads(s3.data[BUCKET, paths('test-run')['evidence'] + '/compute.json'])['status'] == 'unavailable'
     assert 'pipeline/lock.json' in s3.deleted
+
+
+def test_control_lambda_may_write_every_stage_the_cache_copies_into():
+    """The stage cache copies objects from the control Lambda, so its IAM policy
+    must allow writing each cached stage's run folder. Fake S3 cannot catch a
+    missing grant, so read the Terraform policy itself."""
+    terraform = (ROOT / 'infra/ingestion/main.tf').read_text()
+    control = terraform.split('resource "aws_iam_role_policy" "control"', 1)[1].split('\nresource ', 1)[0]
+    writes = [line for line in control.splitlines() if '"s3:PutObject"' in line]
+    assert len(writes) == 1
+    for stage in CACHED_STAGES:
+        assert f'pipeline/runs/*/{stage}/*' in writes[0], f'control Lambda cannot write cached {stage} copies'
+
+
+def test_auto_scaled_cost_uses_reported_dpu_seconds_or_is_labelled_an_upper_bound():
+    s3 = MemoryS3()
+    glue, sm = usage_clients()
+    network = f's3://{BUCKET}/{paths("test-run")["network"]}/'
+    def with_network(run):
+        runs = {'is459-g3-ingest-curate': [], 'is459-g3-ingest-score': [], 'is459-g3-ingest-network': [run]}
+        return SimpleNamespace(get_paginator=lambda op: SimpleNamespace(paginate=lambda JobName: [{'JobRuns': runs[JobName]}]))
+    scaled = {'JobRunState': 'SUCCEEDED', 'ExecutionTime': 300, 'WorkerType': 'G.1X', 'NumberOfWorkers': 4,
+              'Arguments': {'--OUTPUT': network, '--enable-auto-scaling': 'true'}}
+
+    # Glue reported what it billed (1.5 DPU on average): use it, not 4 workers x 300 s.
+    usage = compute_usage({'glue': with_network(scaled | {'DPUSeconds': 450.0}), 'sagemaker': sm}, 'test-run', manifest(), get_json, s3)
+    job = usage['glue'][0]
+    assert job['cost_basis'] == 'glue_reported_dpu_seconds' and job['auto_scaled']
+    assert job['estimated_usd'] == round(450 / 3600 * 0.44, 4) and not usage['estimated_usd_is_upper_bound']
+
+    # No DPUSeconds: fall back to the maximum workers and say it is an upper bound.
+    usage = compute_usage({'glue': with_network(scaled), 'sagemaker': sm}, 'test-run', manifest(), get_json, s3)
+    job = usage['glue'][0]
+    assert job['cost_basis'] == 'max_workers_upper_bound'
+    assert job['estimated_usd'] == round(4 * 300 / 3600 * 0.44, 4) and usage['estimated_usd_is_upper_bound']
+
+    # Fixed workers without DPUSeconds are billed as workers x time: exact, not a bound.
+    fixed = scaled | {'Arguments': {'--OUTPUT': network}}
+    usage = compute_usage({'glue': with_network(fixed), 'sagemaker': sm}, 'test-run', manifest(), get_json, s3)
+    assert usage['glue'][0]['cost_basis'] == 'workers_x_time' and not usage['estimated_usd_is_upper_bound']

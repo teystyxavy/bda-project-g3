@@ -220,13 +220,18 @@ def compute_usage(clients, run_id, manifest, get_json, s3):
         s3: boto3 S3 client (to read ``evidence/stage-cache.json``).
 
     Returns:
-        ``{'status': 'measured', 'glue': [...], 'sagemaker': [...], 'estimated_usd': total}``.
-        Dollar figures are list-price estimates, not an invoice; storage,
-        requests, logs and orchestration are excluded.
+        ``{'status': 'measured', 'glue': [...], 'sagemaker': [...], 'estimated_usd': total,
+        'estimated_usd_is_upper_bound': bool}``. Dollar figures are list-price
+        estimates, not an invoice; storage, requests, logs and orchestration
+        are excluded. Each Glue entry's ``cost_basis`` says how it was
+        computed: ``glue_reported_dpu_seconds`` (what Glue billed),
+        ``workers_x_time`` (fixed workers) or ``max_workers_upper_bound`` (an
+        auto-scaled run without reported DPU-seconds, so the maximum workers
+        were assumed and the figure overstates the cost).
     """
     p = paths(run_id)
     cached, _ = get_json(s3, p['evidence'] + '/stage-cache.json')
-    glue_jobs, total = [], 0.0
+    glue_jobs, total, upper_bound = [], 0.0, False
     for stage, job, argument in GLUE_STAGES:
         if (cached or {}).get(stage, {}).get('hit'):
             glue_jobs.append({'stage': stage, 'reused': True, 'estimated_usd': 0.0})
@@ -237,11 +242,20 @@ def compute_usage(clients, run_id, manifest, get_json, s3):
             seconds = run.get('ExecutionTime', 0)
             dpu = run.get('NumberOfWorkers', 0) * GLUE_DPU_PER_WORKER.get(run.get('WorkerType'), 0)
             # Glue reports DPUSeconds only for auto-scaling/Flex runs; otherwise workers x time.
-            dpu_seconds = run.get('DPUSeconds') or dpu * max(seconds, 60)
+            # For an auto-scaled run, NumberOfWorkers is the maximum, so the
+            # fallback is an upper bound and is labelled as one.
+            auto_scaled = run.get('Arguments', {}).get('--enable-auto-scaling') == 'true'
+            if run.get('DPUSeconds'):
+                dpu_seconds, basis = run['DPUSeconds'], 'glue_reported_dpu_seconds'
+            else:
+                dpu_seconds = dpu * max(seconds, 60)
+                basis = 'max_workers_upper_bound' if auto_scaled else 'workers_x_time'
             usd = round(dpu_seconds / 3600 * GLUE_USD_PER_DPU_HOUR, 4)
             total += usd
+            upper_bound = upper_bound or basis == 'max_workers_upper_bound'
             glue_jobs.append({'stage': stage, 'reused': False, 'state': run['JobRunState'], 'seconds': seconds,
                               'worker_type': run.get('WorkerType'), 'workers': run.get('NumberOfWorkers'),
+                              'auto_scaled': auto_scaled, 'cost_basis': basis,
                               'dpu_hours': round(dpu_seconds / 3600, 4), 'estimated_usd': usd})
     sm, sagemaker_jobs = clients['sagemaker'], []
     for kind, stage in [('processing', 'baseline'), ('processing', 'export')] + ([('training', 'train')] if manifest['train'] else []):
@@ -261,6 +275,7 @@ def compute_usage(clients, run_id, manifest, get_json, s3):
         sagemaker_jobs.append({'stage': stage, 'instance_type': instance, 'instances': count,
                                'seconds': round(seconds, 1), 'estimated_usd': usd})
     return {'status': 'measured', 'glue': glue_jobs, 'sagemaker': sagemaker_jobs, 'estimated_usd': round(total, 4),
+            'estimated_usd_is_upper_bound': upper_bound,
             'rates': {'glue_usd_per_dpu_hour': GLUE_USD_PER_DPU_HOUR, 'sagemaker_usd_per_hour': SAGEMAKER_USD_PER_HOUR},
             'scope': 'List-price estimate of Glue and SageMaker compute only; not an invoice.'}
 
