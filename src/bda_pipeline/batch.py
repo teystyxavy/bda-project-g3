@@ -195,11 +195,13 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
             seen[indices] = True
             rows += len(frame)
             positives += int(frame.is_laundering.sum())
-            # BQ2: partial corridor totals for this batch; summed at the end.
+            # BQ2: partial corridor totals for this batch; summed once at the
+            # end. (A periodic mid-loop collapse used to run here every 8
+            # batches, but it re-grouped the *entire* running total each time;
+            # since txn_date is part of the key, that total grows with every
+            # batch, making the periodic collapse cost O(rows^2) overall -
+            # fine at HI-Medium scale, a multi-hour stall at HI-Large's 180M rows.)
             aggregates.append(corridor_totals(frame))
-            if len(aggregates) >= 8:
-                keys = ['txn_date', 'from_bank', 'to_bank', 'payment_currency', 'receiving_currency']
-                aggregates = [pd.concat(aggregates, ignore_index=True).groupby(keys, observed=True)[['transaction_count', 'volume_usd']].sum().reset_index()]
             # BQ1: score = 50 (ACH) + 20 (above training P99) + 30 (velocity
             # or fan-out); flagged when score >= 60. See analytics.score_baseline.
             scored = score_baseline(frame, thresholds)
