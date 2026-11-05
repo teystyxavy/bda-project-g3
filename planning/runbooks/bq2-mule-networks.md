@@ -115,7 +115,10 @@ plus a root `_SUCCESS`.
   the export stage still recomputes and checks every table, so a bad cache entry
   cannot be published. A deployment without a `network` stage version (older
   config) always recomputes. Old treasury output cannot be reused: it never had
-  a network receipt.
+  a network receipt. The control Lambda makes the cache copy, so its IAM policy
+  must allow `s3:PutObject` on `pipeline/runs/*/network/*` (added in
+  `infra/ingestion/main.tf`; `test_control_lambda_may_write_every_stage_the_cache_copies_into`
+  checks every cached stage, because fake S3 cannot catch a missing grant).
 - **One input read.** The Glue job checks the row count first (Parquet footers),
   then validates every row and counts self-transfers in a single aggregation
   that also fills the cache the link aggregation reads.
@@ -136,6 +139,11 @@ plus a root `_SUCCESS`.
   holding `localCheckpoint` blocks count as busy and are kept. The saving shows
   up as `DPUSeconds` in `evidence/compute.json`; it is unproven until an AWS
   run, and removing the flag in `ingest_control.py` restores fixed workers.
+  **On the first cloud run, check the network entry's `cost_basis` in
+  `compute.json`:** `glue_reported_dpu_seconds` is the billed figure; if it says
+  `max_workers_upper_bound`, Glue did not report DPU-seconds, the figure assumes
+  the maximum workers for the whole run and overstates the cost
+  (`estimated_usd_is_upper_bound` is then true).
 - **Measured cost per run.** At publish, the control Lambda writes
   `pipeline/runs/<run>/evidence/compute.json`: each Glue job's runtime, workers,
   DPU-hours and list-price cost (a cache hit is recorded as reused, USD 0), and
@@ -144,8 +152,9 @@ plus a root `_SUCCESS`.
   minimum; `ml.m5.2xlarge` USD 0.576/hour); a type without a documented rate
   gets a duration and no price. It is an estimate of compute only, not an
   invoice. A lookup failure is recorded as `unavailable` and never blocks a
-  verified release. Failed runs do not get this file. It needs no new IAM:
-  the Lambda already has `glue:GetJobRuns` and `sagemaker:Describe*Job`.
+  verified release. Failed runs do not get this file. The cost report itself
+  needs no new IAM: the Lambda already has `glue:GetJobRuns` and
+  `sagemaker:Describe*Job`.
 - **`localCheckpoint()` trade-off.** It keeps Spark plans short and fast, but
   a lost executor fails the job (there is no reliable copy to recompute from).
   That is acceptable because Glue jobs here run on standard capacity with no
