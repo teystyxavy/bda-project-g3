@@ -234,10 +234,10 @@ resource "aws_iam_role_policy" "control" {
     #   current dashboard pointer.
     { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = "pipeline/*" } } },
     { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/*", "${local.site}/dashboard/current.json"] },
-    # - write: the run lock, run/stage cache receipts, curated/scored cache copies,
+    # - write: the run lock, run/stage cache receipts, curated/scored/network cache copies,
     #   run evidence, SageMaker training inputs, and the dashboard release files
     #   plus the shell files (index.html, dashboard.js/css) and current.json.
-    { Effect = "Allow", Action = ["s3:PutObject"], Resource = ["${local.s3}/pipeline/lock.json", "${local.s3}/pipeline/cache/*", "${local.s3}/pipeline/stage-cache/*", "${local.s3}/pipeline/runs/*/curated/*", "${local.s3}/pipeline/runs/*/scored/*", "${local.s3}/pipeline/runs/*/evidence/*", "${local.s3}/sagemaker/inputs/is459-g3-train-*/*", "${local.site}/dashboard/releases/*/*", "${local.site}/dashboard/current.json", "${local.site}/dashboard/index.html", "${local.site}/dashboard/dashboard.js", "${local.site}/dashboard/dashboard.css"] },
+    { Effect = "Allow", Action = ["s3:PutObject"], Resource = ["${local.s3}/pipeline/lock.json", "${local.s3}/pipeline/cache/*", "${local.s3}/pipeline/stage-cache/*", "${local.s3}/pipeline/runs/*/curated/*", "${local.s3}/pipeline/runs/*/scored/*", "${local.s3}/pipeline/runs/*/network/*", "${local.s3}/pipeline/runs/*/evidence/*", "${local.s3}/sagemaker/inputs/is459-g3-train-*/*", "${local.site}/dashboard/releases/*/*", "${local.site}/dashboard/current.json", "${local.site}/dashboard/index.html", "${local.site}/dashboard/dashboard.js", "${local.site}/dashboard/dashboard.css"] },
     # - delete only the lock file (releasing the lock at the end of a run);
     # - create/read the per-run Athena table;
     # - see and stop this pipeline's Glue runs (cleanup after a failure);
