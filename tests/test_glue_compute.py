@@ -22,7 +22,7 @@ def staged_inputs():
 
 
 def run(s3, cfg, tmp_path, stage='baseline', **kwargs):
-    request = stage_request('test-run', stage, cfg, {'athena': 'athena-results/query.csv'} if stage == 'export' else None)
+    request = stage_request('test-run', stage, cfg, {'network': paths('test-run')['network'] + '/'} if stage == 'export' else None)
     args = request['Arguments']
     return run_stage(s3, 'test-run', stage, json.loads(args['--INPUTS_JSON']), sha(cfg),
                      args['--OUTPUT'], Path(__file__).resolve().parents[1] / 'dashboard', tmp_path / 'work', **kwargs)
@@ -108,6 +108,35 @@ def test_completion_requires_owned_success_and_marker():
     job['Arguments']['--RUN_ID'] = 'other-run'
     with pytest.raises(ValueError):
         assert_glue_stage(glue, s3, 'test-run', 'baseline', 'jr-id', cfg)
+
+
+def test_export_stages_the_network_tables_the_control_lambda_sends(monkeypatch, tmp_path):
+    """The export request built by the control Lambda must pass run_stage's input check."""
+    s3, cfg, _ = staged_inputs()
+    p = paths('test-run')
+    for key in [p['baseline'] + '/baseline/bq1_scored.parquet', p['baseline'] + '/manifest/manifest.json',
+                p['scored'] + '/txn_date=2022-09-01/part.parquet', p['network'] + '/ring_edges/part.parquet',
+                p['network'] + '/_SUCCESS']:
+        s3.data[BUCKET, key] = b'fixture'
+    seen = {}
+    def export(inputs, output, assets):
+        seen['ring_edges'] = (inputs / 'network/ring_edges/part.parquet').read_bytes()
+        seen['marker'] = (inputs / 'network/_SUCCESS').exists()
+        output.mkdir()
+        (output / 'release.json').write_bytes(canonical({'status': 'passed'}))
+        return {'status': 'passed'}
+    monkeypatch.setattr('bda_pipeline.ingest_compute.export_stage', export)
+    assert run(s3, cfg, tmp_path, stage='export') == {'status': 'passed'}
+    assert seen == {'ring_edges': b'fixture', 'marker': True}
+    assert s3.data[BUCKET, p['export'] + '/_SUCCESS'] == b''
+    # Without the network channel the export refuses to run (fresh bucket, so
+    # the existing-output guard does not fire first).
+    s3, cfg, _ = staged_inputs()
+    request = stage_request('test-run', 'export', cfg)
+    args = request['Arguments']
+    with pytest.raises(ValueError, match='Missing export verification input'):
+        run_stage(s3, 'test-run', 'export', json.loads(args['--INPUTS_JSON']), sha(cfg), args['--OUTPUT'],
+                  Path(__file__).resolve().parents[1] / 'dashboard', tmp_path / 'work2')
 
 
 @pytest.mark.parametrize('stage', ['baseline', 'export'])
