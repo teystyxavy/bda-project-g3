@@ -3,8 +3,8 @@
 Where this sits in the pipeline
 -------------------------------
 Deployment step 1 of the batch ingestion stack (``infra/ingestion``: control
-Lambda, Glue curate/score jobs, Glue verification/export jobs, Step Functions
-``is459-g3-ingest``). It gathers everything that stack uploads to S3 into one
+Lambda, Glue curate/score/network jobs, Glue verification/export jobs, Step
+Functions ``is459-g3-ingest``). It gathers everything that stack uploads to S3 into one
 fresh local folder, pins it by content hash, and writes the Terraform
 variables. ``deploy-ingestion.ps1`` (first deployment) or
 ``update-ingestion.ps1`` (later updates) then verify the hashes and apply.
@@ -14,7 +14,8 @@ Produces in ``--output``
 * ``bda_pipeline.zip`` - all of ``src/bda_pipeline/*.py`` for the Glue jobs.
 * ``control.zip`` - only the modules the control Lambda needs
   (``ingest_contract``, ``ingest_control``, ``stage_cache``, ``release``).
-* ``curate_transactions.py`` / ``score_transactions.py`` - Glue job scripts.
+* ``curate_transactions.py`` / ``score_transactions.py`` / ``network_mules.py`` -
+  Glue job scripts.
 * ``runtime.gluewheels.zip`` - copied from ``--wheels`` (see
   ``bundle-scoring-wheels.py``).
 * ``model/`` - the frozen XGBoost model and its JSON companions, after
@@ -110,7 +111,7 @@ def prepare(output, models, wheels, image_uri):
     # The control Lambda only needs the contract, controller, stage cache and
     # release helpers - no pandas/XGBoost code.
     zip_sources(output / 'control.zip', ['__init__.py', 'ingest_contract.py', 'ingest_control.py', 'stage_cache.py', 'release.py'], minimal=True)
-    for name in ['curate_transactions.py', 'score_transactions.py', 'pipeline_stage.py']:
+    for name in ['curate_transactions.py', 'score_transactions.py', 'pipeline_stage.py', 'network_mules.py']:
         shutil.copyfile(ROOT / 'jobs' / name, output / name)
     shutil.copyfile(wheels, output / 'runtime.gluewheels.zip')
     (output / 'dashboard').mkdir()
@@ -136,12 +137,15 @@ def prepare(output, models, wheels, image_uri):
         'model_manifest_sha256': model_hash, 'image_uri': image_uri,
         'distribution_id': 'EU1WB6XM4GKHQ', 'dashboard_url': 'https://d1n61tlw9pcrog.cloudfront.net/'}
     # Stage versions feed the stage cache key (bda_pipeline.stage_cache): if
-    # the curate/score code, package, wheels or Glue runtime change, the
-    # version changes and earlier cached Glue outputs are no longer reused.
+    # the curate/score/network code, package, wheels or Glue runtime change,
+    # the version changes and earlier cached Glue outputs are no longer reused.
+    # The network job is self-contained (its thresholds are constants in the
+    # script), so its own code hash is its whole version.
     config['stage_versions'] = {
         'curated': sha({'code': hashes['curate_transactions.py'], 'schema': 1, 'runtime': 'glue-5.0-python3.11'}),
         'scored': sha({'code': hashes['score_transactions.py'], 'package': hashes['bda_pipeline.zip'],
-                       'wheels': hashes['runtime.gluewheels.zip'], 'runtime': 'glue-5.0-python3.11'})}
+                       'wheels': hashes['runtime.gluewheels.zip'], 'runtime': 'glue-5.0-python3.11'}),
+        'network': sha({'code': hashes['network_mules.py'], 'runtime': 'glue-5.0-python3.11'})}
     (output / 'model/deployment.json').write_text(json.dumps(config, indent=2))
     (output / 'deployment.json').write_text(json.dumps(config, indent=2))
     # Terraform reads artifacts from artifact_directory (forward slashes so the

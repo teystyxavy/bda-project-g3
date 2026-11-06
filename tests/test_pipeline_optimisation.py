@@ -32,7 +32,7 @@ class CacheS3(MemoryS3):
 
 
 def prepared():
-    cfg = config() | {'stage_versions': {'curated': 'curate-v1', 'scored': 'score-v1'}}
+    cfg = config() | {'stage_versions': {'curated': 'curate-v1', 'scored': 'score-v1', 'network': 'network-v1'}}
     original = manifest() | {'deployment_sha256': sha(cfg)}
     identity_fields = ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train', 'export_dates']
     original['processing_sha256'] = sha({key: original[key] for key in identity_fields})
@@ -42,7 +42,7 @@ def prepared():
                           ('export/release/manifest.json', {'verification': {'scores': {'status': 'passed'}}}),
                           ('baseline/proof.json', {'status': 'passed', 'rows': original['rows']})]:
         put_json(s3, 'pipeline/runs/test-run/' + suffix, value)
-    for stage in ['curated', 'scored']:
+    for stage in ['curated', 'scored', 'network']:
         s3.put_object(Bucket=BUCKET, Key=p[stage] + '/txn_date=2022-09-01/data.parquet', Body=b'fixture')
         s3.put_object(Bucket=BUCKET, Key=p[stage] + '/_SUCCESS', Body=b'')
         register(s3, stage, original, cfg, get_json, put_json)
@@ -82,6 +82,17 @@ def test_rerun_bypasses_stage_cache_and_identical_scores_can_be_reused():
     assert s3.copied[-1].endswith('/_SUCCESS')
 
 
+def test_network_cache_is_model_independent_but_curate_version_scoped():
+    # Network (BQ2) reads only curated Parquet, so a model/training change never
+    # invalidates it - unlike scored - but a curate code change still does.
+    s3, cfg, original = prepared()
+    changed = original | {'run_id': 'next-run', 'train': True, 'model_manifest_sha256': 'd' * 64}
+    assert reuse(s3, 'network', changed, cfg, get_json)['hit']
+    assert s3.copied[-1].endswith('/_SUCCESS')
+    assert stage_key('network', original, cfg) != stage_key('network', original, cfg | {'stage_versions': cfg['stage_versions'] | {'curated': 'curate-v2'}})
+    assert stage_key('network', original, cfg) != stage_key('network', original, cfg | {'stage_versions': cfg['stage_versions'] | {'network': 'network-v2'}})
+
+
 def test_parallel_verification_training_dependency_and_bounded_processing_checks():
     workflow = load_script('infra/ingestion/build-workflow.py').workflow()
     states = workflow['States']
@@ -96,8 +107,8 @@ def test_parallel_verification_training_dependency_and_bounded_processing_checks
         assert branch_states[name]['Resource'] == 'arn:aws:states:::glue:startJobRun.sync'
     assert baseline['TrainWait']['Seconds'] == 15
     assert baseline['TrainComplete']['Choices'][-1]['NumericGreaterThanEquals'] == 299
-    inputs = set(json.loads(stage_request('test-run', 'export', config(), {'athena': 'athena-results/x.csv'})['Arguments']['--INPUTS_JSON']))
-    assert inputs == {'run', 'model', 'baseline', 'baseline_manifest', 'scored', 'athena'}
+    inputs = set(json.loads(stage_request('test-run', 'export', config(), {'network': paths('test-run')['network'] + '/'})['Arguments']['--INPUTS_JSON']))
+    assert inputs == {'run', 'model', 'baseline', 'baseline_manifest', 'scored', 'network'}
 
 
 def test_cancellation_never_stops_another_run_or_completed_worker():

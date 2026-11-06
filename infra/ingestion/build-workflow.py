@@ -1,10 +1,11 @@
 """Generate the main batch workflow; no AWS calls.
 
 Curate (Glue) -> parallel [Baseline (Glue) -> optional Train (SageMaker),
-Score (Glue), Corridors (Athena)] -> Export (Glue) -> Publish (Lambda).
+Score (Glue), Network (Glue)] -> Export (Glue) -> Publish (Lambda).
 Glue .sync tasks retain their run IDs for completion checks. SageMaker polling
 is used only for candidate training. Compute is never automatically retried;
 failures preserve outputs and ask the control Lambda to stop owned workers.
+Network is skipped on a cache hit, exactly like Curate/Score.
 Regenerate with: python infra/ingestion/build-workflow.py
 """
 import json
@@ -116,8 +117,8 @@ def workflow():
 
     The execution input must contain ``run_id`` (all control calls pass it to
     the Lambda). Intermediate results are kept in the execution state:
-    ``$.work`` (cache flags, job arguments and the corridor query from
-    ``begin``), ``$.baseline_request``, ``$.training``, ``$.export_request``
+    ``$.work`` (cache flags and job arguments from ``begin``),
+    ``$.baseline_request``, ``$.training``, ``$.export_request``
     and, after an error, ``$.failure``.
 
     Returns:
@@ -129,12 +130,11 @@ def workflow():
     # ends (and fail if the run fails). No Retry: a paid job is not re-run.
     score = {'Type': 'Task', 'Resource': 'arn:aws:states:::glue:startJobRun.sync',
              'Parameters': {'JobName': 'is459-g3-ingest-score', 'Arguments.$': '$.work.score_arguments', 'WorkerType': 'G.1X', 'NumberOfWorkers.$': '$.work.glue_workers', 'Timeout.$': '$.work.glue_timeout'}, 'ResultPath': None, 'End': True}
-    # BQ2 corridors: run the corridor SQL built by 'begin' in the cost-capped
-    # workgroup against the per-run ingest database. ClientRequestToken makes
-    # the start idempotent (the same token cannot start a second query), and
-    # the control Lambda later checks the query used exactly this SQL.
-    athena = {'Type': 'Task', 'Resource': 'arn:aws:states:::athena:startQueryExecution.sync',
-              'Parameters': {'QueryString.$': '$.work.query', 'ClientRequestToken.$': '$.work.query_token', 'WorkGroup': 'is459-g3-analysis', 'QueryExecutionContext': {'Database': 'is459_g3_ingest'}}, 'ResultPath': None, 'End': True}
+    # BQ2 mule networks: the Glue network job reads the curated Parquet and
+    # writes the hub/loop/ring tables; the export stage recomputes and checks
+    # them. Same cost controls as scoring and no Retry.
+    network = {'Type': 'Task', 'Resource': 'arn:aws:states:::glue:startJobRun.sync',
+               'Parameters': {'JobName': 'is459-g3-ingest-network', 'Arguments.$': '$.work.network_arguments', 'WorkerType': 'G.1X', 'NumberOfWorkers.$': '$.work.glue_workers', 'Timeout.$': '$.work.glue_timeout'}, 'ResultPath': None, 'End': True}
     # Branch 1 of the Parallel state: independent baseline verification, then
     # optional training. The dict union operator "|" (Python 3.9+) merges the
     # generated state dictionaries.
@@ -168,10 +168,14 @@ def workflow():
                 # Skip scoring if identical scores were already produced earlier.
                 'ReuseScores': {'Type': 'Choice', 'Choices': [{'Variable': '$.work.scored_cache_hit', 'BooleanEquals': True, 'Next': 'ScoresReused'}], 'Default': 'Score'},
                 'Score': score, 'ScoresReused': {'Type': 'Pass', 'End': True}}},
-            {'StartAt': 'Corridors', 'States': {'Corridors': athena}}], 'ResultPath': None, 'Next': 'PrepareExport', 'Catch': CATCH},
-        # Verify scores, baseline proof, query and any candidate model, then
-        # build the export Glue request ($.work is passed to the Lambda).
-        'PrepareExport': control('export', '$.export_request', 'Export', **{'work.$': '$.work'}),
+            {'StartAt': 'ReuseNetwork', 'States': {
+                # Skip the network job if identical network tables were already produced
+                # earlier; the export stage still recomputes and checks them.
+                'ReuseNetwork': {'Type': 'Choice', 'Choices': [{'Variable': '$.work.network_cache_hit', 'BooleanEquals': True, 'Next': 'NetworkReused'}], 'Default': 'Network'},
+                'Network': network, 'NetworkReused': {'Type': 'Pass', 'End': True}}}], 'ResultPath': None, 'Next': 'PrepareExport', 'Catch': CATCH},
+        # Verify scores, baseline proof, the network job's output and any
+        # candidate model, then build the export Glue request.
+        'PrepareExport': control('export', '$.export_request', 'Export'),
         # Export Glue job builds the dashboard release files.
         'Export': glue_stage('export', '$.export_request', 'Publish'),
         # Verify and publish the release to the dashboard; ResultPath '$'

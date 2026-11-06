@@ -263,11 +263,14 @@ def treasury_exploration(corridors):
                     'Movers are ranked across every bank pair. Currency breakdowns are all-period top ten for the selected corridor.'}
 
 
-def enrich_snapshot(snapshot, dataset, scores, ranker, corridors=None):
+def enrich_snapshot(snapshot, dataset, scores, ranker, corridors=None, treasury=True):
+    """Add the ``exploration`` section. ``treasury=False`` (the AWS export, where BQ2 is the
+    mule-network section) skips the retired treasury corridor exploration."""
     if len(scores) != snapshot['full_rows']:
         raise ValueError('Exploration score population mismatch')
     snapshot['exploration'] = {'version': 1, 'aml': aml_exploration(dataset, scores, ranker, snapshot.get('pipeline', {}).get('end_date', '2022-09-18'), snapshot.get('pipeline', {}).get('subset', 'HI-Small'), snapshot.get('splits')),
-        'treasury': treasury_exploration(corridors if corridors is not None else joint_corridors(dataset)),
         'quality': {'status': 'verified-source', 'rows': snapshot['full_rows'],
                     'model_changed': False, 'labels_in_queue': False}}
+    if treasury:
+        snapshot['exploration']['treasury'] = treasury_exploration(corridors if corridors is not None else joint_corridors(dataset))
     return snapshot

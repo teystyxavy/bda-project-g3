@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "recorded": "2026-11-01",
+  "scope": "Local verification only. Nothing was deployed to or run in AWS.",
+  "dataset": {
+    "subset": "HI-Small",
+    "rows": 5078345,
+    "labels": 5177,
+    "source": "Hugging Face mirror OsamaMIT/IBM-AML-HI-Small (row and label counts match Kaggle version 8 acceptance)",
+    "fx": "scripts/ingestion/fetch-fx-rates.py --lookback-days 1: 285 records, 15 currencies"
+  },
+  "curation": {
+    "job": "jobs/curate_transactions.py",
+    "runtime": "local Spark 3.5.4 (Glue 5.0 Spark version), Java 17, Python 3.11",
+    "rows_verified": 5078345,
+    "seconds": 32.1
+  },
+  "network_job": {
+    "job": "jobs/network_mules.py",
+    "runtime": "local Spark 3.5.4, local[4], 2 GB driver",
+    "seconds": 15.1,
+    "components_rounds": 3,
+    "tables": {
+      "totals": 1,
+      "candidates": 581,
+      "pairs": 3398,
+      "loops": 232,
+      "ring_members": 1110,
+      "ring_edges": 1166
+    }
+  },
+  "reference": {
+    "module": "src/bda_pipeline/network.py",
+    "seconds": 15.3
+  },
+  "verification": {
+    "status": "passed",
+    "reference_rows": 5078345,
+    "table_rows": {
+      "totals": 1,
+      "candidates": 581,
+      "pairs": 3398,
+      "loops": 232,
+      "ring_members": 1110,
+      "ring_edges": 1166
+    },
+    "max_absolute_usd_differences": {
+      "totals": 0.0,
+      "candidates": 3.814697265625e-05,
+      "pairs": 0.0,
+      "loops": 0.0,
+      "ring_members": 1.1920928955078125e-07,
+      "ring_edges": 1.1920928955078125e-07
+    },
+    "usd_rtol": 1e-09,
+    "usd_atol": 0.01,
+    "labels_used_for": "aggregate evaluation only"
+  },
+  "results": {
+    "totals": {
+      "rows": 5078345,
+      "self_transfers": 591212,
+      "accounts": 422734,
+      "links": 647939,
+      "laundering_accounts": 6357,
+      "laundering_rate": 0.015037825204502121
+    },
+    "thresholds": [
+      {
+        "threshold": 5,
+        "headline": false,
+        "hubs": {
+          "accounts": 566,
+          "laundering_accounts": 74,
+          "laundering_rate": 0.13074204946996468,
+          "lift": 8.694212606675483
+        },
+        "high_volume": {
+          "accounts": 15,
+          "laundering_accounts": 15,
+          "laundering_rate": 1.0,
+          "lift": 66.49897750511248
+        },
+        "fan_in_only": {
+          "accounts": 13323,
+          "laundering_accounts": 812,
+          "laundering_rate": 0.060947234106432484,
+          "lift": 4.0529287498424775
+        },
+        "fan_out_only": {
+          "accounts": 26370,
+          "laundering_accounts": 577,
+          "laundering_rate": 0.021880925293894578,
+          "lift": 1.4550591589097421
+        }
+      },
+      {
+        "threshold": 10,
+        "headline": true,
+        "hubs": {
+          "accounts": 20,
+          "laundering_accounts": 16,
+          "laundering_rate": 0.8,
+          "lift": 53.199182004089984
+        },
+        "high_volume": {
+          "accounts": 15,
+          "laundering_accounts": 15,
+          "laundering_rate": 1.0,
+          "lift": 66.49897750511248
+        },
+        "fan_in_only": {
+          "accounts": 2913,
+          "laundering_accounts": 300,
+          "laundering_rate": 0.10298661174047374,
+          "lift": 6.848504377457516
+        },
+        "fan_out_only": {
+          "accounts": 5256,
+          "laundering_accounts": 168,
+          "laundering_rate": 0.0319634703196347,
+          "lift": 2.1255380937707185
+        }
+      },
+      {
+        "threshold": 15,
+        "headline": false,
+        "hubs": {
+          "accounts": 2,
+          "laundering_accounts": 2,
+          "laundering_rate": 1.0,
+          "lift": 66.49897750511248
+        },
+        "high_volume": {
+          "accounts": 14,
+          "laundering_accounts": 14,
+          "laundering_rate": 1.0,
+          "lift": 66.49897750511248
+        },
+        "fan_in_only": {
+          "accounts": 1710,
+          "laundering_accounts": 179,
+          "laundering_rate": 0.10467836257309941,
+          "lift": 6.9610040780205455
+        },
+        "fan_out_only": {
+          "accounts": 838,
+          "laundering_accounts": 56,
+          "laundering_rate": 0.06682577565632458,
+          "lift": 4.4438457521316215
+        }
+      }
+    ],
+    "loops": {
+      "three_account": {
+        "loops": 232,
+        "accounts": 571,
+        "laundering_accounts": 84,
+        "laundering_rate": 0.14711033274956217,
+        "lift": 9.782686708282746
+      },
+      "two_account": {
+        "pairs": 3398,
+        "accounts": 6205,
+        "laundering_accounts": 576,
+        "laundering_rate": 0.09282836422240129,
+        "lift": 6.172991304261851
+      }
+    },
+    "rings": {
+      "rings": 202,
+      "accounts": 1110,
+      "largest": 33,
+      "coverage": 0.07739499764039641,
+      "laundering_accounts": 492,
+      "laundering_rate": 0.44324324324324327,
+      "lift": 29.475222461725533
+    },
+    "top_rings": [
+      {
+        "rings": 10,
+        "accounts": 267,
+        "laundering_rate": 0.5692883895131086,
+        "rings_with_laundering": 7
+      },
+      {
+        "rings": 25,
+        "accounts": 572,
+        "laundering_rate": 0.7517482517482518,
+        "rings_with_laundering": 20
+      },
+      {
+        "rings": 50,
+        "accounts": 654,
+        "laundering_rate": 0.672782874617737,
+        "rings_with_laundering": 24
+      }
+    ]
+  },
+  "caveats": [
+    "IBM planted these laundering shapes in synthetic data; results may look easier than on real data.",
+    "The ring ranking order was compared with alternatives on these labels before it was chosen, so the top-k figures are not an independent test.",
+    "\"Touches laundering\" means at least one labelled laundering payment; large accounts touch laundering easily, which is why accounts above 100 links are separated as high-volume."
+  ]
+}

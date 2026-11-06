@@ -191,23 +191,23 @@ def statuses(stages):
 
 
 def test_parallel_progress_and_cache_reuse_are_reported():
-    events = entries(['Acquire', 'Begin', 'ReuseCurated', 'PrepareBaseline', 'ScoresReused', 'Corridors', 'BaselineWait'])
+    events = entries(['Acquire', 'Begin', 'ReuseCurated', 'PrepareBaseline', 'ScoresReused', 'Network', 'BaselineWait'])
     events.insert(4, {'id': 100, 'type': 'TaskStateExited', 'timestamp': NOW,
                       'stateExitedEventDetails': {'name': 'PrepareBaseline'}})
     result = statuses(api.stage_progress({'status': 'RUNNING'}, {'status': 'RUNNING'}, events, False))
     assert result['curate'] == 'reused'
     assert result['score'] == 'reused'
-    assert result['baseline'] == result['corridors'] == 'running'
+    assert result['baseline'] == result['network'] == 'running'
     assert result['train'] == 'skipped' and result['export'] == 'pending'
 
 
 def test_failed_worker_is_failed_and_other_active_stages_stopped():
-    events = entries(['Curate', 'Score', 'Corridors'])
+    events = entries(['Curate', 'Score', 'Network'])
     events.extend([{'id': 4, 'previousEventId': 2, 'type': 'TaskScheduled', 'timestamp': NOW},
                    {'id': 5, 'previousEventId': 4, 'type': 'TaskFailed', 'timestamp': NOW}])
     result = statuses(api.stage_progress({'status': 'FAILED'}, {'status': 'FAILED'}, events, False))
     assert result['score'] == 'failed'
-    assert result['curate'] == result['corridors'] == 'stopped'
+    assert result['curate'] == result['network'] == 'stopped'
     assert result['publish'] == 'pending'
 
 
@@ -260,6 +260,6 @@ def test_active_service_distinguishes_control_step_from_glue_job():
 
 def test_parallel_branches_name_their_active_aws_services():
     stages = api.stage_progress({'status': 'RUNNING'}, {'status': 'RUNNING'},
-                                entries(['Score', 'Corridors', 'BaselineWait']), False)
+                                entries(['Score', 'Network', 'BaselineWait']), False)
     active = {item['id']: item['active_service'] for item in stages if item['status'] == 'running'}
-    assert active == {'score': 'AWS Glue', 'corridors': 'Amazon Athena', 'baseline': 'AWS Glue'}
+    assert active == {'score': 'AWS Glue', 'network': 'AWS Glue', 'baseline': 'AWS Glue'}
