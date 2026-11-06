@@ -74,11 +74,13 @@ def run_stage(s3, run_id, stage, sources, deployment_hash, output_uri, assets, w
     config = json.loads((inputs / 'model/deployment.json').read_text())
     if sha(config) != deployment_hash or manifest['model_manifest_sha256'] != config['model_manifest_sha256']:
         raise ValueError('Deployment identity mismatch')
-    extra = {k: v for k, v in sources.items() if k in ('athena', 'candidate')}
+    # Export verifies BQ2 from the Glue network job's tables (network/), which
+    # replaced the retired Athena corridor result.
+    extra = {k: v for k, v in sources.items() if k in ('network', 'candidate')}
     expected = stage_request(run_id, stage, config, extra, manifest['subset'], rows=manifest['rows'])
     if sources != json.loads(expected['Arguments']['--INPUTS_JSON']):
         raise ValueError('Unexpected Glue input channels')
-    if stage == 'export' and ('athena' not in sources or ('candidate' in sources) != manifest['train']):
+    if stage == 'export' and ('network' not in sources or ('candidate' in sources) != manifest['train']):
         raise ValueError('Missing export verification input')
     local_paths = {'baseline': 'baseline/baseline', 'baseline_manifest': 'baseline/manifest'}
     for name, key in sources.items():
