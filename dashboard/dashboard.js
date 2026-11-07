@@ -1710,7 +1710,7 @@ const qpRow=rank=>QP.data.queue.find(row=>row.rank===Number(rank))||QP.data.queu
 const qpOverlap=(rows,k)=>rows.slice(0,Number(k)).filter(row=>row.ring).length;
 const qpLerp=(a,b,u)=>a+(b-a)*u;
 function qpMix(a,b,u) {const x=parseInt(a.slice(1),16), y=parseInt(b.slice(1),16), c=s=>Math.round(qpLerp(x>>s&255,y>>s&255,u));return `#${[16,8,0].map(s=>c(s).toString(16).padStart(2,'0')).join('')}`;}
-function qpHeat(score) {const s=presClamp(Number(score)||0)*(QP_HEAT.length-1), i=Math.min(Math.floor(s),QP_HEAT.length-2);return qpMix(QP_HEAT[i],QP_HEAT[i+1],s-i);}
+function qpHeat(score) {const s=Math.round(presClamp(Number(score)||0)*48)/48*(QP_HEAT.length-1), i=Math.min(Math.floor(s),QP_HEAT.length-2);return qpMix(QP_HEAT[i],QP_HEAT[i+1],s-i);}
 
 function qpScope(snap) {return snap?.exploration?.aml?.periods?.test?.scopes?.find(scope=>scope.id==='all')||null;}
 // Whether a release carries what the presenter needs (legacy snapshots do not).
@@ -1786,7 +1786,7 @@ function qpEnsureOverlay() {
 <aside class="pres-readout qp-readout" id="qp-readout" hidden><label>Case<select id="qp-case"></select></label><div class="pres-quick" id="qp-quick"></div><div class="pres-meters" id="qp-meters"></div><div class="qp-evidence" id="qp-evidence"></div><div class="qp-badge" id="qp-badge" hidden></div></aside>
 <div class="ring-tip qp-tip" id="qp-tip" role="tooltip" hidden></div><div class="pres-toast qp-toast" id="qp-toast" hidden></div></div>
 <div class="pres-foot"><div class="pres-timeline" id="qp-timeline" hidden><button type="button" class="pres-play" id="qp-play" aria-label="Play">▶</button><div class="pres-clock" id="qp-clock"></div><canvas id="qp-tl" aria-label="Sender payment timeline. Click to jump."></canvas><button type="button" class="pres-icon" id="qp-speed">1×</button></div>
-<div class="pres-bar"><button type="button" class="pres-nav" id="qp-back">← Back</button><div class="pres-mid"><div class="pres-steps" id="qp-steps"></div><div class="pres-hint"><span><kbd>→</kbd>next</span><span><kbd>←</kbd>back</span><span><kbd>Space</kbd>play / pause</span><span><kbd>R</kbd>replay</span><span><kbd>F</kbd>full screen</span><span><kbd>Esc</kbd>close</span></div></div><button type="button" class="pres-nav next" id="qp-next">Next →</button></div></div>
+<div class="pres-bar"><button type="button" class="pres-nav" id="qp-back">← Back</button><div class="pres-mid"><div class="pres-steps" id="qp-steps"></div><div class="pres-hint"><span><kbd>→</kbd>next</span><span><kbd>←</kbd>back</span><span><kbd>Space</kbd>play / pause</span><span><kbd>R</kbd>replay step</span><span><kbd>F</kbd>full screen</span><span><kbd>Esc</kbd>close</span></div></div><button type="button" class="pres-nav next" id="qp-next">Next →</button></div></div>
 </div></div>`);
   qpBind();
 }
@@ -1799,12 +1799,14 @@ function openBq1Presenter() {
   element('qp-ks').innerHTML=QP.data.ks.map(k=>`<button type="button" data-k="${k}" aria-pressed="false">${k}</button>`).join('');
   qpCaseOptions();qpSetCase(QP.data.queue[0]);
   element('qp').hidden=false;document.body?.classList?.add('pres-lock');
-  qpResize();qpGo(0,true);element('qp-next').focus?.();
+  if(!qpFreshCanvas()) qpResize();qpGo(0,true);element('qp-next').focus?.();
   if(!QP.raf&&typeof requestAnimationFrame==='function') QP.raf=requestAnimationFrame(qpFrame);
 }
 function closeBq1Presenter() {
   QP.open=false;element('qp').hidden=true;document.body?.classList?.remove('pres-lock');
   if(QP.replay) QP.replay.playing=false;qpHideTip();
+  // Release the large pixel buffers; they are rebuilt on the next open.
+  QP.layer=null;QP.image=null;QP.layerKey='';const canvas=element('qp-canvas');if(canvas) {canvas.width=0;canvas.height=0;}
   if(QP.raf&&typeof cancelAnimationFrame==='function') cancelAnimationFrame(QP.raf);QP.raf=null;
   if(document.fullscreenElement) document.exitFullscreen?.().catch?.(()=>{});
   QP.returnFocus?.focus?.();
@@ -1892,7 +1894,7 @@ function qpReadout() {
 // ---- drawing ----
 function qpResize() {
   const canvas=element('qp-canvas');if(!canvas?.getBoundingClientRect) return;
-  const box=canvas.getBoundingClientRect();QP.DPR=Math.min(window.devicePixelRatio||1,2);QP.W=box.width;QP.H=box.height;
+  const box=canvas.getBoundingClientRect();QP.DPR=Math.min(window.devicePixelRatio||1,2,Math.sqrt(8e6/Math.max(box.width*box.height,1)));QP.W=box.width;QP.H=box.height;
   canvas.width=Math.round(box.width*QP.DPR);canvas.height=Math.round(box.height*QP.DPR);
   qpSizeTimeline();qpMeasureStory();qpBuildPoints();QP.layerKey='';
 }
@@ -1930,7 +1932,7 @@ function qpRenderLayer() {
   if(fade<=.01) {QP.layerKey=key;return null;}
   // Drawn at CSS-pixel resolution: one pixel per dot, added up so dense bands glow.
   const w=Math.max(1,Math.round(W)), h=Math.max(1,Math.round(H));
-  if(!QP.layer||!QP.image||QP.image.width!==w||QP.image.height!==h) {QP.layer=document.createElement('canvas');QP.layer.width=w;QP.layer.height=h;QP.image=QP.layer.getContext('2d').createImageData(w,h);}
+  if(!QP.layer||!QP.image||QP.image.width!==w||QP.image.height!==h) {QP.layer=document.createElement('canvas');QP.layer.width=w;QP.layer.height=h;QP.image=QP.layer.getContext('2d',{willReadFrequently:true}).createImageData(w,h);}
   const image=QP.image, px=image.data;px.fill(0);
   for(let i=0;i<P.n;i++) {
     const x0=d.cx+(P.hx[i]-.5)*2*d.rx, y0=d.cy+(P.hy[i]-.5)*2*d.ry, X=qpLerp(x0,box.x+P.cx[i]*box.w,col)|0, Y=qpLerp(y0,box.base-P.cy[i]*box.h,col)|0;
@@ -1960,8 +1962,8 @@ function qpDrawDots(ctx) {
 }
 function qpGridShape(k) {const n=Number(k);return n<=25?[5,5]:n<=50?[10,5]:n<=100?[10,10]:[25,10];}
 function qpGridCells(box,k) {
-  const [cols,rows]=qpGridShape(k), size=Math.min(box.w/cols,box.h/rows), ox=box.x+(box.w-size*cols)/2, oy=box.y+(box.h-size*rows)/2;
-  return Array.from({length:Number(k)},(_,i)=>({x:ox+(i%cols+.5)*size,y:oy+(Math.floor(i/cols)+.5)*size,s:size*.74}));
+  const [cols,rows]=qpGridShape(k), size=Math.max(Math.min(box.w/cols,box.h/rows),3), ox=box.x+(box.w-size*cols)/2, oy=box.y+(box.h-size*rows)/2;
+  return Array.from({length:Number(k)},(_,i)=>({x:ox+(i%cols+.5)*size,y:oy+(Math.floor(i/cols)+.5)*size,s:Math.max(size*.74,2)}));
 }
 function qpBoxes() {
   const {W,H}=QP, top=Math.max(QP.storyBottom+24,80), bottom=H-36, narrow=W<820;
@@ -2134,9 +2136,12 @@ function qpFrame(t) {
   const r=QP.replay;
   if(r?.playing&&n===5) {const dt=Math.min((t-(QP.last||t))/1000,.25), next=r.t+dt*r.span/r.dur*r.speed;if(next>=qpEnd()) {qpSeek(qpEnd());qpSetPlaying(false);} else qpSeek(next);qpTimeline();}
   QP.last=t;
-  const canvas=element('qp-canvas'), ctx=canvas.getContext('2d');
-  ctx.setTransform(QP.DPR,0,0,QP.DPR,0,0);ctx.clearRect(0,0,QP.W,QP.H);
-  qpDrawDots(ctx);qpDrawGrids(ctx,t);qpDrawChart(ctx);qpDrawCase(ctx,t);qpDrawLink(ctx,t);
+  try {
+    qpFreshCanvas();
+    const ctx=element('qp-canvas').getContext('2d');
+    ctx.setTransform(QP.DPR,0,0,QP.DPR,0,0);ctx.clearRect(0,0,QP.W,QP.H);
+    qpDrawDots(ctx);qpDrawGrids(ctx,t);qpDrawChart(ctx);qpDrawCase(ctx,t);qpDrawLink(ctx,t);
+  } catch(error) {if(!QP.warned) {QP.warned=true;console.error('BQ1 presenter frame failed',error);}}
   QP.raf=requestAnimationFrame(qpFrame);
 }
 
@@ -2164,10 +2169,26 @@ function qpKey(event) {
   if(event.key==='ArrowRight'||event.key==='PageDown') {event.preventDefault();qpGo(QP.step+1);}
   else if(event.key==='ArrowLeft'||event.key==='PageUp') {event.preventDefault();qpGo(QP.step-1);}
   else if(event.key===' ') {event.preventDefault();if(QP.step===5) qpSetPlaying(!QP.replay.playing);}
-  else if(event.key==='r'||event.key==='R') {if(QP.step===3) QP.tallyAt=qpNow();if(QP.step===4) QP.chartAt=qpNow();if(QP.step===6) QP.linkAt=qpNow();if(QP.step===5) {qpSeek(QP.replay.t0-QP.replay.span*.04);qpSetPlaying(true);}}
+  else if(event.key==='r'||event.key==='R') qpReplayStep();
   else if(event.key==='f'||event.key==='F') qpFullscreen();
   else if(event.key==='Escape') {if(!document.fullscreenElement) closeBq1Presenter();}
   else if(/^[1-5]$/.test(event.key)) qpGo(QP_SCENE_START[+event.key-1]);
+}
+// R replays whatever the current step animates.
+function qpReplayStep() {
+  const A=QP.anim, n=QP.step;
+  if(n===0) A.hay=0;if(n===1) A.col=0;if(n===2||n===6) A.grid=0;if(n===3) QP.tallyAt=qpNow();if(n===4) QP.chartAt=qpNow();if(n===6) QP.linkAt=qpNow();
+  if(n===5) {qpSeek(QP.replay.t0-QP.replay.span*.04);qpSetPlaying(true);}
+}
+// A canvas whose GPU context was dropped (memory pressure) stays blank; swap in a fresh one.
+function qpFreshCanvas() {
+  const old=element('qp-canvas');if(!old?.getContext||!old.getContext('2d')?.isContextLost?.()) return false;
+  const canvas=old.cloneNode(false);old.replaceWith(canvas);qpBindCanvas(canvas);QP.layer=null;QP.image=null;QP.layerKey='';qpResize();return true;
+}
+function qpBindCanvas(canvas) {
+  canvas.onpointermove=event=>{const i=qpCellAt(event);QP.hover=i;canvas.style.cursor=i>=0?'pointer':'';if(i>=0) qpShowTip(i,event);else qpHideTip();};
+  canvas.onpointerleave=()=>{QP.hover=-1;qpHideTip();};
+  canvas.onclick=event=>{const i=qpCellAt(event);if(i>=0) qpOpenCase(QP.data.queue[i]);};
 }
 function qpBind() {
   element('qp-close').onclick=closeBq1Presenter;element('qp-fs').onclick=qpFullscreen;
@@ -2181,9 +2202,7 @@ function qpBind() {
   const tl=element('qp-tl'), canvas=element('qp-canvas');
   tl.onpointerdown=event=>{tl.setPointerCapture?.(event.pointerId);qpSetPlaying(false);qpScrub(event);tl.onpointermove=qpScrub;};
   tl.onpointerup=()=>{tl.onpointermove=null;};
-  canvas.onpointermove=event=>{const i=qpCellAt(event);QP.hover=i;canvas.style.cursor=i>=0?'pointer':'';if(i>=0) qpShowTip(i,event);else qpHideTip();};
-  canvas.onpointerleave=()=>{QP.hover=-1;qpHideTip();};
-  canvas.onclick=event=>{const i=qpCellAt(event);if(i>=0) qpOpenCase(QP.data.queue[i]);};
+  qpBindCanvas(canvas);
   document.addEventListener?.('keydown',qpKey);
   if(typeof ResizeObserver==='function') new ResizeObserver(()=>{if(QP.open) qpResize();}).observe(element('qp-stage'));
   else window.addEventListener?.('resize',()=>{if(QP.open) qpResize();});
