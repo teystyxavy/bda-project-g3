@@ -382,7 +382,7 @@ start();
   async function loadResults(run) {
     if(loadedRelease===run.release_url) return true;
     const ok=await start(resultPath(run));
-    if(ok) {loadedRelease=run.release_url;element('ingestion-run-note').textContent='Verified results loaded. Open AML review or Mule networks to explore this run.';}
+    if(ok) {loadedRelease=run.release_url;element('ingestion-run-note').textContent='Verified results loaded. Open BQ1 · Review queue or BQ2 · Mule networks to explore this run.';}
     else element('ingestion-run-note').textContent='Run succeeded. Results are not available here yet; select View verified results to try again.';
     return ok;
   }
