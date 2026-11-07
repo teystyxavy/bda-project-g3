@@ -404,3 +404,25 @@ th{font-weight:700;color:var(--text-strong);background:#15293c;font-size:12.5px;
 @media(prefers-reduced-motion:reduce){.qx-cell,.qx-dot-hit,.cr-dot,.cr-head,.cr-current .cr-pulse{animation:none}.cr-head{display:none}}
 @media(max-width:760px){.qx-tabs{width:100%;overflow-x:auto}.qx-tally{font-size:24px}}
 .qx-tabs button{white-space:nowrap}
+/* Rank numbers inside the queue squares, the opened one outlined and its table row lit. */
+.qx-rank{font:700 11px var(--sans);fill:rgba(20,12,6,.82);pointer-events:none;font-variant-numeric:tabular-nums}
+.qx-review .qx-rank{fill:rgba(20,12,6,.7)}.qx-dim .qx-rank{fill:rgba(220,235,245,.35)}
+.qx-cell.qx-selected rect{stroke:white;stroke-width:2.5;filter:drop-shadow(0 0 10px rgba(255,255,255,.55))}
+#queue tbody tr.row-selected td{background:rgba(63,208,184,.12)}#queue tbody tr.row-selected td:first-child{box-shadow:inset 4px 0 var(--teal)}
+.rank-chip{margin-right:10px;vertical-align:2px;font-size:13px}
+/* Stream replay: controls, the scored counter beside the queue slots. */
+.sr-controls{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.sr-play{width:40px;height:40px;padding:0;border:0;border-radius:50%;display:grid;place-items:center;background:var(--teal)!important;color:#04211c!important;font-size:15px;font-weight:700;box-shadow:var(--glow-teal)}
+#sr-scrub{flex:1;accent-color:var(--teal);padding:0;border:0;background:transparent}
+.sr-clock{font:600 14px var(--sans);font-variant-numeric:tabular-nums;color:var(--text-strong);min-width:5.5em;text-align:right}
+.sr-body{display:grid;grid-template-columns:200px minmax(0,1fr);gap:22px;align-items:start}
+.sr-side{display:grid;gap:2px}.sr-side small{font-size:12px;color:var(--muted)}
+.sr-side strong{font:650 34px var(--display);font-variant-numeric:tabular-nums;color:var(--teal);text-shadow:0 0 18px rgba(63,208,184,.35)}
+.sr-side .sr-placed-label{margin-top:12px}.sr-side .sr-placed{font-size:22px;color:var(--text-strong);text-shadow:none}
+.sr-spark{width:100%;height:60px;margin-top:12px}
+.sr-grid{margin:0 auto}
+.sr-slot:not(.sr-on) rect{fill:#1b2e40;filter:none;opacity:.75}
+.sr-slot:not(.sr-on) .qx-rank{fill:rgba(160,185,205,.45)}
+.sr-on rect{animation:qx-pop .4s cubic-bezier(.2,.9,.3,1.3)}
+@media(max-width:760px){.sr-body{grid-template-columns:1fr}.sr-side{grid-template-columns:1fr 1fr;align-items:end}.sr-spark{grid-column:1/-1}}
+@media(prefers-reduced-motion:reduce){.sr-on rect{animation:none}}

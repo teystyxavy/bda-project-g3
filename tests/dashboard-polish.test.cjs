@@ -169,3 +169,27 @@ test('the case replay runs in event order, ends at the queued payment and keeps 
   assert.match(svg,/>2022-09-09 15:08</);assert.match(svg,/>2022-09-10 16:50 · this payment</);
   assert.equal(h.run('caseReplayHTML([],row)'),'');
 });
+
+test('queue squares carry their rank, the opened one stays marked and evidence names its rank',async()=>{
+  const h=await harness();
+  h.context.rows=Array.from({length:100},(_,i)=>({rank:i+1,transaction_id:`HI-Small:${i}`,from_bank:'1',from_account:`S${i}`,to_bank:'2',to_account:`R${i}`}));
+  const html=h.run(`queueExplorerHTML({view:'queue',rows,k:'100',hits:{model:91,rules:0},positives:956,total:862792,ring:()=>null,width:900,selected:4}).html`);
+  assert.match(html,/<text class="qx-rank"[^>]*>1<\/text>/);assert.match(html,/<text class="qx-rank"[^>]*>100<\/text>/);
+  assert.equal((html.match(/qx-selected/g)||[]).length,1);assert.match(html,/qx-urgent qx-selected" data-index="3"/);
+  assert.equal(h.run(`rankChip({rank:4})`),'<span class="priority priority-urgent rank-chip">#4 · Urgent</span>');
+  assert.equal(h.run(`rankChip({rank:26})`),'<span class="priority priority-high rank-chip">#26 · High</span>');
+  assert.equal(h.run(`rankChip({})`),'');
+});
+
+test('the stream replay lays out the ranked queue and counts from the commit history',async()=>{
+  const h=await harness();
+  h.context.progress=[{at:'2026-10-06T12:11:14Z',processed:1},{at:'2026-10-06T12:20:00Z',processed:400},{at:'2026-10-06T12:28:20Z',processed:884}];
+  assert.equal(h.run(`streamCountAt(progress,Date.parse('2026-10-06T12:00:00Z'))`),0);
+  assert.equal(h.run(`streamCountAt(progress,Date.parse('2026-10-06T12:25:00Z'))`),400);
+  assert.equal(h.run(`streamCountAt(progress,Date.parse('2026-10-06T12:28:20Z'))`),884);
+  h.context.data={queue:Array.from({length:100},(_,i)=>({rank:i+1,scored_at:'2026-10-06T12:15:00Z'}))};
+  const view=JSON.parse(h.run('JSON.stringify(streamReplayHTML(data,1200))'));
+  assert.equal((view.html.match(/class="qx-cell sr-slot/g)||[]).length,100);assert.equal(view.cols,20);
+  assert.match(view.html,/qx-urgent" data-index="0"/);assert.match(view.html,/qx-high" data-index="99"/);
+  assert.equal(JSON.parse(h.run('JSON.stringify(streamReplayHTML(data,390))')).cols,10);
+});
