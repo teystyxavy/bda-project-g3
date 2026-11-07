@@ -164,16 +164,20 @@ function evaluationPeriodLabel(period) {
 }
 function updateEvaluationLabels() {
   const names=periodNames();
-  for(const option of element('split').options) {
-    option.textContent=evaluationPeriodLabel(option.value);
-    option.hidden=!names.includes(option.value);
-  }
-  if(!names.includes(element('split').value)) element('split').value=names.includes('test')?'test':names[0];
+  const control=element('split'), previous=control.value;
+  control.replaceChildren(...names.map(name=>{
+    const option=document.createElement('option');
+    option.value=name;option.textContent=evaluationPeriodLabel(name);
+    return option;
+  }));
+  control.value=names.includes(previous)?previous:names.includes('test')?'test':names[0];
+  control.disabled=names.length<2;
+  control.title=names.length<2?'This release contains one evaluation period.':'';
   if(snapshot?.splits) {
     const train=windowText(snapshot.splits.train);
-    element('evaluation-methods').textContent=`Training reference: ${train}; ${names.map(name=>`${name}: ${windowText(periodWindow(name))}`).join('; ')}. Evaluation views show separate chronological populations. Rolling history before ${monthDay(snapshot.splits.train[0])} is unavailable.`;
+    element('evaluation-methods').textContent=`Training reference: ${train}; ${names.map(name=>`${name}: ${windowText(periodWindow(name))}`).join('; ')}. Evaluation views show separate chronological populations. Rolling history before ${monthDay(snapshot.pipeline?.start_date || snapshot.splits.train[0])} is unavailable.`;
     element('model-methods').textContent=element('model-methods').textContent.replace(/trained on [^;]*;/,`trained on ${train};`);
-    element('validation-window').textContent=element('validation-window').textContent.replace(/^.*?only\./,`${windowText(periodWindow('validation'))} only.`);
+    if(snapshot.splits.validation) element('validation-window').textContent=element('validation-window').textContent.replace(/^.*?only\./,`${windowText(periodWindow('validation'))} only.`);
     return;
   }
   element('evaluation-methods').textContent=`Training reference: Sep 1–6; validation: Sep 7–8; test: Sep 9–10; ${evaluationPeriodLabel('tail').replace(' · ', ': ')}. Evaluation views show separate chronological populations. Rolling history before Sep 1 is unavailable.`;
@@ -184,22 +188,41 @@ function renderScoringCoverage() {
   const counts=periods.map(period=>snapshot?.model?.views?.[period]?.metrics?.rows);
   const total=snapshot?.full_rows;
   const evaluated=counts.reduce((sum,count)=>sum+count,0);
-  const valid=snapshot?.aml_scope==='full' && Number.isSafeInteger(total) &&
+  const valid=['full','selected-population'].includes(snapshot?.aml_scope) && Number.isSafeInteger(total) &&
     counts.every(count=>Number.isSafeInteger(count) && count>=0) && evaluated<=total;
   element('scoring-coverage').hidden=!valid;
   if(!valid) return;
   const reference=total-evaluated;
+  if(snapshot.population) {
+    const p=snapshot.population,n=snapshot.network?.population;
+    element('scoring-coverage-title').textContent=`All ${integer(total)} selected transactions scored`;
+    element('scoring-coverage-summary').textContent=`BQ1: ${p.source_subset} · ${p.start_date} to ${p.end_date}, inclusive. BQ2: ${integer(n?.rows || snapshot.source_index_rows)} full-source transactions.`;
+    cards('scoring-coverage-kpis',[['Transactions scored',integer(total),'BQ1 selected dates'],['Transactions in evaluation',integer(evaluated),'Frozen model · no retraining'],['BQ2 transactions',integer(n?.rows || snapshot.source_index_rows),'Complete source population']]);
+    element('scoring-coverage-explanation').textContent=snapshot.model.evaluation_scope || 'Frozen-model evaluation; training and validation dates are excluded.';
+    table('scoring-coverage-periods',['Date period','Transactions','Scope'],periods.map((period,index)=>[evaluationPeriodLabel(period),integer(counts[index]),'BQ1 evaluation only']));
+    element('test-date-breakdown').hidden=true;
+    return;
+  }
   element('scoring-coverage-title').textContent=`All ${integer(total)} transactions scored`;
   element('scoring-coverage-summary').textContent='The frozen AML model scored every transaction in this dataset. The evaluation dropdown shows separate later-date populations, so its counts are smaller than the full scoring population.';
   cards('scoring-coverage-kpis',[
     ['Transactions scored',integer(total),'All transaction dates in this run'],
     ['Transactions in evaluation',integer(evaluated),snapshot.splits?`${monthDay(snapshot.splits[periods[0]][0])} onward · across all ${periods.length} periods`:'Sep 7 onward · across all three periods'],
     ['Scored, excluded from evaluation',integer(reference),`${trainText} · training-reference dates`]]);
-  const medium=snapshot.pipeline?.subset!==undefined && snapshot.pipeline.subset!=='HI-Small' && !snapshot.pipeline.train;
+  const trainingSubset=snapshot.model.training_subset || 'HI-Small';
+  const medium=snapshot.pipeline?.subset!==undefined && snapshot.pipeline.subset!==trainingSubset && !snapshot.pipeline.train;
   element('scoring-coverage-explanation').textContent=`Why exclude ${trainText}?`+' The original model used these dates for training; the dashboard preserves that training-reference window and reports later dates separately for evaluation. These earlier rows still received scores.'+
-    (medium?' The model was trained on HI-Small and reused for HI-Medium without retraining. This is transfer evaluation; the synthetic populations may overlap, so it is not independent evidence of generalisation.':' Training-reference scores are not included in the reported evaluation metrics.');
+    (medium?` The model was trained on ${trainingSubset} and reused for ${snapshot.pipeline.subset} without retraining. This is transfer evaluation; the synthetic populations may overlap, so it is not independent evidence of generalisation.`:' Training-reference scores are not included in the reported evaluation metrics.');
+  const beforeTraining=snapshot.pipeline?.start_date && snapshot.splits && snapshot.pipeline.start_date<snapshot.splits.train[0];
+  if(beforeTraining) {
+    element('scoring-coverage-explanation').textContent=`The model training window is ${trainText}. All dates before validation are excluded from evaluation, including earlier source dates that were not training inputs. BQ2 covers all ${integer(total)} source transactions. Neither test slice retunes the model.`;
+    cards('scoring-coverage-kpis',[['Transactions scored',integer(total),'All transaction dates in this run'],['Transactions in evaluation',integer(evaluated),'Validation and test periods'],['Outside evaluation',integer(reference),'Earlier source and training dates']]);
+  }
+  const breakdown=snapshot.model.test_date_breakdown;
+  element('test-date-breakdown').hidden=!breakdown;
+  if(breakdown) table('test-date-breakdown-table',['Test slice','Transactions','Precision@100','Average precision'],Object.entries(breakdown).map(([name,value])=>[name==='unseen_dates'?'Dates absent from development':'Previously reported test dates',integer(value.metrics.rows),percent(value.metrics.precision_at_k),value.metrics.average_precision===null?'—':Number(value.metrics.average_precision).toFixed(4)]));
   table('scoring-coverage-periods',['Date period','Transactions scored','Evaluation coverage'],[
-    [trainText,integer(reference),'Excluded · training-reference dates'],
+    [beforeTraining?`${monthDay(snapshot.pipeline.start_date)}–${monthDay(isoDay(Date.parse(snapshot.splits[periods[0]][0]+'T00:00:00Z')-86400000))}`:trainText,integer(reference),beforeTraining?'Excluded · dates before validation':'Excluded · training-reference dates'],
     ...periods.map((period,index)=>[evaluationPeriodLabel(period),integer(counts[index]),'Included']),
     ['Total',integer(total),`${integer(evaluated)} evaluated + ${integer(reference)} excluded`]]);
 }
@@ -1588,8 +1611,10 @@ function renderNetwork() {
   const t=data.totals, p=data.parameters, headline=data.thresholds.find(row=>row.headline)||data.thresholds[0];
   const three=data.loops.three_account, rings=data.rings;
   element('network-question').textContent=data.question;
-  const checked=data.verification?.status==='passed';
-  trustStrip('network-context',`${checked?'Glue tables matched an independent recomputation · ':''}${integer(t.accounts)} accounts · ${integer(t.links)} account links after merging repeat payments · ${integer(t.self_transfers)} self-transfers excluded`,checked);
+  const checked=data.verification?.status==='passed', run=snapshot.pipeline;
+  // Releases with pipeline metadata lead with the dataset and its dates, as on the review queue.
+  const scope=run?`${run.subset?`${run.subset} · `:''}${run.start_date} to ${run.end_date} · ${integer(t.rows)} transactions · `:'';
+  trustStrip('network-context',`${scope}${checked?'Glue tables matched an independent recomputation · ':''}${integer(t.accounts)} accounts · ${integer(t.links)} account links after merging repeat payments · ${integer(t.self_transfers)} self-transfers excluded`,checked);
   cards('network-kpis',[
     ['Rings to investigate',integer(rings.rings),`${integer(rings.accounts)} accounts · largest ${integer(rings.largest)}`,false,
       Array.isArray(data.ring_sizes)&&data.ring_sizes.length>1?{values:data.ring_sizes,color:'#ff6f5e',label:'Accounts in each ring, in rank order',caption:`Ring size by rank, #1 → #${integer(data.ring_sizes.length)}`}:null],

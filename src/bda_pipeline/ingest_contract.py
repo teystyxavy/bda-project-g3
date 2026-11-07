@@ -288,6 +288,10 @@ def validate_manifest(value, deployment_hash):
     identity = {key: value[key] for key in ['subset', 'rows', 'files', 'start_date', 'end_date',
                                            'dataset_version', 'deployment_sha256', 'train']}
     identity['export_dates'] = value.get('export_dates')
+    if value.get('selection') is not None:
+        from .selected_population import validate_selection
+        validate_selection(value)
+        identity.update(selection=value['selection'], source_index_rows=value['source_index_rows'], network_rows=value['network_rows'])
     if sha(identity) != value['processing_sha256']:
         raise ValueError('Processing identity mismatch')
     return value
@@ -351,5 +355,6 @@ def stage_request(run_id, stage, config, extra_inputs=None, subset='HI-Small', r
             '--INPUTS_JSON': json.dumps(sources, sort_keys=True),
             '--DEPLOYMENT_SHA256': sha(config),
             '--OUTPUT': f"s3://{BUCKET}/{p[stage]}/"},
-        'WorkerType': 'G.2X', 'NumberOfWorkers': 2,
+        'WorkerType': ('G.8X' if stage == 'export' else 'G.4X') if profile['name'] == 'large' else 'G.2X',
+        'NumberOfWorkers': 2,
         'Timeout': max(60 if subset.endswith('Medium') else 30, profile['processing_seconds'] // 60)}

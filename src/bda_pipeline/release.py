@@ -135,7 +135,11 @@ def prepare_release(source, output):
             raise ValueError(f'Oversized asset: {name} ({size} bytes; limit {limit})')
         blobs[name] = path.read_bytes()
     snapshot = json.loads(blobs['dashboard.json'])
-    if snapshot.get('buildStatus') != 'complete' or snapshot.get('aml_scope') != 'full':
+    scope = snapshot.get('aml_scope')
+    if scope == 'selected-population':
+        from .selected_population import validate_snapshot_population
+        validate_snapshot_population(snapshot)
+    if snapshot.get('buildStatus') != 'complete' or scope not in ('full', 'selected-population'):
         raise ValueError('Release requires a complete full-population dashboard')
     if not snapshot.get('model', {}).get('provenance', {}).get('model_sha256'):
         raise ValueError('Release requires frozen-model provenance')

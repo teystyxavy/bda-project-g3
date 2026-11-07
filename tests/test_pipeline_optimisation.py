@@ -128,3 +128,14 @@ def test_cancellation_never_stops_another_run_or_completed_worker():
     sm = SimpleNamespace(get_paginator=lambda op: SimpleNamespace(paginate=sm_pages))
     assert stop_owned_workers({'glue': glue, 'sagemaker': sm}, 'test-run') == ['owned']
     assert stopped[0]['JobRunIds'] == ['owned']
+
+
+def test_large_stage_outputs_bypass_bounded_lambda_cache():
+    from bda_pipeline.stage_cache import stage_key, register, reuse
+    manifest={'rows':179_702_229,'rerun':False}
+    config={'stage_versions':{name:'v1' for name in ['curated','scored','network']}}
+    def unexpected(*args,**kwargs):raise AssertionError('Large stages must not read/write or copy cache receipts')
+    for stage in ['curated','scored','network']:
+        assert stage_key(stage,manifest,config) is None
+        assert register(None,stage,manifest,config,unexpected,unexpected) is None
+        assert reuse(None,stage,manifest,config,unexpected)=={'hit':False,'reason':'bypassed'}

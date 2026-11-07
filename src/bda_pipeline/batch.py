@@ -136,7 +136,7 @@ def fit_thresholds(dataset, train_window, date_filter=None):
     return {name: float(np.quantile(np.concatenate(values), .99)) for name, values in amounts.items()}
 
 
-def export_verified_batch(curated, verification, output, assets, *, serving_only=False, subset='HI-Small', end_date='2022-09-18', splits=None, dates=None):
+def export_verified_batch(curated, verification, output, assets, *, serving_only=False, subset='HI-Small', end_date='2022-09-18', splits=None, dates=None, frozen_thresholds=None):
     """Score the verified curated population (or, when ``dates`` is given, just those ``txn_date`` partitions of it) and write BQ1/BQ2 outputs.
 
     Args:
@@ -189,7 +189,9 @@ def export_verified_batch(curated, verification, output, assets, *, serving_only
     if missing:
         raise ValueError(f'Missing scoring columns: {sorted(missing)}')
     splits = splits or row_share_splits(daily_row_counts(dataset, dates))
-    thresholds = fit_thresholds(dataset, splits['train'], date_filter)
+    thresholds = dict(frozen_thresholds) if frozen_thresholds is not None else fit_thresholds(dataset, splits['train'], date_filter)
+    if frozen_thresholds is not None and (not thresholds or any(not np.isfinite(v) or v < 0 for v in thresholds.values())):
+        raise ValueError('Invalid frozen rule thresholds')
     periods = evaluation_periods(splits, end_date)
     validation_window = periods['validation']
     # One summary per evaluation period, plus one per rule variant for the

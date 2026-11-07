@@ -68,6 +68,9 @@ def stage_key(stage, manifest, config):
     version = config.get('stage_versions', {}).get(stage)
     # No configured version = caching switched off for this stage.
     if version is None: return None
+    # Large outputs exceed the 1,000-object / bounded Lambda copy contract.
+    # Keep final-result reuse, but never register or copy these stage receipts.
+    if manifest['rows'] > 50_000_000: return None
     identity = {key: manifest[key] for key in ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version']}
     # Scores are computed from curated data, so the curated version is part of
     # both keys: changing the curate job invalidates cached scores too.

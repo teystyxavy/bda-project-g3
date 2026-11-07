@@ -1,0 +1,207 @@
+{
+  "date": "2026-11-07",
+  "scope": "HI-Medium cloud acquisition, 1-1000 row smoke prefixes; no Medium training or full cloud batch",
+  "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-acquisition@sha256:58a114d644734c56bb4835cafbf5f2b158ea32e3cbe3e6fc466e5d6763d259b5",
+  "deployment": {
+    "method": "Terraform saved plan using existing shared S3 state",
+    "resources_added": 0,
+    "resources_changed": 1,
+    "resources_destroyed": 0,
+    "resource": "aws_lambda_function.acquisition",
+    "ephemeral_storage_mib": 10240,
+    "memory_mib": 3072,
+    "timeout_seconds": 900
+  },
+  "validation": {
+    "focused_python": "38 passed, 3 skipped",
+    "terraform": "1 passed",
+    "lambda_container_import": "passed",
+    "build_context_integrity": "passed",
+    "broader_suite": "338 passed, 15 skipped; 5 failures due to missing XGBoost, 3 dashboard-signin setup errors"
+  },
+  "smoke": {
+    "run_id": "medium-cloud-20261107-1000",
+    "rows": 1000,
+    "dataset_version": 8,
+    "status": "SUCCEEDED",
+    "live_acceptance": true,
+    "acquisition_status": "SUCCEEDED",
+    "manifest": {
+      "subset": "HI-Medium",
+      "rows": 1000,
+      "dataset_version": 8,
+      "acquisition_location": "aws-lambda",
+      "dataset_origin": "kaggle-api",
+      "processing_sha256": "5e8f8775e4b5f2ae7ff6fd76469915e3076cc0cfb2e8e775f9fbe3189dafa513"
+    },
+    "source_cache_verified": true,
+    "fx_verified": {
+      "status": "passed",
+      "rows": 6,
+      "sources": {
+        "Frankfurter v2": [
+          "Euro",
+          "UK Pound"
+        ],
+        "identity": [
+          "US Dollar"
+        ]
+      },
+      "sha256": "4c7d1afca419457c9ac9c6a930ff8520602af99b38b8964c46d457a0be263b0c",
+      "start": "2022-08-31",
+      "end": "2022-09-01"
+    },
+    "cold_acquisition_seconds": 267.637,
+    "result": {
+      "status": "published",
+      "run_id": "medium-cloud-20261107-1000",
+      "processing_sha256": "5e8f8775e4b5f2ae7ff6fd76469915e3076cc0cfb2e8e775f9fbe3189dafa513",
+      "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+      "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/medium-cloud-20261107-1000/index.html",
+      "training_requested": false,
+      "model_promoted": false,
+      "usage": {
+        "status": "measured",
+        "glue": [
+          {
+            "stage": "curated",
+            "reused": false,
+            "state": "SUCCEEDED",
+            "seconds": 134,
+            "worker_type": "G.1X",
+            "workers": 2,
+            "auto_scaled": false,
+            "cost_basis": "glue_reported_dpu_seconds",
+            "dpu_hours": 0.0747,
+            "estimated_usd": 0.0329
+          },
+          {
+            "stage": "scored",
+            "reused": false,
+            "state": "SUCCEEDED",
+            "seconds": 83,
+            "worker_type": "G.1X",
+            "workers": 2,
+            "auto_scaled": false,
+            "cost_basis": "glue_reported_dpu_seconds",
+            "dpu_hours": 0.0461,
+            "estimated_usd": 0.0203
+          },
+          {
+            "stage": "baseline",
+            "reused": false,
+            "state": "SUCCEEDED",
+            "seconds": 76,
+            "worker_type": "G.2X",
+            "workers": 2,
+            "auto_scaled": false,
+            "cost_basis": "glue_reported_dpu_seconds",
+            "dpu_hours": 0.0844,
+            "estimated_usd": 0.0372
+          },
+          {
+            "stage": "export",
+            "reused": false,
+            "state": "SUCCEEDED",
+            "seconds": 60,
+            "worker_type": "G.2X",
+            "workers": 2,
+            "auto_scaled": false,
+            "cost_basis": "glue_reported_dpu_seconds",
+            "dpu_hours": 0.0672,
+            "estimated_usd": 0.0296
+          },
+          {
+            "stage": "network",
+            "reused": false,
+            "state": "SUCCEEDED",
+            "seconds": 88,
+            "worker_type": "G.1X",
+            "workers": 2,
+            "auto_scaled": true,
+            "cost_basis": "glue_reported_dpu_seconds",
+            "dpu_hours": 0.0411,
+            "estimated_usd": 0.0181
+          }
+        ],
+        "sagemaker": [],
+        "estimated_usd": 0.1381,
+        "estimated_usd_is_upper_bound": false,
+        "rates": {
+          "glue_usd_per_dpu_hour": 0.44,
+          "sagemaker_usd_per_hour": {
+            "ml.m5.2xlarge": 0.576,
+            "ml.m5.4xlarge": 1.152
+          }
+        },
+        "scope": "List-price estimate of Glue and SageMaker compute only; not an invoice."
+      }
+    },
+    "public_pointer": {
+      "previous_run_id": "20261107-012335-fa192bd1",
+      "run_id": "medium-cloud-20261107-1000",
+      "schema_version": 1,
+      "sha256": "74d64fc9d8977a8122f15cf7decb731acfe432f35025984c5e31d07dd372c7f4",
+      "snapshot": "releases/medium-cloud-20261107-1000/dashboard.json"
+    },
+    "public_snapshot_sha256_verified": true,
+    "glue_jobs": [
+      {
+        "JobName": "is459-g3-ingest-curate",
+        "Id": "jr_e0de0356e60047bfa92b73158e1d54de20552fab3cd881cbf2fc4a1a8bc75b4c",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 134,
+        "StartedOn": "2026-11-07 15:00:45.935000+08:00",
+        "CompletedOn": "2026-11-07 15:03:18.961000+08:00"
+      },
+      {
+        "JobName": "is459-g3-ingest-score",
+        "Id": "jr_30c82fce31063d70d846860c1b1f95c44497411f6355db97d1bab980fa8f64d9",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 83,
+        "StartedOn": "2026-11-07 15:03:44.009000+08:00",
+        "CompletedOn": "2026-11-07 15:05:10.992000+08:00"
+      },
+      {
+        "JobName": "is459-g3-ingest-baseline",
+        "Id": "jr_6315b5de72f483cd52a6b6075b1b0b47342770a641940a771fb661fd623c115a",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 76,
+        "StartedOn": "2026-11-07 15:03:44.012000+08:00",
+        "CompletedOn": "2026-11-07 15:05:08.433000+08:00"
+      },
+      {
+        "JobName": "is459-g3-ingest-export",
+        "Id": "jr_97fe6280dd7a80e15206549312db3e7dac470a771262be42838648f8eecb3f68",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 60,
+        "StartedOn": "2026-11-07 15:05:50.701000+08:00",
+        "CompletedOn": "2026-11-07 15:07:01.136000+08:00"
+      },
+      {
+        "JobName": "is459-g3-ingest-network",
+        "Id": "jr_ea0a96e93c2bdd2588cf76a7df8648d33d02a1b9004d5f0c5d434e294ba3f7e0",
+        "JobRunState": "SUCCEEDED",
+        "ExecutionTime": 88,
+        "StartedOn": "2026-11-07 15:03:44.016000+08:00",
+        "CompletedOn": "2026-11-07 15:05:17.860000+08:00"
+      }
+    ],
+    "source_objects": {
+      "HI-Medium_Trans.csv": {
+        "bytes": 3031783420,
+        "sha256": "3126afb8155e7c8815d62bc5370549a7b5ae6bf7dfe872b3cd7813e66a3d7ff5",
+        "encrypted": true,
+        "matches_retained_local_source": null
+      },
+      "HI-Medium_accounts.csv": {
+        "bytes": 145008642,
+        "sha256": "0fb441d31df9ca0868803eebce718b7e85a4e385334222427c400a5ba64475f9",
+        "encrypted": true,
+        "matches_retained_local_source": null
+      }
+    },
+    "started_at": "2026-11-07 14:56:12.829000+08:00",
+    "completed_at": "2026-11-07 15:08:00.367000+08:00"
+  }
+}

@@ -289,17 +289,18 @@ test('later evaluation labels follow Medium and Small snapshot dates without spa
   // Without a pipeline end date at all, the later period falls back to the fixed default.
   vm.runInContext("snapshot={};updateEvaluationLabels()",h.context);
   assert.equal(h.el('split').options[2].textContent,'Later period · Sep 11–18');
-  assert.equal(h.el('split').options[0].textContent,'Test · Sep 9–10');
+  assert.equal(h.el('split').options.find(option=>option.value==='test').textContent,'Test · Sep 9–10');
 });
 
 
-test('evaluation labels and options follow the snapshot splits and hide a missing tail',async()=>{
+test('evaluation labels and options follow the snapshot splits and remove a missing tail',async()=>{
   const h=await harness();
   h.el('split').options=['test','validation','tail'].map(value=>Object.assign(new Element(),{value}));
   h.el('split').value='tail';
   vm.runInContext(`snapshot={splits:{train:['2022-09-01','2022-09-07'],validation:['2022-09-07','2022-09-09'],test:['2022-09-09','2022-09-19']},pipeline:{end_date:'2022-09-18'}};updateEvaluationLabels()`,h.context);
-  assert.deepEqual(h.el('split').options.slice(0,2).map(option=>option.textContent),['Test · Sep 9–18','Validation · Sep 7–8']);
-  assert.deepEqual(h.el('split').options.map(option=>option.hidden),[false,false,true]);
+  assert.deepEqual(Array.from(h.el('split').options,option=>option.textContent),['Validation · Sep 7–8','Test · Sep 9–18']);
+  assert.deepEqual(Array.from(h.el('split').options,option=>option.value),['validation','test']);
+  assert.equal(h.el('split').disabled,false);
   assert.equal(h.el('split').value,'test');
   assert.match(h.el('evaluation-methods').textContent,/Training reference: Sep 1–6; validation: Sep 7–8; test: Sep 9–18\./);
 });
@@ -539,4 +540,27 @@ test('BQ1 evidence links to the mule ring and a ring exports as a case without l
   assert.deepEqual(rows.map(row=>[row.account,row.role,row.payments_in_ring_received,row.payments_in_ring_sent]),[['28:HUB','hub',2,1],['5:S','sender',0,2],['6:R','receiver',1,0]]);
   assert.equal(rows[0].usd_sent_all_data,10);assert.equal(rows[0].accounts_in_file,'3 of 3');
   assert.ok(rows.every(row=>!Object.keys(row).some(key=>/laundering/.test(key))));
+});
+
+test('HI-Large uses actual training provenance and excludes earlier source dates from evaluation',async()=>{
+  const h=await harness();
+  vm.runInContext(`snapshot={aml_scope:'full',full_rows:179702229,pipeline:{subset:'HI-Large',start_date:'2022-08-01',end_date:'2023-01-12',train:false},splits:{train:['2022-09-01','2022-09-11'],validation:['2022-09-11','2022-09-15'],test:['2022-09-15','2023-01-13']},model:{training_subset:'HI-Large',views:{validation:{metrics:{rows:6623289}},test:{metrics:{rows:95812493}}},test_date_breakdown:{previous_test_dates:{metrics:{rows:4993077,precision_at_k:1,average_precision:0.8}},unseen_dates:{metrics:{rows:90819416,precision_at_k:0.9,average_precision:0.5}}}}};renderScoringCoverage()`,h.context);
+  assert.doesNotMatch(h.el('scoring-coverage-explanation').textContent,/trained on HI-Small/);
+  assert.match(h.el('scoring-coverage-explanation').textContent,/earlier source dates that were not training inputs/);
+  assert.match(h.el('scoring-coverage-periods').innerHTML,/77,266,447/);
+  assert.match(h.el('test-date-breakdown-table').innerHTML,/90,819,416/);
+  assert.equal(h.el('test-date-breakdown').hidden,false);
+});
+
+
+test('single-period releases remove unavailable options and disable the selector',async()=>{
+  const data=snapshot();
+  data.splits={train:['2022-09-01','2022-09-11'],test:['2022-09-15','2022-09-29']};
+  data.pipeline.end_date='2022-09-28';
+  const h=await harness({fetchHook:async url=>url==='dashboard.json'?respond(data):null});
+  const control=h.el('split');
+  assert.deepEqual(Array.from(control.options,option=>option.value),['test']);
+  assert.equal(control.value,'test');
+  assert.equal(control.disabled,true);
+  assert.match(control.options[0].textContent,/Sep 15–28/);
 });

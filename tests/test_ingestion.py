@@ -434,3 +434,13 @@ def test_publication_rejects_snapshot_over_budget_before_pointer_change(monkeypa
         handle({'op': 'publish', 'run_id': 'test-run', 'job_run_id': 'jr-test'}, config(), aws)
     assert s3.data[SITE_BUCKET, 'dashboard/current.json'] == old
     assert not invalidations and not s3.deleted
+
+
+def test_large_reference_and_export_have_bounded_driver_memory_headroom():
+    value=config()
+    baseline=stage_request('large-run','baseline',value,subset='HI-Large',rows=179_702_229)
+    export=stage_request('large-run','export',value,{'network':paths('large-run')['network']+'/'},subset='HI-Large',rows=179_702_229)
+    assert (baseline['WorkerType'],baseline['NumberOfWorkers'],baseline['Timeout'])==('G.4X',2,360)
+    assert (export['WorkerType'],export['NumberOfWorkers'],export['Timeout'])==('G.8X',2,360)
+    small=stage_request('small-run','export',value,subset='HI-Small',rows=1000)
+    assert small['WorkerType']=='G.2X' and small['Timeout']==30

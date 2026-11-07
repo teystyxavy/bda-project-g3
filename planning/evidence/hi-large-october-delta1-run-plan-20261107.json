@@ -1,0 +1,25 @@
+{
+  "status": "planned-not-submitted",
+  "subset": "HI-Large",
+  "start_date": "2022-10-01",
+  "end_date_inclusive": "2022-10-19",
+  "filter_end_exclusive": "2022-10-20",
+  "expected_rows": 31867473,
+  "source_run_id": "20261105-084819-4f4eae96",
+  "model": "hist-depth5-delta1",
+  "model_sha256": "0170bef63f4cd257cbcda8c4748cea0dcf90f202134105fb8226d6dde6a0646f",
+  "model_status": "promoted to shared batch pipeline; live configuration and artifact hashes verified",
+  "train": false,
+  "bq1_scope": "All selected October transactions, scored by frozen Delta 1; no retraining or retuning",
+  "bq2_scope": "Recompute mule-account and ring analysis using only selected October transactions; no full-population network totals",
+  "history_policy": "Preserve verified preceding transaction history for rolling features; exclude preceding transactions from displayed metrics",
+  "evaluation_provenance": "Selected October dates are absent from the model development input export_dates; do not describe as independent synthetic-population validation",
+  "required_changes": [
+    "Support frozen-model date-subset scoring and independent verification without requiring contiguous original row IDs",
+    "Use frozen training-reference rule thresholds rather than fitting thresholds on October evaluation rows",
+    "Permit a complete verified date-subset release with explicit date and source-population labels",
+    "Render HI-Large/Delta 1 model provenance and matching BQ1/BQ2 date scope"
+  ],
+  "active_hi_medium_runs": "Leave unchanged",
+  "promotion_evidence": "planning/evidence/delta1-shared-promotion-20261107.json"
+}

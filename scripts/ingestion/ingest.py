@@ -320,13 +320,15 @@ def cloud_start(args, states):
     """
     if args.fx_file or args.deployment:
         raise ValueError('Cloud acquisition uses AWS APIs/configuration; use --local-acquisition for local FX/config inputs')
+    from bda_pipeline.cloud_acquisition import validate_selection
+    subset = validate_selection(getattr(args, 'subset', 'HI-Small'), args.rows, args.train)
     if args.train and args.rows: raise ValueError('Training requires the full subset')
     if args.rows is not None and not 0 < args.rows <= 5_100_000: raise ValueError('Invalid row bound')
     if args.dataset_version is not None and args.dataset_version < 1: raise ValueError('Invalid dataset version')
     run_id = valid_run(args.run_id or datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-') + secrets.token_hex(4))
     machine = f'arn:aws:states:{REGION}:{ACCOUNT}:stateMachine:is459-g3-cloud-ingest'
     # Execution input consumed by the cloud acquisition Lambda/workflow.
-    event = {'run_id': run_id, 'rows': args.rows, 'dataset_version': args.dataset_version,
+    event = {'run_id': run_id, 'subset': subset, 'rows': args.rows, 'dataset_version': args.dataset_version,
              'train': args.train, 'refresh': args.refresh, 'rerun': args.rerun}
     try:
         response = states.start_execution(stateMachineArn=machine, name=run_id, input=json.dumps(event))
@@ -421,10 +423,11 @@ def main():
             args.subset = resolve_subset(args.subset, args.variant, args.size)
             if args.dataset_version is not None and args.dataset_version < 1:
                 raise ValueError('Dataset version must be positive')
-            # Cloud acquisition downloads HI-Small only; any other subset is acquired locally.
+            # Validate the same cloud selection bounds for previews and real runs.
             if args.action != 'download':
-                if args.subset != 'HI-Small' and args.action == 'run' and not args.local_acquisition:
-                    raise ValueError(f'{args.subset} requires -LocalAcquisition (Python: --local-acquisition)')
+                if args.action == 'run' and not args.local_acquisition:
+                    from bda_pipeline.cloud_acquisition import validate_selection
+                    validate_selection(args.subset, args.rows, args.train)
                 if args.files is not None or args.include_patterns:
                     raise ValueError('File selection and patterns require -DownloadOnly (Python: download); the pipeline needs transactions and accounts')
                 if args.rows is not None and args.rows <= 0:
