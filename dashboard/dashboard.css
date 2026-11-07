@@ -323,3 +323,15 @@ footer{color:var(--faint)}
 #alerts .bar-label{grid-area:label;color:var(--text)}#alerts .bar-value{grid-area:value;font:600 20px var(--mono);color:var(--text-strong)}
 #alerts .bar-track{grid-area:track;height:16px}#alerts .bar-fill{box-shadow:0 0 14px rgba(255,140,90,.35)}
 .kpi .spark-caption{display:block;margin-top:4px;font-size:11px;color:var(--faint)}
+/* Incoming: a run line that says which stream this is; the progress chart runs full width. */
+.stream-run{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:16px 0 12px;padding:10px 16px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--sunk);font-size:13px;color:var(--text-soft)}
+.stream-run strong{color:var(--text-strong);font-weight:600}.stream-run span+span::before{content:"·";margin-right:14px;color:var(--slate)}
+.stream-run .stream-published::before{content:none}
+.stream-dot{width:9px;height:9px;border-radius:50%;background:var(--slate);flex:none}
+.stream-run[data-state=live] .stream-dot{background:var(--teal);box-shadow:0 0 10px var(--teal);animation:stream-beat 1.6s ease-in-out infinite}
+.stream-run[data-state=failed] .stream-dot{background:var(--coral)}
+.stream-published{margin-left:auto;color:var(--faint)}
+@keyframes stream-beat{50%{opacity:.35}}
+@media(prefers-reduced-motion:reduce){.stream-run[data-state=live] .stream-dot{animation:none}}
+#incoming .grid:has(#incoming-progress){grid-template-columns:1fr}
+.stream-progress{height:8px;border-radius:var(--radius-pill)}.stream-progress i{background:linear-gradient(90deg,#1c8f7f,var(--teal));box-shadow:0 0 12px rgba(63,208,184,.45)}

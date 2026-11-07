@@ -688,6 +688,26 @@ start();
     panel.scrollIntoView?.({behavior:'smooth',block:'start'});
   }
 
+  // One line saying which stream this is and whether anything is still arriving. "Live" only while it runs and is fresh.
+  function streamRun(data,old) {
+    let line=element('incoming-run');
+    if(!line) {
+      if(typeof document.createElement!=='function') return;
+      line=document.createElement('p');line.id='incoming-run';line.className='stream-run';
+      element('incoming-message').insertAdjacentElement?.('beforebegin',line);
+      if(!element('incoming-run')) return;
+    }
+    const first=data.progress[0]?.at, last=data.last_progress_at||data.progress.at(-1)?.at;
+    const day=first?new Date(first).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'';
+    const span=first&&last?`${clock(first).slice(0,5)}–${clock(last).slice(0,5)}`:'';
+    const live=data.state==='running'&&!old, off=data.consumer_enabled===false;
+    line.dataset.state=live?'live':data.state==='failed'?'failed':'idle';
+    line.innerHTML=`<span class="stream-dot" aria-hidden="true"></span><strong>${live?'Live stream':data.state==='completed'?'Test stream':'Stream'}${day?` · ${escapeText(day)}`:''}</strong>`+
+      `<span>${escapeText(span)}</span><span>${integer(data.processed)} payments from ${integer(data.senders?.expected??0)} senders</span>`+
+      `<span>${live?'scoring as payments arrive':{completed:'finished',paused:'paused',waiting:'waiting for the first payment',failed:'consumer failure',running:'no recent update'}[data.state]}${off&&!live?' · streaming is switched off':''}</span>`+
+      `<span class="stream-published">Published ${escapeText(new Date(data.generated_at).toLocaleDateString('en-GB',{day:'numeric',month:'short'}))}</span>`;
+  }
+
   function render(data) {
     const old=stale(data), share=data.expected?data.processed/data.expected:0;
     element('incoming-state').textContent=old?'Stale':states[data.state];
@@ -701,7 +721,10 @@ start();
       failed:'The streaming consumer reported record failures. Committed scores are shown; later events may be held back until the failure is resolved.'}[data.state];
     const cutoff=review(data), verified=parity(data);
     const answer=cutoff?'review':verified?'parity':'scored';
-    cards('incoming-kpis',[['Transactions scored',`${integer(data.processed)} / ${integer(data.expected)}`,`${(share*100).toFixed(1)}% of expected transactions`,answer==='scored'],
+    const step=Math.ceil(data.progress.length/24), points=data.progress.filter((point,index,all)=>index%step===0||index===all.length-1);
+    streamRun(data,old);
+    cards('incoming-kpis',[['Transactions scored',`${integer(data.processed)} / ${integer(data.expected)}`,`${(share*100).toFixed(1)}% of expected transactions`,answer==='scored',
+      points.length>1?{values:points.map(point=>point.processed),color:'#3fd0b8',label:'Running total of scored transactions',caption:`${clock(points[0].at)} → ${clock(points.at(-1).at)}`}:null],
       ['Complete sender histories',`${integer(data.senders.complete)} / ${integer(data.senders.expected)}`,'Rolling features need each sender’s full history'],
       ['Highest ranking score',data.max_score==null?'—':Number(data.max_score).toFixed(4),'Uncalibrated · not a probability'],
       ['Latest event time',eventTime(data.replay_position),'Historical event time · September 2022'],
@@ -711,8 +734,7 @@ start();
     const bar=element('incoming-progressbar');
     bar.setAttribute('aria-valuenow',String(data.processed));bar.setAttribute('aria-valuemax',String(data.expected));
     bar.innerHTML=`<i style="width:${(share*100).toFixed(1)}%"></i>`;
-    // Up to ~24 points keeps the shared chart's axis labels readable; first and last are always kept.
-    const step=Math.ceil(data.progress.length/24), points=data.progress.filter((point,index,all)=>index%step===0||index===all.length-1);
+    // Up to ~24 points (thinned above) keeps the shared chart's axis labels readable; first and last are always kept.
     chartLines('incoming-progress',[{name:'Transactions scored',color:'#3fd0b8',rows:points.map(point=>({x:Date.parse(point.at),y:point.processed,
       label:clock(point.at)}))}],Math.max(1,data.expected),null,`Time scored · ${new Date(points[0].at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`,integer);
     // Review column only when the snapshot carries the batch cutoff.
