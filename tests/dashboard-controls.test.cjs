@@ -403,13 +403,13 @@ test('stale snapshots and failed refreshes keep the last published scores',async
   assert.ok([...h.timers.values()].some(timer=>timer.ms===20000));
 });
 
-test('a completed replay is never stale and is checked less often',async()=>{
+test('a completed stream is never stale and is checked less often',async()=>{
   const done=streamSnapshot({state:'completed',reconciled:true,processed:884,senders:{expected:32,started:32,complete:32},
     generated_at:new Date(Date.now()-86400000).toISOString()});
   const h=await harness({configured:false,authenticated:false,fetchHook:streamHook(done)});
   h.el('incoming-tab').onclick();await settle();
-  assert.equal(h.el('incoming-state').textContent,'Replay complete');
-  assert.match(h.el('incoming-message').textContent,/All 884 replayed transactions and 32 sender histories reconcile/);
+  assert.equal(h.el('incoming-state').textContent,'All scored');
+  assert.match(h.el('incoming-message').textContent,/All 884 incoming transactions and 32 sender histories reconcile/);
   assert.ok([...h.timers.values()].some(timer=>timer.ms===60000));
 });
 
