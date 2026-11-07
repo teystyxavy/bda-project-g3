@@ -41,6 +41,12 @@ ASSETS = {
     'dashboard.js': 'application/javascript; charset=utf-8',
     'dashboard.json': 'application/json; charset=utf-8',
 }
+# Bounded Medium-population projections can exceed the original 10 MB demo cap.
+# Share these budgets with the publisher so a prepared release is publishable.
+ASSET_MAX_BYTES = {name: (32_000_000 if name == 'dashboard.json' else 10_000_000)
+                   for name in ASSETS}
+RELEASE_MAX_BYTES = 34_000_000
+
 # Field names (normalised by _key) that would reveal the ground-truth label
 # for an individual transaction. They are forbidden inside any "queue" so a
 # public viewer cannot see which listed rows are truly laundering.
@@ -109,9 +115,9 @@ def prepare_release(source, output):
         publishing is a separate, explicit step.
 
     Raises:
-        ValueError: on a missing, symlinked or oversized (>10 MB) file, an
+        ValueError: on a missing, symlinked or oversized file (32 MB JSON; 10 MB otherwise), an
         incomplete or non-full snapshot, missing model provenance, sensitive
-        content, or a total package over 12 MB.
+        content, or a total package over 34 MB.
     """
     # resolve() turns relative paths and '..' into absolute paths so the
     # "output inside source" check below cannot be bypassed.
@@ -122,11 +128,18 @@ def prepare_release(source, output):
     for name in ASSETS:
         path = source / name
         # Symlinks are refused because they could point at an arbitrary file.
-        if path.is_symlink() or not path.is_file() or path.stat().st_size > 10_000_000:
-            raise ValueError(f'Missing, symlinked or oversized asset: {name}')
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f'Missing or symlinked asset: {name}')
+        size, limit = path.stat().st_size, ASSET_MAX_BYTES[name]
+        if size > limit:
+            raise ValueError(f'Oversized asset: {name} ({size} bytes; limit {limit})')
         blobs[name] = path.read_bytes()
     snapshot = json.loads(blobs['dashboard.json'])
-    if snapshot.get('buildStatus') != 'complete' or snapshot.get('aml_scope') != 'full':
+    scope = snapshot.get('aml_scope')
+    if scope == 'selected-population':
+        from .selected_population import validate_snapshot_population
+        validate_snapshot_population(snapshot)
+    if snapshot.get('buildStatus') != 'complete' or scope not in ('full', 'selected-population'):
         raise ValueError('Release requires a complete full-population dashboard')
     if not snapshot.get('model', {}).get('provenance', {}).get('model_sha256'):
         raise ValueError('Release requires frozen-model provenance')
@@ -136,15 +149,15 @@ def prepare_release(source, output):
     # from the public copy. Only the in-memory copy changes, not the source.
     snapshot.get('provenance', {}).pop('curated', None)
     _inspect(snapshot)
-    blobs['dashboard.json'] = json.dumps(snapshot, allow_nan=False).encode('utf-8')
+    blobs['dashboard.json'] = json.dumps(snapshot, separators=(',', ':'), allow_nan=False).encode('utf-8')
     # Second, plain-text scan over every file (HTML/CSS/JS too).
     for name, blob in blobs.items():
         if SENSITIVE_TEXT.search(blob.decode('utf-8')):
             raise ValueError(f'Credential-like value or private path in {name}')
     total = sum(map(len, blobs.values()))
     # Keeps page load reasonable and stops an accidental full-data export.
-    if total > 12_000_000:
-        raise ValueError('Release exceeds the 12 MB demo package guard')
+    if total > RELEASE_MAX_BYTES:
+        raise ValueError(f'Release exceeds the {RELEASE_MAX_BYTES} byte package guard')
     manifest = dict(schema_version=1, status='prepared-not-published',
                     public_demo_approved=False, source_snapshot_sha256=source_hash,
                     total_bytes=total, files=[dict(file=name, key=f'dashboard/{name}',

@@ -110,7 +110,7 @@ def prepare(output, models, wheels, image_uri):
     zip_sources(output / 'bda_pipeline.zip', [p.name for p in (ROOT / 'src/bda_pipeline').glob('*.py')])
     # The control Lambda only needs the contract, controller, stage cache and
     # release helpers - no pandas/XGBoost code.
-    zip_sources(output / 'control.zip', ['__init__.py', 'ingest_contract.py', 'ingest_control.py', 'stage_cache.py', 'release.py'], minimal=True)
+    zip_sources(output / 'control.zip', ['__init__.py', 'ingest_contract.py', 'ingest_control.py', 'stage_cache.py', 'release.py', 'selected_population.py'], minimal=True)
     for name in ['curate_transactions.py', 'score_transactions.py', 'pipeline_stage.py', 'network_mules.py']:
         shutil.copyfile(ROOT / 'jobs' / name, output / name)
     shutil.copyfile(wheels, output / 'runtime.gluewheels.zip')

@@ -2,7 +2,7 @@
 
 What this file is
 -----------------
-The code of the ``is459-g3-ingest-control`` Lambda (Python 3.12, 256 MB,
+The code of the ``is459-g3-ingest-control`` Lambda (Python 3.12, 1024 MB,
 120 s timeout, reserved concurrency 1; handler
 ``bda_pipeline.ingest_control.lambda_handler``; see
 ``infra/ingestion/main.tf``). It is the "brain" of the batch Step Functions
@@ -58,7 +58,7 @@ from .ingest_contract import (
     ACCOUNT, REGION, BUCKET, SITE_BUCKET, MACHINE, DATABASE, canonical, sha,
     valid_run, validate_manifest, paths, stage_request, run_profile, training_job_request,
 )
-from .release import ASSETS, _inspect, SENSITIVE_TEXT
+from .release import ASSETS, ASSET_MAX_BYTES, RELEASE_MAX_BYTES, _inspect, SENSITIVE_TEXT
 from .stage_cache import register, reuse
 
 
@@ -167,7 +167,7 @@ CACHED_STAGES = ['curated', 'scored', 'network']
 # bills per second with a one-minute minimum; a G.1X worker is 1 DPU and a
 # G.2X worker 2 DPU. SageMaker training is the only job not run in Glue.
 GLUE_USD_PER_DPU_HOUR = 0.44
-GLUE_DPU_PER_WORKER = {'G.1X': 1, 'G.2X': 2}
+GLUE_DPU_PER_WORKER = {'G.1X': 1, 'G.2X': 2, 'G.4X': 4, 'G.8X': 8}
 SAGEMAKER_USD_PER_HOUR = {'ml.m5.2xlarge': 0.576, 'ml.m5.4xlarge': 1.152}
 
 
@@ -536,19 +536,19 @@ def handle(event, config, clients):
                 or {item['file'] for item in release['files']} != set(ASSETS)
                 or (manifest['train'] and release['verification'].get('training', {}).get('status') != 'passed')):
             raise ValueError('Unverified or incomplete release')
-        # Load each file into memory (max 10 MB each, 12 MB total), check its
+        # Load each file within the shared release budgets, check its
         # size and SHA-256 against the manifest, and scan for secrets or
         # private paths (SENSITIVE_TEXT) before anything becomes public.
         blobs = {}
         for item in release['files']:
-            if not 0 < item['bytes'] <= 10_000_000: raise ValueError('Oversized release file')
+            if not 0 < item['bytes'] <= ASSET_MAX_BYTES[item['file']]: raise ValueError('Oversized release file')
             response = s3.get_object(Bucket=BUCKET, Key=f"{p['export']}/release/site/{item['file']}")
-            with response['Body'] as stream: data = stream.read(10_000_001)
+            with response['Body'] as stream: data = stream.read(ASSET_MAX_BYTES[item['file']] + 1)
             if len(data) != item['bytes'] or hashlib.sha256(data).hexdigest() != item['sha256']:
                 raise ValueError('Release file hash mismatch')
             if SENSITIVE_TEXT.search(data.decode('utf-8')): raise ValueError('Private content in release')
             blobs[item['file']] = data
-        if sum(map(len, blobs.values())) > 12_000_000: raise ValueError('Release too large')
+        if sum(map(len, blobs.values())) > RELEASE_MAX_BYTES: raise ValueError('Release too large')
         snapshot = json.loads(blobs['dashboard.json'])
         # Recursive check for credential-like keys and row-level labels in the queue.
         _inspect(snapshot)

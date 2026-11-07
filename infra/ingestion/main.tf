@@ -243,7 +243,7 @@ resource "aws_cloudwatch_log_group" "control" {
 }
 # The control Lambda: Python 3.12, code from control.zip in the artefact
 # prefix; handler dispatches on event["op"] (begin, curated, baseline, export,
-# publish, failed, training_failed, recover). 120 s timeout, 256 MB, and
+# publish, failed, training_failed, recover). 120 s timeout, 1024 MB, and
 # reserved concurrency 1 so control steps never run concurrently. The config
 # is passed in the PIPELINE_CONFIG environment variable.
 resource "aws_lambda_function" "control" {
@@ -255,7 +255,7 @@ resource "aws_lambda_function" "control" {
   s3_key                         = aws_s3_object.deployment_artifact["control.zip"].key
   source_code_hash               = filebase64sha256("${var.artifact_directory}/control.zip")
   timeout                        = 120
-  memory_size                    = 256
+  memory_size                    = 1024
   reserved_concurrent_executions = 1
   environment { variables = { PIPELINE_CONFIG = jsonencode(var.pipeline_config) } }
   depends_on = [aws_iam_role_policy.control, aws_cloudwatch_log_group.control]

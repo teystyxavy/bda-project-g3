@@ -67,3 +67,19 @@ def test_one_day_sample_has_no_invented_comparison():
     result = treasury_exploration(frame)
     assert result['comparisons']['all'] is None
     assert result['comparisons']['2022-09-01'] is None
+
+
+def test_development_date_breakdown_uses_only_test_dates_and_keeps_groups_disjoint():
+    from bda_pipeline.dashboard_exploration import evaluation_date_breakdown
+    from bda_pipeline.model import INPUT_COLUMNS
+    # Baseline fixture supplies every model input; features are irrelevant to this metric-only split.
+    from test_batch import fixture
+    frame=fixture()
+    from bda_pipeline.analytics import score_baseline
+    frame=score_baseline(frame,{'ACH':50.,'Wire':50.})
+    result=evaluation_date_breakdown(ds.dataset(pa.Table.from_pandas(frame)),np.linspace(0,1,len(frame)),
+        ['2022-09-09'],'2022-09-09','2022-09-13','HI-Small')
+    assert result['previous_test_dates']['metrics']['rows']==60
+    assert result['unseen_dates']['metrics']['rows']==60
+    assert 'not new holdout evidence' in result['previous_test_dates']['definition']
+    assert 'without retuning' in result['unseen_dates']['definition']

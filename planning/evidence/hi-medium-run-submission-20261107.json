@@ -1,0 +1,18 @@
+{
+  "console_url": "https://ap-southeast-1.console.aws.amazon.com/states/home?region=ap-southeast-1#/executions/details/arn:aws:states:ap-southeast-1:588738581042:execution:is459-g3-ingest:hi-medium-20261107-171711",
+  "dataset_version": 8,
+  "execution_arn": "arn:aws:states:ap-southeast-1:588738581042:execution:is459-g3-ingest:hi-medium-20261107-171711",
+  "input_acquisition": "server-side copy of retained verified inputs",
+  "rows": 31898238,
+  "run_id": "hi-medium-20261107-171711",
+  "source_run_id": "20261107-072313-79997f49",
+  "started_at": "2026-11-07T17:18:39.749000+08:00",
+  "status": "RUNNING",
+  "subset": "HI-Medium",
+  "training_requested": false,
+  "states_entered": [
+    "Curate",
+    "ReuseCurated",
+    "Begin"
+  ]
+}

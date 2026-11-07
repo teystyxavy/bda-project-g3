@@ -304,7 +304,8 @@ def verify_scores(reference, scored, model_dir, manifest, output):
     # Check the model files are exactly the reviewed ones before using them.
     verify_artifacts(model_dir, manifest['model_manifest_sha256'])
     ranker = SavedRanker(model_dir)
-    n = manifest['rows']
+    n = manifest.get('source_index_rows', manifest['rows'])
+    selected_rows = manifest['rows']
     seen = np.zeros(n, dtype=bool)
     fingerprints = np.empty(n, dtype='S32')
     for batch in ds.dataset(reference, format='parquet').to_batches(columns=SCORING_COLUMNS, batch_size=100_000):
@@ -315,7 +316,8 @@ def verify_scores(reference, scored, model_dir, manifest, output):
             if not frame[column].isin(vocabulary).all():
                 raise ValueError('Frozen model categorical compatibility failure: ' + column)
         fingerprints[indices] = feature_fingerprints(frame)
-    if not seen.all(): raise ValueError('Incomplete baseline score reference')
+    if int(seen.sum()) != selected_rows: raise ValueError('Incomplete baseline score reference')
+    reference_seen = seen.copy()
     # Reset the tracker for the second pass over the Glue output.
     seen[:] = False
     scores = np.empty(n, dtype='float64')
@@ -335,11 +337,11 @@ def verify_scores(reference, scored, model_dir, manifest, output):
         difference = max(difference, float(np.abs(actual - expected).max()))
         # Store by source row so later lookups are a simple array index.
         scores[indices] = actual
-    if not seen.all(): raise ValueError('Incomplete cloud scores')
+    if not np.array_equal(seen, reference_seen): raise ValueError('Incomplete cloud scores')
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     np.save(output / 'scores.npy', scores, allow_pickle=False)
-    return scores, {'status': 'passed', 'rows': n, 'max_absolute_score_difference': difference,
+    return scores, {'status': 'passed', 'rows': selected_rows, 'max_absolute_score_difference': difference,
                     'labels_excluded': True, 'model_sha256': ranker.selection['selected']['sha256']}
 
 
@@ -401,12 +403,16 @@ def export_stage(inputs, output, assets):
     if not (inputs / 'network/_SUCCESS').exists(): raise ValueError('Require the complete Glue network output')
     dataset = ds.dataset(reference, format='parquet')
 
+    network_dataset = dataset
+    if manifest.get('selection', {}).get('network_scope') == 'full-source':
+        network_dataset = ds.dataset(inputs / 'network_reference', format='parquet', partitioning='hive')
+
     def network_batches():
         # Two passes (links, then candidate-loop payment times) over only the needed columns.
-        for batch in dataset.to_batches(columns=NETWORK_COLUMNS, batch_size=200_000):
+        for batch in network_dataset.to_batches(columns=NETWORK_COLUMNS, batch_size=200_000):
             yield batch.to_pandas()
     network_result = analyse_network(network_batches)
-    network_proof = compare_network(network_result, read_tables(inputs / 'network'), manifest['rows'])
+    network_proof = compare_network(network_result, read_tables(inputs / 'network'), manifest.get('network_rows', manifest['rows']))
     # Agreement is not enough: refuse implausible results (e.g. one giant ring).
     network_proof['shape'] = check_shape(network_result)
     (output / 'evidence/scores.json').write_text(json.dumps(score_proof, allow_nan=False))
@@ -429,9 +435,18 @@ def export_stage(inputs, output, assets):
     snapshot['pipeline'] = {key: manifest[key] for key in ['run_id', 'dataset_version', 'subset', 'source_scope',
                              'start_date', 'end_date', 'processing_sha256', 'deployment_sha256', 'train']}
     # Only a model frozen on a different subset is a transfer evaluation (HI-Small is the original model's own subset).
-    transfer = not manifest['train'] and manifest['subset'] != 'HI-Small'
+    training_subset = ranker.report.get('training_subset', snapshot.get('provenance', {}).get('model_training_subset', 'HI-Small'))
+    snapshot['model']['training_subset'] = training_subset
+    snapshot['model']['training_window'] = ranker.report.get('splits', snapshot['splits'])['train']
+    development_dates = ranker.report.get('development_dates', manifest.get('selection', {}).get('development_dates'))
+    if development_dates:
+        from .dashboard_exploration import evaluation_date_breakdown
+        test_start, test_end = evaluation_periods(snapshot['splits'], manifest['end_date'])['test']
+        snapshot['model']['test_date_breakdown'] = evaluation_date_breakdown(
+            dataset, scores, development_dates, test_start, test_end, manifest['subset'])
+    transfer = not manifest['train'] and manifest['subset'] != training_subset
     snapshot['model']['evaluation_scope'] = (
-        f"Transfer evaluation on {manifest['subset']} with the frozen HI-Small model; synthetic populations may overlap, so this is not an independent generalisation claim."
+        f"Transfer evaluation on {manifest['subset']} with the frozen {training_subset} model; synthetic populations may overlap, so this is not an independent generalisation claim."
         if transfer else f"{manifest['subset']} chronological evaluation")
     snapshot['pipeline']['fx_sha256'] = manifest['files']['fx.csv']['sha256']
     snapshot['pipeline']['refresh_time'] = datetime.now(timezone.utc).isoformat()
@@ -500,6 +515,10 @@ def export_stage(inputs, output, assets):
     # BQ2 is the verified mule-network section; the retired treasury views are removed.
     snapshot['network'] = dashboard_section(network_result)
     snapshot['network']['verification'] = network_proof
+    if manifest.get('selection'):
+        snapshot['network']['population'] = {'kind': 'full-source', 'subset': manifest['subset'],
+            'rows': manifest['network_rows'], 'start_date': manifest['selection']['network_start_date'],
+            'end_date': manifest['selection']['network_end_date']}
     for key in ['treasury', 'treasury_daily']:
         snapshot.pop(key, None)
     snapshot['buildStatus'] = 'complete'
@@ -509,7 +528,8 @@ def export_stage(inputs, output, assets):
     enrich_snapshot(snapshot, dataset, scores, ranker, treasury=False)
     site = output / 'dashboard'
     site.mkdir()
-    (site / 'dashboard.json').write_text(json.dumps(snapshot, allow_nan=False))
+    (site / 'dashboard.json').write_text(
+        json.dumps(snapshot, separators=(',', ':'), allow_nan=False), encoding='utf-8')
     for name in ['index.html', 'dashboard.js', 'dashboard.css']: shutil.copyfile(Path(assets) / name, site / name)
     # prepare_release copies the four runtime files and screens them for
     # secrets / row-level labels; the manifest records each file's hash.

@@ -266,7 +266,7 @@ def treasury_exploration(corridors):
 def enrich_snapshot(snapshot, dataset, scores, ranker, corridors=None, treasury=True):
     """Add the ``exploration`` section. ``treasury=False`` (the AWS export, where BQ2 is the
     mule-network section) skips the retired treasury corridor exploration."""
-    if len(scores) != snapshot['full_rows']:
+    if len(scores) != snapshot.get('source_index_rows', snapshot['full_rows']):
         raise ValueError('Exploration score population mismatch')
     snapshot['exploration'] = {'version': 1, 'aml': aml_exploration(dataset, scores, ranker, snapshot.get('pipeline', {}).get('end_date', '2022-09-18'), snapshot.get('pipeline', {}).get('subset', 'HI-Small'), snapshot.get('splits')),
         'quality': {'status': 'verified-source', 'rows': snapshot['full_rows'],
@@ -274,3 +274,23 @@ def enrich_snapshot(snapshot, dataset, scores, ranker, corridors=None, treasury=
     if treasury:
         snapshot['exploration']['treasury'] = treasury_exploration(corridors if corridors is not None else joint_corridors(dataset))
     return snapshot
+
+
+def evaluation_date_breakdown(dataset, scores, development_dates, start, end, subset):
+    """Separate previously reported test dates from dates absent from model development.
+
+    Both groups are slices of the frozen model's test window. Neither group
+    selects a model, changes thresholds or affects the complete BQ2 population.
+    """
+    groups = {name: RankedPopulation(100, True, subset) for name in ['previous_test_dates', 'unseen_dates']}
+    development_dates = set(development_dates)
+    condition = (ds.field('timestamp') >= pd.Timestamp(start)) & (ds.field('timestamp') < pd.Timestamp(end))
+    for batch in dataset.to_batches(columns=INPUT_COLUMNS, filter=condition, batch_size=100_000):
+        frame = batch.to_pandas()
+        previous = frame.timestamp.dt.strftime('%Y-%m-%d').isin(development_dates)
+        for name, current in [('previous_test_dates', frame.loc[previous]), ('unseen_dates', frame.loc[~previous])]:
+            groups[name].add(current, scores[current.source_row_index.to_numpy(dtype='int64')])
+    return {name: {'metrics': population.finish()['metrics_by_k']['100'],
+                   'definition': ('Previously included in the original model test report; not new holdout evidence.'
+                      if name == 'previous_test_dates' else 'Dates absent from model development inputs; exploratory synthetic-data evaluation without retuning.')}
+            for name, population in groups.items()}

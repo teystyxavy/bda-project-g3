@@ -1,0 +1,22 @@
+{
+  "status": "deployed-and-readback-verified",
+  "model": "hist-depth5-delta1",
+  "model_sha256": "0170bef63f4cd257cbcda8c4748cea0dcf90f202134105fb8226d6dde6a0646f",
+  "model_manifest_sha256": "32e80d8a7699cf14a2a52ec5365baf2e7d3de2cd4dde35415521b8cc0f3326c4",
+  "artifact_prefix": "pipeline/deployments/76c763437c448fb8658618f667dd502a9ae8d6ac29cdf61227020b0ee836b608",
+  "deployment_sha256": "47ce337e104c704632c571c28fca2c5d47a8afe9457792f7897239f004889a2d",
+  "same_state_machine": "arn:aws:states:ap-southeast-1:588738581042:stateMachine:is459-g3-ingest",
+  "resources_added": 16,
+  "resources_changed": 7,
+  "resources_destroyed": 0,
+  "lambda_memory_mib": 1024,
+  "focused_python_tests_passed": 81,
+  "dashboard_tests_passed": 31,
+  "native_runtime_xgboost": "3.2.0",
+  "native_worker_sample_parity_rows": 256,
+  "predecessor_artifacts": "retained",
+  "training_subset": "HI-Large",
+  "weights_changed_from_candidate": false,
+  "large_stage_cache": "bypassed to preserve bounded Lambda contract",
+  "checked_at_utc": "2026-11-07T11:26:43.802666+00:00"
+}

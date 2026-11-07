@@ -406,3 +406,41 @@ def test_baseline_stage_restricts_to_an_export_dates_selection(tmp_path):
     result = export_stage(inputs, tmp_path / 'export', ROOT / 'dashboard')
     assert result['status'] == 'skipped'
     assert not (tmp_path / 'export/release').exists()
+
+
+def test_publication_accepts_medium_snapshot_above_old_demo_limit():
+    s3, aws, old, invalidations = publication_inputs()
+    prefix = paths('test-run')['export'] + '/release/'
+    key = prefix + 'site/dashboard.json'
+    snapshot = json.loads(s3.data[BUCKET, key])
+    snapshot['exploration'] = {'description': 'x' * 10_000_000}
+    data = canonical(snapshot)
+    s3.data[BUCKET, key] = data
+    release_key = prefix + 'manifest.json'
+    release = json.loads(s3.data[BUCKET, release_key])
+    entry = next(item for item in release['files'] if item['file'] == 'dashboard.json')
+    entry.update(bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+    s3.data[BUCKET, release_key] = canonical(release)
+    result = handle({'op': 'publish', 'run_id': 'test-run', 'job_run_id': 'jr-test'}, config(), aws)
+    assert result['status'] == 'published'
+    assert s3.data[SITE_BUCKET, 'dashboard/releases/test-run/dashboard.json'] == data
+
+
+def test_publication_rejects_snapshot_over_budget_before_pointer_change(monkeypatch):
+    from bda_pipeline.release import ASSET_MAX_BYTES
+    s3, aws, old, invalidations = publication_inputs()
+    monkeypatch.setitem(ASSET_MAX_BYTES, 'dashboard.json', 1)
+    with pytest.raises(ValueError, match='Oversized release file'):
+        handle({'op': 'publish', 'run_id': 'test-run', 'job_run_id': 'jr-test'}, config(), aws)
+    assert s3.data[SITE_BUCKET, 'dashboard/current.json'] == old
+    assert not invalidations and not s3.deleted
+
+
+def test_large_reference_and_export_have_bounded_driver_memory_headroom():
+    value=config()
+    baseline=stage_request('large-run','baseline',value,subset='HI-Large',rows=179_702_229)
+    export=stage_request('large-run','export',value,{'network':paths('large-run')['network']+'/'},subset='HI-Large',rows=179_702_229)
+    assert (baseline['WorkerType'],baseline['NumberOfWorkers'],baseline['Timeout'])==('G.4X',2,360)
+    assert (export['WorkerType'],export['NumberOfWorkers'],export['Timeout'])==('G.8X',2,360)
+    small=stage_request('small-run','export',value,subset='HI-Small',rows=1000)
+    assert small['WorkerType']=='G.2X' and small['Timeout']==30

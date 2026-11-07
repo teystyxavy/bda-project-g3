@@ -11,7 +11,7 @@ machine starts the main batch state machine ``is459-g3-ingest``.
 
 It does in AWS what a laptop would otherwise do:
 
-1. download HI-Small transactions + accounts from Kaggle (or reuse a verified
+1. download HI-Small or HI-Medium transactions + accounts from Kaggle (or reuse a verified
    copy cached in S3),
 2. fetch historical FX rates and prepare ``transactions.csv``, ``accounts.csv``
    and ``fx.csv`` (``acquisition.prepare_inputs``),
@@ -28,7 +28,7 @@ S3 keys used (bucket ``BUCKET``):
   ``pipeline/acquisition/``, and on failure
   ``pipeline/runs/<run_id>/evidence/acquisition-failure.json``.
 
-Limits and safety: the Lambda has a 15-minute timeout, 3 GB memory, 4 GB
+Limits and safety: the Lambda has a 15-minute timeout, 3 GB memory, 10 GB
 ``/tmp`` and reserved concurrency 1 (see ``infra/cloud-ingestion/main.tf``).
 Kaggle credentials come from Secrets Manager only for the duration of the
 download and are never logged.
@@ -46,13 +46,23 @@ from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 
 from .acquisition import acquire_dataset, prepare_inputs, digest
+from .dataset_options import resolve_subset, selected_files
 from .ingest_contract import BUCKET, REGION, CONFIG_KEY, canonical, sha, valid_run, validate_manifest, paths
 
 # S3 transfer settings: 16 MB multipart chunks with only 2 parallel threads,
 # to keep memory use predictable inside the Lambda while uploading ~0.5 GB CSVs.
 TRANSFER = TransferConfig(max_concurrency=2, multipart_chunksize=16 * 1024 * 1024)
-# The two Kaggle files the pipeline needs (only HI-Small is supported in AWS).
-NAMES = ['HI-Small_Trans.csv', 'HI-Small_accounts.csv']
+def validate_selection(subset, rows, train):
+    """Bound Medium cloud acquisition to the reviewed smoke size."""
+    subset = resolve_subset(subset)
+    if subset not in ('HI-Small', 'HI-Medium'):
+        raise ValueError('Cloud acquisition supports HI-Small and HI-Medium only')
+    if subset == 'HI-Medium':
+        if train:
+            raise ValueError('HI-Medium training is not supported')
+        if type(rows) is not int or not 0 < rows <= 1000:
+            raise ValueError('HI-Medium cloud acquisition requires --rows between 1 and 1000')
+    return subset
 
 
 def read_json(s3, key):
@@ -86,7 +96,7 @@ def read_json(s3, key):
 def request(event):
     """Validate the Step Functions input event and fill in defaults.
 
-    Allowed keys: ``run_id`` (required), ``rows`` (optional smoke-test row
+    Allowed keys: ``subset`` (defaults to HI-Small), ``run_id`` (required), ``rows`` (optional smoke-test row
     limit), ``dataset_version`` (optional pinned Kaggle version) and the three
     boolean modes ``train``, ``refresh`` and ``rerun`` (default ``False``).
     Unknown keys are rejected so typos cannot be silently ignored.
@@ -95,14 +105,14 @@ def request(event):
         event: The Lambda event dict.
 
     Returns:
-        A normalised options dict with all six keys present.
+        A normalised options dict including the validated subset.
 
     Raises:
         ValueError: for unknown keys, non-boolean modes, a row limit outside
         (0, 5,100,000], a non-positive version, or ``train`` combined with
         ``rows`` (training needs the full chronological dataset).
     """
-    if set(event) - {'run_id', 'rows', 'train', 'refresh', 'rerun', 'dataset_version'}:
+    if set(event) - {'run_id', 'rows', 'train', 'refresh', 'rerun', 'dataset_version', 'subset'}:
         raise ValueError('Unsupported cloud acquisition option')
     value = {'run_id': valid_run(event['run_id']), 'rows': event.get('rows'),
              'dataset_version': event.get('dataset_version'),
@@ -116,6 +126,7 @@ def request(event):
     if version is not None and (type(version) is not int or version < 1):
         raise ValueError('Invalid dataset version')
     if value['train'] and value['rows'] is not None: raise ValueError('Training requires the full subset')
+    value['subset'] = validate_selection(event.get('subset', 'HI-Small'), value['rows'], value['train'])
     return value
 
 
@@ -214,6 +225,10 @@ def acquire(event, clients, root, context=None, downloader=None, getter=None, se
     """
     options = request(event)
     run_id = options['run_id']
+    subset = options['subset']
+    names = selected_files(subset)
+    # Preserve existing Small cache paths; isolate Medium pointers and records.
+    cache_prefix = 'pipeline/acquisition' + (f'/{subset}' if subset != 'HI-Small' else '')
     s3 = clients['s3']
     config = read_json(s3, CONFIG_KEY)
     if config is None: raise ValueError('Batch deployment is unavailable')
@@ -225,33 +240,33 @@ def acquire(event, clients, root, context=None, downloader=None, getter=None, se
     directory.mkdir()
     version = options['dataset_version']
     # A pinned version has its own record; otherwise use the "latest" pointer.
-    cache_key = f'pipeline/acquisition/versions/{version}/record.json' if version else 'pipeline/acquisition/latest.json'
+    cache_key = f'{cache_prefix}/versions/{version}/record.json' if version else f'{cache_prefix}/latest.json'
     cached = None if options['refresh'] else read_json(s3, cache_key)
     if cached:
         resolved = cached.get('dataset_version')
-        if type(resolved) is not int or resolved < 1 or set(cached.get('files', {})) != set(NAMES):
+        if type(resolved) is not int or resolved < 1 or set(cached.get('files', {})) != set(names):
             raise ValueError('Invalid dataset cache record')
         if version is not None and resolved != version: raise ValueError('Cached dataset version mismatch')
         # Pull the cached Kaggle files from S3 (much faster than Kaggle) and
         # verify each one against the hash recorded when it was cached.
-        for name in NAMES:
-            s3.download_file(BUCKET, f'pipeline/acquisition/versions/{resolved}/{name}', str(directory / name), Config=TRANSFER)
+        for name in names:
+            s3.download_file(BUCKET, f'{cache_prefix}/versions/{resolved}/{name}', str(directory / name), Config=TRANSFER)
             if digest(directory / name) != cached['files'][name]: raise ValueError('Dataset cache hash mismatch')
         # Seed the local provenance record so acquire_dataset() reuses these files.
-        (directory / 'HI-Small_download.json').write_text(json.dumps(cached), encoding='utf-8')
+        (directory / f'{subset}_download.json').write_text(json.dumps(cached), encoding='utf-8')
     with kaggle_environment(root, clients.get('secretsmanager'), secret_arn):
         # Do not let third-party HTTP errors or progress output expose credential values.
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            record = acquire_dataset(directory, version=version, refresh=options['refresh'], downloader=downloader)
+            record = acquire_dataset(directory, subset=subset, version=version, refresh=options['refresh'], downloader=downloader)
     record['origin'] = 'verified-s3-kaggle-reuse' if cached else 'kaggle-api'
     resolved = record['dataset_version']
     # The Kaggle version must be known so the result is reproducible and cacheable.
     if type(resolved) is not int or resolved < 1: raise ValueError('Cloud downloads must record the resolved Kaggle version')
-    info = prepare_inputs(directory / NAMES[0], directory / NAMES[1], root / 'prepared', rows=options['rows'], getter=getter)
+    info = prepare_inputs(directory / names[0], directory / names[1], root / 'prepared', rows=options['rows'], getter=getter)
     # Identity = everything that determines the output; its hash is the
     # processing_sha256 used for result caching (see ingest_contract).
     identity = {**{key: info[key] for key in ['rows', 'files', 'start_date', 'end_date']},
-                'subset': 'HI-Small', 'dataset_version': resolved,
+                'subset': subset, 'dataset_version': resolved,
                 'deployment_sha256': sha(config), 'train': options['train'],
                 # This cloud-acquisition path never selects a date subset.
                 'export_dates': None}
@@ -277,13 +292,13 @@ def acquire(event, clients, root, context=None, downloader=None, getter=None, se
             ExtraArgs={'ServerSideEncryption': 'AES256', 'Metadata': {'sha256': metadata['sha256']}}, Config=TRANSFER)
     # Cache only the two verified Kaggle files; historical FX is freshly queried each run.
     if not cached:
-        for name in NAMES:
-            s3.upload_file(str(directory / name), BUCKET, f'pipeline/acquisition/versions/{resolved}/{name}',
+        for name in names:
+            s3.upload_file(str(directory / name), BUCKET, f'{cache_prefix}/versions/{resolved}/{name}',
                 ExtraArgs={'ServerSideEncryption': 'AES256', 'Metadata': {'sha256': record['files'][name]}}, Config=TRANSFER)
         # The record is written after the files so it never points at missing data.
-        s3.put_object(Bucket=BUCKET, Key=f'pipeline/acquisition/versions/{resolved}/record.json',
+        s3.put_object(Bucket=BUCKET, Key=f'{cache_prefix}/versions/{resolved}/record.json',
                       Body=canonical(record), ServerSideEncryption='AES256', ContentType='application/json')
-        s3.put_object(Bucket=BUCKET, Key='pipeline/acquisition/latest.json',
+        s3.put_object(Bucket=BUCKET, Key=f'{cache_prefix}/latest.json',
                       Body=canonical(record), ServerSideEncryption='AES256', ContentType='application/json')
     # Commit manifest last: downstream Begin cannot accept an incomplete upload.
     s3.put_object(Bucket=BUCKET, Key=raw + '/manifest.json', Body=canonical(manifest),

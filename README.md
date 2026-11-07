@@ -114,8 +114,9 @@ cloud source and runs the pipeline. See the
 [download options and cost implications](planning/runbooks/kaggle-download-options.md).
 
 
-HI-Medium batch support is implemented on `feature/larger-dataset`. It uses local
-acquisition and upload, then the same verified AWS batch stages. See the
+HI-Medium supports local acquisition for full batches and cloud acquisition for
+smoke runs of up to 1,000 rows (requires the updated acquisition deployment). Both
+routes use the same verified AWS batch stages. See the
 [HI-Medium runbook](planning/runbooks/hi-medium.md) for readiness, resource bounds
 and acceptance evidence. On 30 October 2026 the published Medium snapshot was
 verified to contain **31,898,238 transactions** across 28 days, with a matching
