@@ -65,19 +65,19 @@ const chartWidth = host => Math.round(Math.min(1100,Math.max(300,host?.clientWid
 // The trust strip under each tab's heading; verified adds the ✓ Verified chip.
 function trustStrip(target,text,verified) {element(target).className=`trust-strip${verified?' verified':''}`;element(target).textContent=text;}
 // A small trend line for a KPI card: values in order, drawn with the chart glow.
-function sparkline(values,color='#3fd0b8',label='') {
+function sparkline(values,color='#3fd0b8',label='',caption='') {
   const points=values.filter(Number.isFinite);
   if(points.length<2) return '';
   const low=Math.min(...points), high=Math.max(...points), span=high-low||1;
-  const xy=points.map((value,index)=>[index/(points.length-1)*100,30-(value-low)/span*26]);
+  const xy=points.map((value,index)=>[3+index/(points.length-1)*254,30-(value-low)/span*26]);
   const line=xy.map(([x,y],index)=>`${index?'L':'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
-  return `<svg class="kpi-spark" viewBox="0 0 100 34" preserveAspectRatio="none" role="img" aria-label="${escapeText(label)}"><path d="${line} L100 34 L0 34 Z" fill="${color}" opacity=".12"/><path class="spark-line" d="${line}" pathLength="1" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" style="filter:drop-shadow(0 0 4px ${color})"/></svg>`;
+  return `<svg class="kpi-spark" viewBox="0 0 260 34" preserveAspectRatio="none" role="img" aria-label="${escapeText(label)}"><path d="${line} L257 34 L3 34 Z" fill="${color}" opacity=".12"/><path class="spark-line" d="${line}" pathLength="1" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" style="filter:drop-shadow(0 0 4px ${color})"/></svg>${caption?`<small class="spark-caption">${escapeText(caption)}</small>`:''}`;
 }
 // items: [label, value, detail, answer?, spark?]; spark is {values, color, label}.
 function cards(target, items) {
   const host=element(target), previous=new Map();
   host.querySelectorAll?.('.kpi')?.forEach(card=>previous.set(card.firstChild?.textContent,card.querySelector('strong')?.textContent));
-  host.innerHTML = items.map(([label,value,detail,answer,spark]) => `<div class="kpi${answer?' kpi-answer':''}"><span>${escapeText(label)}</span><strong>${escapeText(value)}</strong><span>${escapeText(detail)}</span>${spark?sparkline(spark.values,spark.color,spark.label):''}</div>`).join('');
+  host.innerHTML = items.map(([label,value,detail,answer,spark]) => `<div class="kpi${answer?' kpi-answer':''}"><span>${escapeText(label)}</span><strong>${escapeText(value)}</strong><span>${escapeText(detail)}</span>${spark?sparkline(spark.values,spark.color,spark.label,spark.caption):''}</div>`).join('');
   // Count up on first show and when a value changes, not on every quiet refresh.
   host.querySelectorAll?.('.kpi')?.forEach(card=>{const strong=card.querySelector('strong'), before=previous.get(card.firstChild?.textContent);
     if(before!==strong?.textContent) countUp(strong,before&&!/\d[-:]\d/.test(before)?Number(before.match(/\d[\d,]*(?:\.\d+)?/)?.[0].replace(/,/g,''))||0:0);});
@@ -95,6 +95,36 @@ function bars(target, rows, label, value, formatter=integer, {scale='linear', co
   const maximum = Math.max(...rows.map(row=>size(row[value])),scale==='log'?1e-9:1);
   element(target).innerHTML = `<div class="bars">${rows.map((row,index)=>`${mark&&mark.index===index?`<p class="bar-mark">${escapeText(mark.text)}</p>`:''}<div class="bar-row" title="${escapeText(label(row))}: ${escapeText(formatter(row[value]))}"><span class="bar-label">${escapeText(label(row))}</span><div class="bar-track"><div class="bar-fill" style="width:${size(row[value])/maximum*100}%${color?`;background:${color(row,index)}`:''}"></div></div><span class="bar-value">${escapeText(formatter(row[value]))}</span></div>`).join('')}</div>`;
   element(target).querySelectorAll?.('.bar-value')?.forEach(node=>countUp(node));
+}
+
+// Score histogram as one row of heat columns: height on a log scale, colour deepening with the score, the review cut-off
+// marked. The exact counts sit in a details list (id `${target}-bars`) under the chart.
+function scoreColumns(target,histogram,cutIndex,cutText) {
+  const host=element(target);
+  chartCalls.set(target,[scoreColumns,[target,histogram,cutIndex,cutText]]);
+  if(!histogram.length) {host.textContent='No observations in this period.';return;}
+  const width=chartWidth(host), narrow=width<520, height=narrow?190:210, left=8, right=8, top=34, bottom=30;
+  const w=width-left-right, h=height-top-bottom, gap=narrow?2:4, column=w/histogram.length;
+  const top10=Math.log10(1+Math.max(...histogram.map(row=>row.transactions)));
+  const n=value=>value.toFixed(1), every=Math.ceil(histogram.length/Math.max(2,Math.floor(w/64)));
+  const columns=histogram.map((row,index)=>{
+    const tall=Math.max(2,Math.log10(1+row.transactions)/top10*h), x=left+index*column, color=heatFill(index/Math.max(1,histogram.length-1));
+    return `<g class="score-col${index>=cutIndex&&cutIndex>=0?' score-col-queue':''}" style="--i:${index}"><rect class="score-hit" x="${n(x)}" y="${top}" width="${n(column)}" height="${h}" fill="transparent"/><rect x="${n(x+gap/2)}" y="${n(top+h-tall)}" width="${n(column-gap)}" height="${n(tall)}" rx="3" fill="${color}"${index>=cutIndex&&cutIndex>=0?` style="filter:drop-shadow(0 0 6px ${color})"`:''}/><title>Score ${escapeText(row.label)}: ${escapeText(integer(row.transactions))} transactions</title></g>`;}).join('');
+  const labels=histogram.map((row,index)=>index%every===0||index===histogram.length-1?`<text class="chart-axis" x="${n(left+index*column+column/2)}" y="${height-10}" text-anchor="middle">${escapeText(row.label.split('–')[0])}</text>`:'').join('');
+  const cutX=left+cutIndex*column;
+  const cut=cutIndex>=0?`<rect class="score-queue-zone" x="${n(cutX)}" y="${top-6}" width="${n(left+w-cutX)}" height="${h+6}" rx="6"/><line class="score-cut" x1="${n(cutX)}" x2="${n(cutX)}" y1="${top-24}" y2="${top+h}"/><text class="score-cut-label" x="${n(cutX+(cutX>width*.6?-8:8))}" y="${top-12}" text-anchor="${cutX>width*.6?'end':'start'}">${escapeText(cutText)} →</text>`:'';
+  host.innerHTML=`<div class="chart-box"><svg class="analysis-chart score-columns" viewBox="0 0 ${width} ${height}" role="img" aria-label="Score distribution on a log scale; exact counts are listed below the chart.">${cut}${columns}${labels}</svg><div class="ring-tip chart-tip" role="tooltip" hidden></div></div><details class="inline-details"><summary>Exact count in each score band</summary><div id="${target}-bars"></div></details>`;
+  const svg=host.querySelector?.('svg'), tip=host.querySelector?.('.chart-tip');
+  if(!svg?.addEventListener || !tip) return;
+  svg.querySelectorAll('.score-col').forEach((group,index)=>{
+    group.addEventListener('pointerenter',()=>{try {
+      const row=histogram[index], scale=svg.getBoundingClientRect().width/width;
+      tip.innerHTML=`<span class="tip-title">Score ${escapeText(row.label)}</span><span class="chart-tip-row" style="--role:${heatFill(index/Math.max(1,histogram.length-1))}"><span class="tip-role">Transactions</span><b>${escapeText(integer(row.transactions))}</b></span>${index>=cutIndex&&cutIndex>=0?'<span class="tip-foot">Inside the review queue’s score range</span>':''}`;
+      tip.hidden=false;const x=(left+index*column+column/2)*scale;
+      tip.style.left=`${Math.max(4,Math.min(svg.getBoundingClientRect().width-tip.offsetWidth-4,x-tip.offsetWidth/2))}px`;tip.style.top=`${Math.max(0,top*scale-tip.offsetHeight-4)}px`;
+    } catch {tip.hidden=true;}});
+    group.addEventListener('pointerleave',()=>{tip.hidden=true;});
+  });
 }
 
 function trend(target, rows, field, formatter, selected) {
@@ -890,14 +920,19 @@ function renderAml() {
   if(Number(selectedCapacity())>population.capacity) element('review-capacity').value='100';
   const k=selectedCapacity(), data=population[scorer], metrics=data.metrics_by_k[k];
   const other=population[model?'rules':'model'].metrics_by_k[k], otherName=model?'rules':'model';
+  // The published review sizes, smallest first: they feed the card sparklines and the chart markers.
+  const sizes=Object.keys(data.metrics_by_k).map(Number).sort((a,b)=>a-b);
   cards('aml-kpis',[['Transactions in population',integer(metrics.rows),`${population.label} · ${evaluationPeriodLabel(period)}`],['Review capacity',integer(metrics.k),`Top ${k} · chronological tie policy`],
-    [`Laundering in top ${integer(metrics.k)}`,percent(metrics.precision_at_k),`${integer(metrics.hits)} of ${integer(metrics.k)} · ${otherName} ${percent(other.precision_at_k)}`,true],
-    ['Share of all laundering caught',percent(metrics.recall_at_k),`of ${integer(metrics.positives)} laundering cases · ${otherName} ${percent(other.recall_at_k)}`]]);
+    [`Laundering in top ${integer(metrics.k)}`,percent(metrics.precision_at_k),`${integer(metrics.hits)} of ${integer(metrics.k)} · ${otherName} ${percent(other.precision_at_k)}`,true,
+      {values:sizes.map(size=>data.metrics_by_k[size].precision_at_k),color:'#3fd0b8',label:`Share that is laundering at ${sizes.join(', ')} reviews`,caption:`At ${sizes[0]} → ${sizes.at(-1)} reviews`}],
+    ['Share of all laundering caught',percent(metrics.recall_at_k),`of ${integer(metrics.positives)} laundering cases · ${otherName} ${percent(other.recall_at_k)}`,false,
+      {values:sizes.map(size=>data.metrics_by_k[size].recall_at_k),color:'#4fa8ff',label:`Share of all laundering caught at ${sizes.join(', ')} reviews`,caption:`At ${sizes[0]} → ${sizes.at(-1)} reviews`}]]);
   const capture=['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#ffb648':'#3fd0b8',
     rows:Object.entries(population[kind].metrics_by_k).map(([capacity,m])=>({x:Number(capacity),y:m.hits,label:capacity}))}));
   element('capture-card').hidden=amlMode==='evaluation';
   element('capture-note').textContent=`Laundering found as the queue grows from 25 to ${integer(population.capacity)} reviews. Labels only score the ranking.`;
-  chartLines('capture-chart',capture,Math.max(1,...capture.flatMap(series=>series.rows.map(row=>row.y))),null,'Payments reviewed',value=>integer(Math.round(value)));
+  chartLines('capture-chart',capture,Math.max(1,...capture.flatMap(series=>series.rows.map(row=>row.y))),null,'Payments reviewed',value=>integer(Math.round(value)),
+    {markers:[{x:Number(k),y:metrics.hits,color:model?'#3fd0b8':'#ffb648',pulse:true,label:`Your review capacity: ${k} reviews, ${integer(metrics.hits)} laundering`}]});
   const pipeline=snapshot.pipeline||{};
   const demo=pipeline.source_scope==='smoke-prefix';
   trustStrip('aml-context',`${demo?'Demo sample':'Full source, reconciled before publishing'} · ${population.label} · ${evaluationPeriodLabel(period)} · ${model?'Frozen model':'Rule baseline'} ${snapshot.model.provenance.model_sha256.slice(0,12)} · Dataset ${pipeline.dataset_version??'unversioned'} · Published ${String(pipeline.refresh_time||snapshot.generated_at).slice(0,10)}`,!demo);
@@ -926,11 +961,16 @@ function renderAml() {
   // Headline first: how decisive the scores are, then how to read the bars.
   scoreArticle.querySelector('p').textContent=(first&&scored?`${percent(first.transactions/scored)} of ${integer(scored)} transactions score below ${edges(first)[1]}`+
     (high==null?'. ':`; only ${integer(high)} score ${edges(data.histogram[cutIndex])[0]} or higher. `):'')+
-    'Bar length uses a log scale so the small high-score groups stay visible; the counts are exact. Queue filters do not change this chart.';
-  bars('scores',data.histogram,row=>row.label,'transactions',integer,{scale:'log',color:(row,index)=>heatFill(index/Math.max(1,data.histogram.length-1)),
+    'Column height uses a log scale so the small high-score groups stay visible; hover a column, or open the list below, for exact counts. Queue filters do not change this chart.';
+  scoreColumns('scores',data.histogram,cutIndex,`Top ${k} starts here · score ≥ ${model?cutScore?.toFixed(4):integer(cutScore)}`);
+  bars('scores-bars',data.histogram,row=>row.label,'transactions',integer,{scale:'log',color:(row,index)=>heatFill(index/Math.max(1,data.histogram.length-1)),
     mark:cutIndex>=0?{index:cutIndex,text:`Your top ${k} starts here · score ≥ ${model?cutScore.toFixed(4):integer(cutScore)} ↓`}:undefined});
-  chartLines('pr-chart',['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#ffb648':'#3fd0b8',rows:population[kind].pr_curve.map(row=>({x:row.recall,y:row.precision,label:`Recall ${percent(row.recall)}`}))})),1,1,'Recall');
-  chartLines('capacity-chart',['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#ffb648':'#3fd0b8',rows:Object.entries(population[kind].metrics_by_k).map(([capacity,m])=>({x:Number(capacity),y:m.hits,label:capacity}))})),Math.max(1,...['model','rules'].flatMap(kind=>Object.values(population[kind].metrics_by_k).map(m=>m.hits))),null,'Transactions reviewed',integer);
+  chartLines('pr-chart',['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#ffb648':'#3fd0b8',rows:population[kind].pr_curve.map(row=>({x:row.recall,y:row.precision,label:`Recall ${percent(row.recall)}`}))})),1,1,'Recall',percent,
+    {markers:['model','rules'].flatMap((kind,i)=>sizes.map(size=>{const m=population[kind].metrics_by_k[size];
+      return {x:m.recall_at_k,y:m.precision_at_k,color:i?'#ffb648':'#3fd0b8',pulse:String(size)===k&&kind===scorer,label:`${kind==='model'?'Frozen model':'Rules'} · top ${size}: precision ${percent(m.precision_at_k)}, recall ${percent(m.recall_at_k)}`};})),
+     note:`Dots are the exact top-${sizes.join('/')} queues; the pulsing one is your review capacity. The curve is published at fewer thresholds, so a straight segment can pass below a dot.`});
+  chartLines('capacity-chart',['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#ffb648':'#3fd0b8',rows:Object.entries(population[kind].metrics_by_k).map(([capacity,m])=>({x:Number(capacity),y:m.hits,label:capacity}))})),Math.max(1,...['model','rules'].flatMap(kind=>Object.values(population[kind].metrics_by_k).map(m=>m.hits))),null,'Transactions reviewed',integer,
+    {markers:[{x:Number(k),y:metrics.hits,color:model?'#3fd0b8':'#ffb648',pulse:true,label:`Your review capacity: ${k} reviews, ${integer(metrics.hits)} laundering`}]});
   const allRows=data.queue.map(projectionRecord);
   selectOptions('queue-payment',['',...new Set(allRows.map(row=>row.payment_format))],value=>value||'All formats');
   selectOptions('queue-currency',['',...new Set(allRows.map(row=>row.payment_currency))],value=>value||'All currencies');
