@@ -130,20 +130,6 @@ function scoreColumns(target,histogram,cutIndex,cutText) {
   });
 }
 
-function trend(target, rows, field, formatter, selected) {
-  const width=560, height=225, left=66, top=18, plotWidth=460, plotHeight=157;
-  const maximum = field==='hhi' ? 1 : Math.max(...rows.map(row=>row[field] ?? 0),1);
-  const start=Date.parse(rows[0].day), end=Date.parse(rows[rows.length-1].day);
-  const xvalue=row=>left+(Date.parse(row.day)-start)/Math.max(end-start,1)*plotWidth;
-  const yvalue=row=>top+plotHeight-(row[field]??0)/maximum*plotHeight;
-  const points=rows.filter(row=>row[field]!=null).map(row=>`${xvalue(row)},${yvalue(row)}`).join(' ');
-  const ticks=[0,.5,1].map(fraction=>`<line x1="${left}" x2="${left+plotWidth}" y1="${top+plotHeight-fraction*plotHeight}" y2="${top+plotHeight-fraction*plotHeight}" stroke="#1d3347"/><text x="${left-8}" y="${top+plotHeight-fraction*plotHeight+4}" text-anchor="end" font-size="11" fill="#8aa1b4">${escapeText(formatter(maximum*fraction))}</text>`).join('');
-  const dates=rows.filter((row,index)=>index===0||index===rows.length-1||index%4===0).map(row=>`<text x="${xvalue(row)}" y="202" text-anchor="middle" font-size="11" fill="#8aa1b4">Sep ${Number(row.day.slice(-2))}</text>`).join('');
-  const marks=rows.filter(row=>row[field]!=null).map(row=>`<circle tabindex="0" cx="${xvalue(row)}" cy="${yvalue(row)}" r="${row.day===selected?6:3.5}" fill="${row.day===selected?'#bd7819':'#3fd0b8'}"><title>${escapeText(row.day)}: ${escapeText(formatter(row[field]))}</title></circle>`).join('');
-  element(target).innerHTML=`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeText(field)} by day">${ticks}<polyline points="${points}" fill="none" stroke="#3fd0b8" stroke-width="2.5"/>${marks}${dates}</svg><details><summary>Daily values</summary><div id="${target}-values"></div></details>`;
-  table(`${target}-values`,['Date',field==='hhi'?'HHI':'USD volume'],rows.map(row=>[row.day,row[field]==null?'Unavailable':formatter(row[field])]));
-}
-
 function periodNames() {
   return snapshot?.splits ? Object.keys(snapshot.splits).filter(name=>name!=='train') : ['validation','test','tail'];
 }
@@ -765,7 +751,7 @@ function paintPipelineFlow(states) {
         `Max score difference ${verified.max_absolute_score_difference.toExponential(1)} · recorded ${verified.verified_on}`,answer==='parity']]:[])]);
     const bar=element('incoming-progressbar');
     bar.setAttribute('aria-valuenow',String(data.processed));bar.setAttribute('aria-valuemax',String(data.expected));
-    bar.innerHTML=`<i style="width:${(share*100).toFixed(1)}%"></i>`;
+    bar.innerHTML=`<i style="width:${(share*100).toFixed(1)}%"></i>`;bar.hidden=data.state==='completed';
     // Up to ~24 points (thinned above) keeps the shared chart's axis labels readable; first and last are always kept.
     chartLines('incoming-progress',[{name:'Transactions scored',color:'#3fd0b8',rows:points.map(point=>({x:Date.parse(point.at),y:point.processed,
       label:clock(point.at)}))}],Math.max(1,data.expected),null,`Time scored · ${new Date(points[0].at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`,integer);
@@ -831,7 +817,6 @@ function paintPipelineFlow(states) {
 
 
 let amlMode='investigation', displayedQueue=[], explorationPeriod=null, explorationReady=false;
-const signedPercent = value => `${value>=0?'+':''}${(value*100).toFixed(2)} pp`;
 function projectionRecord(id) {
   const data=snapshot.exploration.aml;
   return Object.fromEntries(data.record_fields.map((field,index)=>[field,data.records[id][index]]));
@@ -976,7 +961,7 @@ function renderAml() {
   const other=population[model?'rules':'model'].metrics_by_k[k], otherName=model?'rules':'model';
   // The published review sizes, smallest first: they feed the card sparklines and the chart markers.
   const sizes=Object.keys(data.metrics_by_k).map(Number).sort((a,b)=>a-b);
-  cards('aml-kpis',[['Transactions in population',integer(metrics.rows),`${population.label} · ${evaluationPeriodLabel(period)}`],['Review capacity',integer(metrics.k),`Top ${k} · chronological tie policy`],
+  cards('aml-kpis',[['Transactions in population',integer(metrics.rows),`${population.label} · ${evaluationPeriodLabel(period)}`],['Ranking quality · average precision',metrics.average_precision==null?'Unavailable':metrics.average_precision.toFixed(4),`${otherName} ${other.average_precision==null?'unavailable':other.average_precision.toFixed(4)} · whole ranking, not one cut-off`],
     [`Laundering in top ${integer(metrics.k)}`,percent(metrics.precision_at_k),`${integer(metrics.hits)} of ${integer(metrics.k)} · ${otherName} ${percent(other.precision_at_k)}`,true,
       {values:sizes.map(size=>data.metrics_by_k[size].precision_at_k),color:'#3fd0b8',label:`Share that is laundering at ${sizes.join(', ')} reviews`,caption:`At ${sizes[0]} → ${sizes.at(-1)} reviews`}],
     ['Share of all laundering caught',percent(metrics.recall_at_k),`of ${integer(metrics.positives)} laundering cases · ${otherName} ${percent(other.recall_at_k)}`,false,
@@ -997,6 +982,7 @@ function renderAml() {
   element('evaluation-charts').hidden=amlMode!=='evaluation';
   element('aml-note').hidden=amlMode!=='evaluation';
   element('validation-diagnostics').hidden=amlMode!=='evaluation';
+  renderScoringCoverage();if(amlMode!=='evaluation') element('scoring-coverage').hidden=true;
   element('investigation-mode').setAttribute('aria-pressed',String(amlMode==='investigation'));
   element('evaluation-mode').setAttribute('aria-pressed',String(amlMode==='evaluation'));
   element('model-comparison').querySelector('p').textContent=`Same selected population, ${period} period and review capacity ${k}. Precision = positive labels / reviewed; recall = captured positives / all positives.`;
