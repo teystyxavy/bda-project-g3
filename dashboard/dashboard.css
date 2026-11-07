@@ -351,3 +351,4 @@ footer{color:var(--faint)}
 @keyframes node-breathe{50%{filter:drop-shadow(0 0 18px rgba(63,208,184,.8))}}
 @media(prefers-reduced-motion:reduce){.map-node[data-state=running] rect{animation:none}}
 .pipeline-map{background:radial-gradient(ellipse at 50% 55%,rgba(24,48,74,.55),rgba(13,27,41,0) 70%),var(--glass),var(--surface)}
+html{scroll-padding-top:64px}#detail,#incoming-detail,#ring-explorer{scroll-margin-top:64px}
