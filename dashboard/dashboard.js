@@ -218,6 +218,7 @@ async function start(snapshotSource=null) {
     table('variants',['Variant','Precision@100','Recall@100','Average precision'],snapshot.diagnostics.variants.map(row=>[row.variant,percent(row.precision_at_k),percent(row.recall_at_k),row.average_precision==null?'Unavailable':row.average_precision.toFixed(4)]));
     table('reasons',['Score','Reasons','Reviewed','Positives','False positives'],snapshot.diagnostics.top100_reasons.map(row=>[row.risk_score,row.risk_reasons,row.reviewed,row.positives,row.false_positives]));
     element('provenance').textContent=JSON.stringify({generated_at:snapshot.generated_at,pipeline:snapshot.pipeline,sources:snapshot.sources,provenance:snapshot.provenance,model:snapshot.model?{name:snapshot.model.name,provenance:snapshot.model.provenance}:undefined},null,2);
+    bq1PresenterRefresh();
     selectDashboardView(activeView);renderAml();return true;
   } catch(error) {if(loadId===snapshotLoad) element('status').textContent=`Unable to load dashboard: ${error.message}. Serve this folder over HTTP and rebuild the snapshot if needed.`;return false;}
 }
@@ -1791,4 +1792,522 @@ function bindPresenter() {
   document.addEventListener?.('keydown',presKey);
   if(typeof ResizeObserver==='function') new ResizeObserver(()=>{if(PRES.open) presResize();}).observe(element('pres-stage'));
   else window.addEventListener?.('resize',()=>{if(PRES.open) presResize();});
+}
+
+// ---- BQ1 presenter: the review queue as a full-screen story ----
+// Every test-period payment -> model score bands -> the review cut-off -> rules
+// versus model on the published hit counts -> every review size -> one case
+// replayed from its sender's history -> where BQ1 alerts meet BQ2 rings.
+// Data comes only from snapshot.exploration.aml (test period, whole population)
+// and snapshot.network. The export carries no per-payment labels, so ground
+// truth appears only as each queue's published hit count, drawn as a tally.
+// The button and overlay are built here, so index.html needs no markup.
+const QP_STEPS=7, QP_SCENE_START=[0,2,3,5,6], QP_KS=['25','50','100','250'], QP_MAX_DOTS=1200000;
+const QP_COLOR={model:'#3fd0b8',rules:'#ffb648',hit:'#ff2e55',miss:'#2c4255',ring:'#b794ff',flag:'#ffb648',sender:'#4fa8ff',receiver:'#ffb648'};
+const QP_HEAT=['#4fa8ff','#3fd0b8','#ffb648','#ff6f5e'];
+const QP={open:false,snap:null,step:0,data:null,k:'100',row:null,raf:null,last:0,W:0,H:0,DPR:1,pts:null,layer:null,image:null,layerKey:'',storyBottom:200,
+  anim:{hay:1,col:0,squeeze:0,dim:0,grid:0,duel:0,chart:0,caseView:0,link:0},tallyAt:0,chartAt:0,linkAt:0,hover:-1,replay:null,glyphs:{},counts:'',returnFocus:null};
+const qpNow=()=>typeof performance==='object'?performance.now():Date.now();
+const qpAccount=(bank,account)=>`${String(bank).replace(/^0+(?=.)/,'')}:${account}`;
+const qpHits=(metrics,k)=>metrics.hits??Math.round((metrics.precision_at_k||0)*Number(k));
+const qpRow=rank=>QP.data.queue.find(row=>row.rank===Number(rank))||QP.data.queue[0];
+const qpOverlap=(rows,k)=>rows.slice(0,Number(k)).filter(row=>row.ring).length;
+const qpLerp=(a,b,u)=>a+(b-a)*u;
+function qpMix(a,b,u) {const x=parseInt(a.slice(1),16), y=parseInt(b.slice(1),16), c=s=>Math.round(qpLerp(x>>s&255,y>>s&255,u));return `#${[16,8,0].map(s=>c(s).toString(16).padStart(2,'0')).join('')}`;}
+function qpHeat(score) {const s=Math.round(presClamp(Number(score)||0)*48)/48*(QP_HEAT.length-1), i=Math.min(Math.floor(s),QP_HEAT.length-2);return qpMix(QP_HEAT[i],QP_HEAT[i+1],s-i);}
+
+function qpScope(snap) {return snap?.exploration?.aml?.periods?.test?.scopes?.find(scope=>scope.id==='all')||null;}
+// Whether a release carries what the presenter needs (legacy snapshots do not).
+function bq1PresenterAvailable(snap) {
+  const scope=qpScope(snap);
+  return Boolean(snap?.model&&scope?.model?.histogram?.length&&scope.model.queue?.length>=25&&Array.isArray(scope.rules?.queue)
+    &&scope.model.metrics_by_k?.['25']?.rows>0&&scope.rules.metrics_by_k?.['25']);
+}
+function bq1PresenterData(snap) {
+  const scope=qpScope(snap), aml=snap.exploration.aml, fields=aml.record_fields;
+  const record=id=>{const row=aml.records[id];return row?Object.fromEntries(fields.map((field,i)=>[field,row[i]])):null;};
+  const ks=QP_KS.filter(k=>scope.model.metrics_by_k[k]&&scope.rules.metrics_by_k[k]&&scope.model.queue.length>=Number(k));
+  const pick=source=>Object.fromEntries(ks.map(k=>[k,source.metrics_by_k[k]]));
+  // BQ2 cross-check: every account in the rings the network section draws.
+  const net=snap.network, ranks=new Map((net?.ring_list||[]).map(row=>[row.ring_id,row.rank])), ringOf=new Map();
+  Object.entries(net?.graphs||{}).forEach(([id,graph])=>(graph.nodes||[]).forEach(node=>{if(!ringOf.has(node.id)) ringOf.set(node.id,id);}));
+  const ringFor=row=>ringOf.get(qpAccount(row.from_bank,row.from_account))||ringOf.get(qpAccount(row.to_bank,row.to_account))||null;
+  const queue=scope.model.queue.map((id,i)=>{const row=record(id);return row&&{...row,rank:i+1,ring:ringFor(row)};}).filter(Boolean);
+  queue.forEach(row=>{row.ringRank=row.ring?ranks.get(row.ring)??null:null;});
+  const rulesQueue=scope.rules.queue.map(record).filter(Boolean).map(row=>({...row,ring:ringFor(row)}));
+  const first=scope.model.metrics_by_k[ks[0]];
+  return {ks,model:pick(scope.model),rules:pick(scope.rules),hist:scope.model.histogram.map(bin=>Number(bin.transactions)||0),
+    rows:first.rows,positives:first.positives,queue,rulesQueue,histories:aml.histories||{},ringOf,
+    rings:ringOf.size?{accounts:ringOf.size,drawn:Object.keys(net.graphs).length,population:net.totals?.accounts??null,graphs:net.graphs,ranks}:null,
+    period:evaluationPeriodLabel('test')};
+}
+
+// Story text for the current step (also used by tests).
+function qpStoryHTML(step=QP.step,data=QP.data,k=QP.k,row=QP.row) {
+  const n=Number(k), m=data.model[k], r=data.rules[k], top=data.ks.at(-1), random=n*data.positives/data.rows;
+  const dots=data.rows>QP_MAX_DOTS?`Each dot stands for about ${integer(Math.round(data.rows/QP_MAX_DOTS))} real payments`:'Every dot is one real payment from the test days';
+  switch(step) {
+    case 0:return `<div class="pres-eyebrow">${escapeText(data.period)} · held out from training</div><h2>${integer(data.rows)} payments. <span class="pres-dirty">${integer(data.positives)}</span> of them are laundering.</h2><p>About 1 in ${integer(Math.round(data.rows/Math.max(data.positives,1)))}. ${dots}; where it sits means nothing yet. The job: put the right ones in front of an analyst first.</p>`;
+    case 1:return `<div class="pres-eyebrow">Step 1 · score every payment</div><h2><em>${integer(data.hist[0])}</em> score almost zero. Just ${integer(data.hist.at(-1))} reach the top band.</h2><p>The frozen model ranks each payment from its sender's recent history: counterparties, amounts and payment rail. Columns are score bands from 0 to 1, heights on a log scale. A score is a review priority, not a probability.</p>`;
+    case 2:return `<div class="pres-eyebrow">Step 2 · the review cut-off</div><h2>Analysts can open <em>${integer(n)}</em> cases. The model hands them its top ${integer(n)}.</h2><p>That is ${(n/data.rows*100).toFixed(3)}% of the payments. Each square is one real queued payment, in rank order. Hover for details; click one to open its case.</p>`;
+    case 3:return `<div class="pres-eyebrow">Step 3 · ground truth</div><h2>Rules find <span class="qp-rules" id="qp-count-r">${integer(qpHits(r,k))}</span> of ${integer(n)}. The model finds <span class="pres-dirty" id="qp-count-m">${integer(qpHits(m,k))}</span>.</h2><p>The labels come with the dataset and were never used to score these days. ${integer(n)} payments picked at random would hold about ${random.toFixed(random<1?2:1)}. The dots are a tally of each queue's published count, not particular payments.</p>`;
+    case 4: {
+      const mt=data.model[top], rt=data.rules[top], ratio=rt.average_precision>0?mt.average_precision/rt.average_precision:null;
+      return `<div class="pres-eyebrow">Step 4 · every review size</div><h2>At ${integer(Number(top))} reviews: model <em>${integer(qpHits(mt,top))}</em>, rules ${integer(qpHits(rt,top))}.</h2><p>Not one lucky cut-off. Average precision scores the whole ranking: ${Number(mt.average_precision).toFixed(3)} for the model, ${Number(rt.average_precision).toFixed(4)} for the rules${ratio?` (${ratio.toFixed(0)}×)`:''}. The dashed line is a perfect queue.</p>`;
+    }
+    case 5: {
+      const history=data.histories[row.transaction_id], shown=history?.events?.length||0, seen=history?.observed_prior_transactions??shown;
+      return `<div class="pres-eyebrow">Case file · rank #${integer(row.rank)} of ${integer(data.rows)}</div><h2>${presUsd(row.amount_usd_asof)} by ${escapeText(row.payment_format)} in ${escapeText(row.payment_currency)}, score <em>${Number(row.model_score).toFixed(3)}</em>.</h2><p>${shown?`Replaying the sender's ${seen>shown?`latest ${integer(shown)} of ${integer(seen)}`:integer(shown)} earlier payments, then the flagged one.`:'No earlier payments from this sender are published.'} Whether this payment was laundering is not published; an analyst makes the call.</p>`;
+    }
+    default: {
+      if(!data.rings) return `<div class="pres-eyebrow">The queue</div><h2>${integer(n)} cases, <span class="pres-dirty">${integer(qpHits(m,k))}</span> of them laundering.</h2><p>Click any square to open its case file.</p>`;
+      const rings=new Set(data.queue.slice(0,n).filter(item=>item.ring).map(item=>item.ring)).size;
+      return `<div class="pres-eyebrow">BQ1 × BQ2</div><h2><em class="qp-ring">${integer(qpOverlap(data.queue,k))}</em> of the model's top ${integer(n)} touch an account in a BQ2 ring.</h2><p>They fall in ${plural(rings,'ring')} of the ${integer(data.rings.drawn)} BQ2 draws, which hold ${integer(data.rings.accounts)}${data.rings.population?` of ${integer(data.rings.population)}`:''} accounts. One method scores single payments, the other maps who pays whom, and they land on the same accounts. The rules' top ${integer(n)}: ${integer(qpOverlap(data.rulesQueue,k))}.</p>`;
+    }
+  }
+}
+
+// ---- mounting: the glowing button in the AML heading, and the overlay on first open ----
+function bq1PresenterRefresh() {
+  element('network-present')?.classList?.add('present-cta');
+  let button=element('aml-present');
+  if(!button) {
+    const host=document.querySelector?.('#aml .heading .controls');if(!host?.insertAdjacentHTML) return;
+    host.insertAdjacentHTML('afterbegin','<button id="aml-present" class="present-button present-cta" type="button" hidden>▶ Present the queue</button>');
+    button=element('aml-present');if(!button) return;
+    button.onclick=openBq1Presenter;
+  }
+  button.hidden=!bq1PresenterAvailable(snapshot);
+  if(QP.open&&button.hidden) closeBq1Presenter();
+}
+function qpEnsureOverlay() {
+  if(element('qp')) return;
+  const scenes=[['0','The haystack'],['2','The queue'],['3','Head to head'],['5','Case file'],['6','BQ1 × BQ2']].map(([step,label],i)=>`<li><button type="button" data-qp-step="${step}"><span>${i+1}</span>${label}</button></li>`).join('');
+  document.body.insertAdjacentHTML('beforeend',`<div id="qp" class="presenter qp" hidden role="dialog" aria-modal="true" aria-labelledby="qp-label"><div class="pres-app">
+<div class="pres-top"><div class="pres-brand" id="qp-label"><b>BQ1</b> · AML review queue · presenter view</div><ol class="pres-scenes" id="qp-scenes" aria-label="Story sections">${scenes}</ol><button type="button" class="pres-icon" id="qp-fs">Full screen</button><button type="button" class="pres-icon" id="qp-close">Close ✕</button></div>
+<div class="pres-stage" id="qp-stage"><canvas id="qp-canvas" style="position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none" role="img" aria-label="Animated view of scored payments and the review queue"></canvas><div class="pres-story" id="qp-story" aria-live="polite"></div>
+<div class="qp-capacity" id="qp-capacity" role="group" aria-label="Review capacity" hidden><span>Review capacity</span><span id="qp-ks"></span></div>
+<aside class="pres-readout qp-readout" id="qp-readout" hidden><label>Case<select id="qp-case"></select></label><div class="pres-quick" id="qp-quick"></div><div class="pres-meters" id="qp-meters"></div><div class="qp-evidence" id="qp-evidence"></div><div class="qp-badge" id="qp-badge" hidden></div></aside>
+<div class="ring-tip qp-tip" id="qp-tip" role="tooltip" hidden></div><div class="pres-toast qp-toast" id="qp-toast" hidden></div></div>
+<div class="pres-foot"><div class="pres-timeline" id="qp-timeline" hidden><button type="button" class="pres-play" id="qp-play" aria-label="Play">▶</button><div class="pres-clock" id="qp-clock"></div><canvas id="qp-tl" style="width:100%;height:38px;display:block;cursor:pointer;touch-action:none;min-width:0" aria-label="Sender payment timeline. Click to jump."></canvas><button type="button" class="pres-icon" id="qp-speed">1×</button></div>
+<div class="pres-bar"><button type="button" class="pres-nav" id="qp-back">← Back</button><div class="pres-mid"><div class="pres-steps" id="qp-steps"></div><div class="pres-hint"><span><kbd>→</kbd>next</span><span><kbd>←</kbd>back</span><span><kbd>Space</kbd>play / pause</span><span><kbd>R</kbd>replay step</span><span><kbd>F</kbd>full screen</span><span><kbd>Esc</kbd>close</span></div></div><button type="button" class="pres-nav next" id="qp-next">Next →</button></div></div>
+</div></div>`);
+  qpBind();
+}
+
+function openBq1Presenter() {
+  if(!bq1PresenterAvailable(snapshot)) return;
+  qpEnsureOverlay();
+  if(QP.snap!==snapshot) {QP.snap=snapshot;QP.data=bq1PresenterData(snapshot);QP.pts=null;QP.glyphs={};}
+  QP.k=QP.data.ks.includes('100')?'100':QP.data.ks.at(-1);QP.open=true;QP.returnFocus=document.activeElement;QP.layerKey='';
+  element('qp-ks').innerHTML=QP.data.ks.map(k=>`<button type="button" data-k="${k}" aria-pressed="false">${k}</button>`).join('');
+  qpCaseOptions();qpSetCase(QP.data.queue[0]);
+  element('qp').hidden=false;document.body?.classList?.add('pres-lock');
+  if(!qpFreshCanvas()) qpResize();qpGo(0,true);element('qp-next').focus?.();
+  if(!QP.raf&&typeof requestAnimationFrame==='function') QP.raf=requestAnimationFrame(qpFrame);
+}
+function closeBq1Presenter() {
+  QP.open=false;element('qp').hidden=true;document.body?.classList?.remove('pres-lock');
+  if(QP.replay) QP.replay.playing=false;qpHideTip();
+  // Release the large pixel buffers; they are rebuilt on the next open.
+  QP.layer=null;QP.image=null;QP.layerKey='';const canvas=element('qp-canvas');if(canvas) {canvas.width=0;canvas.height=0;}
+  if(QP.raf&&typeof cancelAnimationFrame==='function') cancelAnimationFrame(QP.raf);QP.raf=null;
+  if(document.fullscreenElement) document.exitFullscreen?.().catch?.(()=>{});
+  QP.returnFocus?.focus?.();
+}
+
+function qpGo(n,force=false) {
+  n=presClamp(n,0,QP_STEPS-1);if(n===QP.step&&!force) return;
+  const previous=QP.step;QP.step=n;
+  element('qp-readout').hidden=n!==5;element('qp-timeline').hidden=n!==5;element('qp-capacity').hidden=!((n>=2&&n<=4)||n===6);
+  element('qp-toast').hidden=true;qpHideTip();QP.hover=-1;
+  if(n===3&&(previous!==3||force)) QP.tallyAt=qpNow();
+  if(n===4) QP.chartAt=qpNow();
+  if(n===6) QP.linkAt=qpNow();
+  if(n===5) {qpSizeTimeline();if(motionAllowed()) {qpSeek(QP.replay.t0-QP.replay.span*.04);qpSetPlaying(true);} else {qpSeek(qpEnd());qpSetPlaying(false);}}
+  else qpSetPlaying(false);
+  qpUpdateText();
+  element('qp-back').disabled=n===0;element('qp-next').disabled=n===QP_STEPS-1;element('qp-next').textContent=n===QP_STEPS-1?'End':'Next →';
+  element('qp-steps').innerHTML=Array.from({length:QP_STEPS},(_,i)=>`<i class="${i<=n?'on':''}"></i>`).join('');
+  const scene=QP_SCENE_START.filter(start=>start<=n).at(-1);
+  element('qp').querySelectorAll?.('[data-qp-step]').forEach(button=>button.setAttribute('aria-current',+button.dataset.qpStep===scene?'step':'false'));
+}
+function qpUpdateText() {
+  element('qp-story').innerHTML=`<div class="pres-fade">${qpStoryHTML()}</div>`;QP.counts='';
+  element('qp-ks').querySelectorAll?.('[data-k]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.k===QP.k)));
+  qpReadout();qpMeasureStory();
+}
+function qpSetK(k) {
+  if(!QP.data.ks.includes(k)||k===QP.k) return;
+  QP.k=k;QP.hover=-1;qpHideTip();if(QP.step===3) QP.tallyAt=qpNow();if(QP.step===6) QP.linkAt=qpNow();
+  qpCaseOptions();qpUpdateText();
+}
+
+// ---- case file: the sender's published history, then the flagged payment ----
+function qpCaseOptions() {
+  const rows=QP.data.queue.slice(0,Math.max(Number(QP.k),25));
+  selectOptions('qp-case',rows.map(row=>String(row.rank)),rank=>{const row=qpRow(rank);return `#${row.rank} · ${presUsd(row.amount_usd_asof)} · ${row.payment_format} · ${Number(row.model_score).toFixed(3)}${row.ring?' · BQ2':''}`;});
+  if(QP.row) element('qp-case').value=String(QP.row.rank);
+  const inRing=rows.find(row=>row.ring), largest=rows.slice(0,25).reduce((a,b)=>b.amount_usd_asof>a.amount_usd_asof?b:a,rows[0]);
+  element('qp-quick').innerHTML=[[rows[0],'top score'],[inRing,'in a BQ2 ring'],[largest,'largest']].filter(([row],i,all)=>row&&all.findIndex(([other])=>other===row)===i)
+    .map(([row,label])=>`<button type="button" data-rank="${row.rank}">#${row.rank} ${label}</button>`).join('');
+}
+function qpSetCase(row) {
+  QP.row=row;
+  const events=(QP.data.histories[row.transaction_id]?.events||[]).slice().sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
+  const sender=qpAccount(row.from_bank,row.from_account), nodes=[{id:sender,got:0}], index=new Map([[sender,0]]);
+  const node=(bank,account)=>{const id=qpAccount(bank,account);if(!index.has(id)) {index.set(id,nodes.length);nodes.push({id,got:0});}return index.get(id);};
+  const pays=events.map(event=>({to:node(event.to_bank,event.to_account),at:Date.parse(event.timestamp+'Z'),usd:Number(event.amount_usd_asof)||0,flag:false}))
+    .concat([{to:node(row.to_bank,row.to_account),at:Date.parse(row.timestamp+'Z'),usd:Number(row.amount_usd_asof)||0,flag:true}]);
+  nodes.forEach(item=>{const ring=QP.data.ringOf.get(item.id);item.ringRank=ring?QP.data.rings?.ranks.get(ring)??null:null;});
+  const t0=pays[0].at, t1=pays.at(-1).at, span=Math.max(t1-t0,3600000), dur=presClamp(4+pays.length*.7,6,12);
+  QP.replay={nodes,pays,flagTo:pays.at(-1).to,t0,t1,span,dur,t:t0,playing:false,speed:1,toast:false};
+  qpSeek(t0-span*.04);
+  if(element('qp-case')) element('qp-case').value=String(row.rank);
+}
+const qpFlight=()=>QP.replay.span/QP.replay.dur*.8;
+const qpEnd=()=>QP.replay.t1+qpFlight()*1.05;
+function qpSeek(t) {
+  const r=QP.replay;r.t=t;r.nodes.forEach(item=>{item.got=0;});
+  r.pays.forEach(pay=>{if(pay.at+qpFlight()<=t) r.nodes[pay.to].got+=pay.usd;});
+  const done=t>=r.t1+qpFlight();
+  if(done&&!r.toast&&r.playing) {r.toast=true;qpToast(`Flagged · rank #${integer(QP.row.rank)} of ${integer(QP.data.rows)} · score ${Number(QP.row.model_score).toFixed(4)}`);}
+  if(!done) r.toast=false;
+}
+function qpSetPlaying(on) {
+  const r=QP.replay;if(!r) return;if(on&&r.t>=qpEnd()-1) qpSeek(r.t0-r.span*.04);
+  r.playing=on;const play=element('qp-play');if(play) {play.textContent=on?'❚❚':'▶';play.setAttribute('aria-label',on?'Pause':'Play');}
+}
+let qpToastTimer=0;
+function qpToast(html) {const el=element('qp-toast');el.innerHTML=html;el.hidden=false;clearTimeout(qpToastTimer);qpToastTimer=setTimeout(()=>{el.hidden=true;},3200);}
+function qpEvidence(row) {
+  return (row.model_evidence||'').split('; ').filter(Boolean).map(part=>{const colon=part.lastIndexOf(':');return {label:part.slice(0,colon),value:Number(part.slice(colon+1).replace('margin','').trim())};}).filter(part=>part.label&&Number.isFinite(part.value));
+}
+function qpReadout() {
+  const row=QP.row;if(!row||QP.step!==5) return;
+  element('qp-meters').innerHTML=`<div><small>Amount</small><strong>${presUsd(row.amount_usd_asof)}</strong></div><div><small>Score</small><strong>${Number(row.model_score).toFixed(4)}</strong></div>`
+    +`<div class="wide"><small>Rail · currency</small><strong>${escapeText(row.payment_format)} · ${escapeText(row.payment_currency)}</strong></div>`
+    +`<div><small>Counterparties, 24h</small><strong>${row.distinct_counterparties_24h??'–'}</strong></div><div><small>Payments, last hour</small><strong>${row.txn_count_1h??'–'}</strong></div>`;
+  const parts=qpEvidence(row), top=Math.max(.01,...parts.map(part=>Math.abs(part.value)));
+  element('qp-evidence').innerHTML=parts.length?`<small>Why it ranked high</small>${parts.map(part=>`<div class="qp-ev${part.value<0?' neg':''}"><span>${escapeText(part.label)}</span><b>${part.value>0?'+':''}${part.value.toFixed(2)}</b><i style="--w:${(Math.abs(part.value)/top*100).toFixed(1)}%"></i></div>`).join('')}`:'';
+  const sender=QP.data.ringOf.get(qpAccount(row.from_bank,row.from_account)), receiver=QP.data.ringOf.get(qpAccount(row.to_bank,row.to_account)), ranks=QP.data.rings?.ranks;
+  const notes=[sender&&`the sender is in BQ2 ring #${ranks.get(sender)}`,receiver&&`the receiver is in BQ2 ring #${ranks.get(receiver)}`].filter(Boolean);
+  element('qp-badge').hidden=!notes.length;element('qp-badge').textContent=notes.length?`Cross-check: ${notes.join(' and ')}.`:'';
+}
+
+// ---- drawing ----
+function qpResize() {
+  const canvas=element('qp-canvas');if(!canvas?.getBoundingClientRect) return;
+  const box=canvas.getBoundingClientRect();QP.DPR=Math.min(window.devicePixelRatio||1,2,Math.sqrt(8e6/Math.max(box.width*box.height,1)));QP.W=box.width;QP.H=box.height;
+  canvas.width=Math.round(box.width*QP.DPR);canvas.height=Math.round(box.height*QP.DPR);
+  qpSizeTimeline();qpMeasureStory();qpBuildPoints();QP.layerKey='';
+}
+function qpSizeTimeline() {
+  const tl=element('qp-tl');if(!tl?.getBoundingClientRect) return;
+  const box=tl.getBoundingClientRect();tl.width=Math.round(box.width*QP.DPR);tl.height=Math.round(box.height*QP.DPR);qpTimeline();
+}
+function qpMeasureStory() {
+  const story=element('qp-story')?.getBoundingClientRect?.(), stage=element('qp-canvas')?.getBoundingClientRect?.();
+  QP.storyBottom=story&&stage&&story.height?story.bottom-stage.top:200;
+}
+function qpBuildPoints() {
+  const data=QP.data;if(!QP.W||!data) return;
+  const scale=Math.max(1,data.rows/QP_MAX_DOTS), counts=data.hist.map(count=>count?Math.max(1,Math.round(count/scale)):0), n=counts.reduce((a,b)=>a+b,0);
+  if(QP.pts?.n===n) return;
+  // Each dot is one payment (or a fixed share of them); bins hold their published counts.
+  const bins=counts.length, random=presRandom(1459), hx=new Float32Array(n), hy=new Float32Array(n), cx=new Float32Array(n), cy=new Float32Array(n), pb=new Uint8Array(n), bin=new Uint8Array(n), start=[];
+  const peak=Math.log10(1+Math.max(...data.hist,1));let at=0;
+  counts.forEach((count,b)=>{start[b]=at;const height=Math.log10(1+data.hist[b])/peak;
+    for(let j=0;j<count;j++,at++) {const a=random()*Math.PI*2, r=Math.pow(random(),.62);hx[at]=.5+Math.cos(a)*r*.5;hy[at]=.5+Math.sin(a)*r*.5;pb[at]=40+random()*90|0;bin[at]=b;cx[at]=(b+.14+random()*.72)/bins;cy[at]=random()*height;}});
+  start[bins]=n;
+  const seeds=presRandom(77);
+  QP.pts={n,hx,hy,cx,cy,pb,bin,start,bins,heights:data.hist.map(count=>Math.log10(1+count)/peak),seed:QP.data.queue.map(()=>[seeds(),seeds()])};
+}
+function qpDisc() {const {W,H}=QP;return {cx:W*.56,cy:H*.52,rx:Math.min(W*.47,H*.78),ry:H*.44};}
+function qpHistBox() {
+  const {W,H}=QP, top=Math.max(QP.storyBottom+40,H*.3), u=presEase(QP.anim.squeeze), narrow=W<820;
+  return {x:qpLerp(48,narrow?20:40,u),w:qpLerp(W-96,narrow?W-40:W*.5,u),base:H-60,h:Math.max(H-60-top,60)};
+}
+function qpRenderLayer() {
+  const {W,H}=QP, P=QP.pts, A=QP.anim;if(!P) return null;
+  const col=presEase(A.col), fade=A.hay*(1-.72*A.dim), box=qpHistBox(), d=qpDisc();
+  const key=`${W}x${H}|${col.toFixed(3)}|${fade.toFixed(3)}|${box.x.toFixed(1)}|${box.w.toFixed(1)}|${box.h.toFixed(1)}`;
+  if(key===QP.layerKey) return fade<=.01?null:QP.layer;
+  if(fade<=.01) {QP.layerKey=key;return null;}
+  // Drawn at CSS-pixel resolution: one pixel per dot, added up so dense bands glow.
+  const w=Math.max(1,Math.round(W)), h=Math.max(1,Math.round(H));
+  if(!QP.layer||!QP.image||QP.image.width!==w||QP.image.height!==h) {QP.layer=document.createElement('canvas');QP.layer.width=w;QP.layer.height=h;QP.image=QP.layer.getContext('2d',{willReadFrequently:true}).createImageData(w,h);}
+  const image=QP.image, px=image.data;px.fill(0);
+  for(let i=0;i<P.n;i++) {
+    const x0=d.cx+(P.hx[i]-.5)*2*d.rx, y0=d.cy+(P.hy[i]-.5)*2*d.ry, X=qpLerp(x0,box.x+P.cx[i]*box.w,col)|0, Y=qpLerp(y0,box.base-P.cy[i]*box.h,col)|0;
+    if(X<0||Y<0||X>=w||Y>=h) continue;
+    const k=(Y*w+X)*4, b=P.pb[i]*fade;px[k]=Math.min(110,px[k]+b*.5);px[k+1]=Math.min(205,px[k+1]+b*.8);px[k+2]=Math.min(255,px[k+2]+b);px[k+3]=255;
+  }
+  QP.layer.getContext('2d').putImageData(image,0,0);QP.layerKey=key;return QP.layer;
+}
+function qpDotXY(i,col,box,d) {const P=QP.pts;return [qpLerp(d.cx+(P.hx[i]-.5)*2*d.rx,box.x+P.cx[i]*box.w,col),qpLerp(d.cy+(P.hy[i]-.5)*2*d.ry,box.base-P.cy[i]*box.h,col)];}
+function qpDrawDots(ctx) {
+  const A=QP.anim, P=QP.pts;if(A.hay<=.01||!P) return;
+  const layer=qpRenderLayer();
+  if(layer) {ctx.save();ctx.globalCompositeOperation='lighter';ctx.drawImage(layer,0,0,QP.W,QP.H);ctx.restore();}
+  const col=presEase(A.col);if(col<=.01) return;
+  const box=qpHistBox(), d=qpDisc(), alpha=col*A.hay*(1-.6*A.dim);
+  ctx.save();ctx.globalAlpha=alpha;
+  // The rare high-score payments glow in their band's heat colour.
+  for(let i=P.start[1]??P.n;i<P.n;i++) {const [x,y]=qpDotXY(i,col,box,d);presDot(ctx,x,y,1.4,qpHeat(P.bin[i]/(P.bins-1)),5);}
+  ctx.font='500 10px ui-monospace,Menlo,monospace';ctx.textAlign='center';
+  const bw=box.w/P.bins;
+  QP.data.hist.forEach((count,b)=>{if(!count||(bw<34&&b%4&&b!==P.bins-1)) return;ctx.fillStyle=b?qpHeat(b/(P.bins-1)):'#9fd6ff';
+    ctx.fillText(count>=1e4?compact(count):integer(count),box.x+(b+.5)*bw,box.base-P.heights[b]*box.h-9);});
+  ctx.strokeStyle='rgba(127,157,181,.35)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(box.x,box.base+6);ctx.lineTo(box.x+box.w,box.base+6);ctx.stroke();
+  ctx.fillStyle='#8aa1b4';[0,.5,1].forEach(v=>ctx.fillText(v.toFixed(1),box.x+v*box.w,box.base+22));
+  ctx.textAlign='right';ctx.fillStyle='rgba(138,161,180,.7)';ctx.fillText('MODEL SCORE  →',box.x+box.w,box.base+38);
+  ctx.restore();
+}
+function qpGridShape(k) {const n=Number(k);return n<=25?[5,5]:n<=50?[10,5]:n<=100?[10,10]:[25,10];}
+function qpGridCells(box,k) {
+  const [cols,rows]=qpGridShape(k), size=Math.max(Math.min(box.w/cols,box.h/rows),3), ox=box.x+(box.w-size*cols)/2, oy=box.y+(box.h-size*rows)/2;
+  return Array.from({length:Number(k)},(_,i)=>({x:ox+(i%cols+.5)*size,y:oy+(Math.floor(i/cols)+.5)*size,s:Math.max(size*.74,2)}));
+}
+function qpBoxes() {
+  const {W,H}=QP, top=Math.max(QP.storyBottom+24,80), bottom=H-36, narrow=W<820;
+  const duelW=narrow?(W-48)/2:Math.min((W-200)/2,(bottom-top-70)*1.15);
+  return {queue:narrow?{x:16,y:top,w:W-32,h:(bottom-top)*.55}:{x:W*.58,y:70,w:W*.42-36,h:H-130},
+    rules:{x:narrow?16:W/2-50-duelW,y:top+18,w:duelW,h:bottom-top-90},model:{x:narrow?W/2+8:W/2+50,y:top+18,w:duelW,h:bottom-top-90},
+    link:narrow?{x:16,y:top,w:W-32,h:(bottom-top)*.42}:{x:44,y:top,w:Math.min(W*.4,bottom-top),h:bottom-top}};
+}
+function qpModelCells() {
+  const B=qpBoxes(), A=QP.anim, q=qpGridCells(B.queue,QP.k), m=qpGridCells(B.model,QP.k), l=qpGridCells(B.link,QP.k), du=presEase(A.duel), li=presEase(A.link);
+  return q.map((c,i)=>({x:c.x+(m[i].x-c.x)*du+(l[i].x-c.x)*li,y:c.y+(m[i].y-c.y)*du+(l[i].y-c.y)*li,s:c.s+(m[i].s-c.s)*du+(l[i].s-c.s)*li}));
+}
+// Published hit counts revealed as a tally that fills over time (no per-payment labels exist).
+function qpTally(now=qpNow()) {
+  if(QP.step!==3||QP.anim.duel<.6) return {on:false,p:0};
+  const p=motionAllowed()?presEase(presClamp((now-QP.tallyAt-900)/1800)):1;return {on:now-QP.tallyAt>900||!motionAllowed(),p};
+}
+function qpSquare(ctx,x,y,s,color,glow,round) {
+  if(glow) {const mode=ctx.globalCompositeOperation;ctx.globalCompositeOperation='lighter';ctx.drawImage(presGlow(color),x-glow,y-glow,glow*2,glow*2);ctx.globalCompositeOperation=mode;}
+  ctx.beginPath();if(round) ctx.arc(x,y,s*.36,0,Math.PI*2);else if(ctx.roundRect) ctx.roundRect(x-s/2,y-s/2,s,s,Math.min(4,s*.2));else ctx.rect(x-s/2,y-s/2,s,s);
+  ctx.fillStyle=color;ctx.fill();
+}
+function qpDrawGrids(ctx,t) {
+  const A=QP.anim;if(A.grid<=.01) return;
+  const data=QP.data, k=QP.k, n=Number(k), rows=data.queue.slice(0,n), cells=qpModelCells(), tally=qpTally(), P=QP.pts;
+  const box=qpHistBox(), mHits=qpHits(data.model[k],k), rHits=qpHits(data.rules[k],k), shownM=Math.round(mHits*tally.p), shownR=Math.round(rHits*tally.p);
+  ctx.save();
+  if(A.duel>.01) {
+    const cellsR=qpGridCells(qpBoxes().rules,k);ctx.globalAlpha=A.grid*A.duel;
+    data.rulesQueue.slice(0,n).forEach((row,i)=>{const c=cellsR[i];if(!c) return;
+      const color=tally.on?(i<shownR?QP_COLOR.hit:QP_COLOR.miss):qpMix('#3a2a12',QP_COLOR.rules,.25+.75*presClamp((row.risk_score||0)/100));
+      qpSquare(ctx,c.x,c.y,c.s,color,tally.on&&i<shownR?c.s*1.6:0,tally.on);});
+  }
+  rows.forEach((row,i)=>{
+    const c=cells[i], u=presEase(presClamp(A.grid*1.6-i/n*.6)), seed=P?.seed[i]||[.5,.5], b=Math.min(data.hist.length-1,Math.floor(presClamp(Number(row.model_score))*data.hist.length));
+    const sx=box.x+(b+.14+seed[0]*.72)/data.hist.length*box.w, sy=box.base-seed[1]*(P?.heights[b]||.2)*box.h, x=qpLerp(sx,c.x,u), y=qpLerp(sy,c.y,u);
+    const dimmed=A.link>.5&&!row.ring, hit=tally.on&&i<shownM;
+    const color=tally.on?(hit?QP_COLOR.hit:QP_COLOR.miss):A.link>.5&&row.ring?QP_COLOR.ring:qpHeat(row.model_score);
+    ctx.globalAlpha=A.grid*(dimmed?.32:1);
+    qpSquare(ctx,x,y,Math.max(c.s*(.3+.7*u),2),color,tally.on?(hit?c.s*1.6:0):dimmed?0:c.s*(i===QP.hover?2.4:A.link>.5?1.4:1.1),tally.on);
+    if(i===QP.hover&&!tally.on) {ctx.strokeStyle='#e4edf4';ctx.lineWidth=1.5;ctx.strokeRect(x-c.s/2-2,y-c.s/2-2,c.s+4,c.s+4);}
+  });
+  if(A.duel>.05) {
+    const B=qpBoxes(), label=(box,name,shown,color)=>{ctx.textAlign='center';ctx.font='600 11px ui-monospace,Menlo,monospace';ctx.fillStyle='#8aa1b4';
+      ctx.fillText(`${name} · TOP ${integer(n)}`,box.x+box.w/2,box.y-8);
+      ctx.font=`700 ${Math.round(presClamp(box.w/9,26,46))}px system-ui,-apple-system,"Segoe UI",sans-serif`;ctx.fillStyle=color;
+      ctx.fillText(`${integer(tally.on?shown:0)} / ${integer(n)}`,box.x+box.w/2,box.y+box.h+46);};
+    ctx.globalAlpha=A.duel;label(B.rules,'RULE BASELINE',shownR,shownR?QP_COLOR.hit:'#8aa1b4');label(B.model,'FROZEN MODEL',shownM,QP_COLOR.hit);
+    if(tally.on) {ctx.font='500 10px ui-monospace,Menlo,monospace';ctx.fillStyle='rgba(138,161,180,.75)';ctx.fillText('RED = PUBLISHED COUNT OF LABELLED LAUNDERING, NOT PARTICULAR PAYMENTS',QP.W/2,B.model.y+B.model.h+70);}
+    const cr=tally.on?shownR:0, cm=tally.on?shownM:0, text=`${cr}|${cm}`;
+    if(text!==QP.counts) {QP.counts=text;const r=element('qp-count-r'), m=element('qp-count-m');if(r) r.textContent=integer(cr);if(m) m.textContent=integer(cm);}
+  }
+  ctx.restore();
+}
+function qpDrawChart(ctx) {
+  const a=QP.anim.chart;if(a<=.01) return;
+  const d=QP.data, ks=d.ks.map(Number), maxK=ks.at(-1), {W,H}=QP, x0=W<820?44:84, x1=W-(W<820?24:300), y1=H-62, y0=Math.max(QP.storyBottom+56,110);
+  const X=v=>x0+v/maxK*(x1-x0), Y=v=>y1-v/maxK*(y1-y0), p=motionAllowed()?presEase(presClamp((qpNow()-QP.chartAt)/1700)):1, reach=p*maxK;
+  ctx.save();ctx.globalAlpha=a;ctx.font='500 11px ui-monospace,Menlo,monospace';ctx.lineWidth=1;
+  [0,.5,1].forEach(f=>{ctx.strokeStyle='rgba(127,157,181,.14)';ctx.beginPath();ctx.moveTo(x0,Y(f*maxK));ctx.lineTo(x1,Y(f*maxK));ctx.stroke();
+    ctx.fillStyle='#8aa1b4';ctx.textAlign='right';ctx.fillText(integer(f*maxK),x0-10,Y(f*maxK)+4);});
+  ctx.textAlign='center';[0,...ks].forEach(v=>ctx.fillText(integer(v),X(v),y1+20));
+  ctx.fillStyle='rgba(138,161,180,.75)';ctx.textAlign='right';ctx.fillText('PAYMENTS REVIEWED  →',x1,y1+40);ctx.textAlign='left';ctx.fillText('LAUNDERING CAUGHT',x0-40,y0-14);
+  const dashed=(to,color,text)=>{ctx.setLineDash([5,6]);ctx.strokeStyle=color;ctx.beginPath();ctx.moveTo(X(0),Y(0));ctx.lineTo(X(maxK),Y(to));ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=color;ctx.textAlign='right';ctx.fillText(text,X(maxK)-6,Y(to)-8);};
+  dashed(Math.min(maxK,d.positives),'rgba(228,237,244,.4)','perfect queue');dashed(maxK*d.positives/d.rows,'rgba(138,161,180,.5)','random picks');
+  const series=(source,color,area)=>{
+    const pts=[[0,0],...ks.map(k=>[k,qpHits(source[String(k)],k)])], path=[];
+    for(let i=0;i<pts.length;i++) {const [kx,hy]=pts[i];if(kx<=reach) {path.push(pts[i]);continue;}const [px,py]=pts[i-1];path.push([reach,py+(hy-py)*(reach-px)/Math.max(kx-px,1e-9)]);break;}
+    if(area&&path.length>1) {const g=ctx.createLinearGradient(0,y0,0,y1);g.addColorStop(0,presRgba(color,.32));g.addColorStop(1,presRgba(color,0));
+      ctx.beginPath();ctx.moveTo(X(0),Y(0));path.forEach(([x,y])=>ctx.lineTo(X(x),Y(y)));ctx.lineTo(X(path.at(-1)[0]),Y(0));ctx.closePath();ctx.fillStyle=g;ctx.fill();}
+    [[8,.18],[3,1]].forEach(([width,alpha])=>{ctx.beginPath();path.forEach(([x,y],i)=>i?ctx.lineTo(X(x),Y(y)):ctx.moveTo(X(x),Y(y)));ctx.strokeStyle=presRgba(color,alpha);ctx.lineWidth=width;ctx.lineJoin='round';ctx.stroke();});
+    pts.slice(1).forEach(([kx,hy])=>{if(kx>reach) return;presDot(ctx,X(kx),Y(hy),4.5,color,16);ctx.fillStyle=color;ctx.textAlign='center';ctx.font='600 13px ui-monospace,Menlo,monospace';ctx.textAlign=area?'center':'left';ctx.fillText(integer(hy),X(kx)+(area?0:9),Y(hy)-(area?14:9));});
+  };
+  series(d.rules,QP_COLOR.rules,false);series(d.model,QP_COLOR.model,true);
+  ctx.setLineDash([2,5]);ctx.strokeStyle='rgba(228,237,244,.35)';ctx.beginPath();ctx.moveTo(X(Number(QP.k)),y0);ctx.lineTo(X(Number(QP.k)),y1);ctx.stroke();ctx.setLineDash([]);
+  ctx.font='500 11px ui-monospace,Menlo,monospace';ctx.fillStyle='#c4d3df';ctx.textAlign='left';ctx.fillText('YOUR CAPACITY',X(Number(QP.k))+6,y0+12);
+  if(W>=820) {const lx=x1+36;[[QP_COLOR.model,'Frozen model'],[QP_COLOR.rules,'Rule baseline']].forEach(([color,name],i)=>{presDot(ctx,lx,y0+30+i*26,5,color,14);ctx.fillStyle='#c4d3df';ctx.textAlign='left';ctx.font='13px system-ui,sans-serif';ctx.fillText(name,lx+14,y0+34+i*26);});}
+  ctx.restore();
+}
+function qpCaseBox() {
+  const {W,H}=QP, top=Math.max(QP.storyBottom+16,70);
+  return W<820?{x:20,y:top,w:W-40,h:Math.max(H-top-24,120)}:{x:40,y:top,w:W-40-340,h:Math.max(H-top-30,140)};
+}
+function qpCaseLayout() {
+  const r=QP.replay, box=qpCaseBox(), S=[box.x+box.w*.17,box.y+box.h*.55], others=r.nodes.map((_,i)=>i).filter(i=>i>0), pos=[S];
+  others.forEach((i,k)=>{const y=box.y+box.h*(k+.5)/Math.max(others.length,1), x=box.x+box.w*.84-Math.abs(y-S[1])/box.h*box.w*.14;pos[i]=[x,y];});
+  return {box,pos,S,loop:Math.min(44,box.h*.11)};
+}
+function qpPayPoint(L,pay,u) {
+  if(pay.to===0) {const a=Math.PI/2+u*Math.PI*2, c=[L.S[0],L.S[1]-L.loop-14];return [c[0]+Math.cos(a)*L.loop,c[1]+Math.sin(a)*L.loop];}
+  const a=L.S, b=L.pos[pay.to];return presQuad(a,presCurve(a,b,.1),b,u);
+}
+function qpDrawCase(ctx,t) {
+  const a=QP.anim.caseView;if(a<=.01||!QP.replay) return;
+  const r=QP.replay, L=qpCaseLayout(), flight=qpFlight(), done=r.t>=r.t1+flight, maxGot=Math.max(...r.nodes.map(item=>item.got),1);
+  ctx.save();ctx.globalAlpha=a;
+  const used=new Set(r.pays.map(pay=>pay.to));
+  if(used.has(0)) {ctx.strokeStyle='rgba(183,148,255,.28)';ctx.lineWidth=1.2;ctx.beginPath();ctx.arc(L.S[0],L.S[1]-L.loop-14,L.loop,0,Math.PI*2);ctx.stroke();
+    ctx.font='500 10px ui-monospace,Menlo,monospace';ctx.fillStyle='rgba(195,166,255,.8)';ctx.textAlign='center';ctx.fillText('PAYS ITSELF',L.S[0],L.S[1]-L.loop*2-22);}
+  used.forEach(to=>{if(!to) return;const b=L.pos[to], c=presCurve(L.S,b,.1), flagged=to===r.flagTo&&done;
+    ctx.beginPath();ctx.moveTo(L.S[0],L.S[1]);ctx.quadraticCurveTo(c[0],c[1],b[0],b[1]);ctx.strokeStyle=flagged?presRgba(QP_COLOR.flag,.85):'rgba(127,157,181,.22)';ctx.lineWidth=flagged?2.6:1.2;ctx.stroke();});
+  r.pays.forEach(pay=>{const u=(r.t-pay.at)/flight;if(u<0||u>=1) return;const [x,y]=qpPayPoint(L,pay,presEase(u));
+    presDot(ctx,x,y,pay.flag?5.5:2.2+Math.sqrt(pay.usd/2e4)*1.6,pay.flag?QP_COLOR.flag:'#9fd6ff',pay.flag?28:12);});
+  r.nodes.forEach((item,i)=>{
+    const [x,y]=L.pos[i]||L.S, sender=i===0, flagged=i===r.flagTo, arrived=r.pays.some(pay=>pay.to===i&&r.t>=pay.at+flight&&r.t<pay.at+flight*1.4);
+    const radius=sender?13:5+7*Math.sqrt(item.got/maxGot), color=sender?QP_COLOR.sender:flagged&&done?QP_COLOR.flag:QP_COLOR.receiver;
+    presDot(ctx,x,y,radius*(arrived?1.25:1),color,sender?36:flagged&&done?30:arrived?22:12);
+    if(item.ringRank) {ctx.strokeStyle=presRgba(QP_COLOR.ring,.9);ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,radius+6,0,Math.PI*2);ctx.stroke();}
+    if(flagged&&done) {const phase=(t/1500)%1;ctx.beginPath();ctx.arc(x,y,radius*(1.4+phase*1.8),0,Math.PI*2);ctx.strokeStyle=presRgba(QP_COLOR.flag,.6*(1-phase));ctx.lineWidth=1.6;ctx.stroke();}
+    ctx.font='500 11px ui-monospace,Menlo,monospace';ctx.fillStyle=sender?'#cfe3f2':'#a9bccb';ctx.textAlign=sender?'center':'left';
+    const label=`${sender?'SENDER ':''}${shortAccount(item.id)}${item.ringRank?` · BQ2 ring #${item.ringRank}`:''}`;
+    sender?ctx.fillText(label,x,y+radius+20):ctx.fillText(label,x+radius+10,y+4);
+  });
+  if(done) {const b=L.pos[r.flagTo]||L.S, m=presCurve(L.S,b,.1);ctx.font='700 12px ui-monospace,Menlo,monospace';ctx.fillStyle=QP_COLOR.flag;ctx.textAlign='center';
+    ctx.fillText(`FLAGGED · ${presUsd(QP.row.amount_usd_asof)} · SCORE ${Number(QP.row.model_score).toFixed(3)}`,(L.S[0]+b[0])/2,m[1]-12);}
+  ctx.restore();
+}
+function qpTimeline() {
+  const canvas=element('qp-tl'), r=QP.replay;if(!canvas?.getContext||!canvas.width||!r) return;
+  const g=canvas.getContext('2d'), w=canvas.width, h=canvas.height, D=QP.DPR, lo=r.t0-r.span*.04, hi=qpEnd(), X=v=>(v-lo)/(hi-lo)*w;
+  g.clearRect(0,0,w,h);g.fillStyle='rgba(110,140,165,.25)';g.fillRect(0,h/2-1*D,w,2*D);
+  g.fillStyle='rgba(63,208,184,.8)';g.fillRect(0,h/2-1*D,presClamp((r.t-lo)/(hi-lo))*w,2*D);
+  r.pays.forEach(pay=>{const x=X(pay.at), on=pay.at<=r.t, tall=pay.flag?h-6*D:h*.55;g.fillStyle=pay.flag?QP_COLOR.flag:on?'#9fd6ff':'rgba(138,161,180,.55)';g.fillRect(x-(pay.flag?2:1)*D,(h-tall)/2,(pay.flag?4:2)*D,tall);});
+  g.fillStyle='#e4edf4';g.fillRect(presClamp((r.t-lo)/(hi-lo))*w-D,0,2*D,h);
+  const date=new Date(presClamp(r.t,r.t0,r.t1)), month=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][date.getUTCMonth()];
+  element('qp-clock').innerHTML=`${month} ${date.getUTCDate()} · ${String(date.getUTCHours()).padStart(2,'0')}:${String(date.getUTCMinutes()).padStart(2,'0')}<small>UTC · ${date.getUTCFullYear()}</small>`;
+}
+function qpGlyph(id) {
+  if(!QP.glyphs[id]) {const graph=QP.data.rings.graphs[id], ring={id,graph,nodes:graph.nodes.map(node=>[node.id])}, index=new Map(graph.nodes.map((node,i)=>[node.id,i]));
+    QP.glyphs[id]={ring,layout:presLayout(ring),links:graph.links.map(link=>[index.get(link.source),index.get(link.target)]).filter(([x,y])=>x!=null&&y!=null)};}
+  return QP.glyphs[id];
+}
+function qpDrawLink(ctx,t) {
+  const a=QP.anim.link, data=QP.data;if(a<=.01||!data.rings) return;
+  const n=Number(QP.k), rows=data.queue.slice(0,n), cells=qpModelCells(), {W,H}=QP, narrow=W<820, now=qpNow();
+  const groups=[...new Set(rows.filter(row=>row.ring).map(row=>row.ring))].sort((x,y)=>(data.rings.ranks.get(x)??999)-(data.rings.ranks.get(y)??999));
+  if(!groups.length) return;
+  const area=narrow?{x:16,y:qpBoxes().link.y+qpBoxes().link.h+20,w:W-32,h:H-qpBoxes().link.y-qpBoxes().link.h-40}:{x:W*.5,y:Math.max(QP.storyBottom-60,70),w:W*.5-36,h:H-Math.max(QP.storyBottom-60,70)-30};
+  const cols=narrow?Math.min(groups.length,5):groups.length<=4?2:groups.length<=9?3:4, gridRows=Math.ceil(groups.length/cols), cw=area.w/cols, ch=Math.min(area.h/gridRows,cw*.9);
+  const touched=new Set(rows.filter(row=>row.ring).flatMap(row=>[qpAccount(row.from_bank,row.from_account),qpAccount(row.to_bank,row.to_account)]));
+  const cellOf=k=>({x:area.x+(k%cols)*cw,y:area.y+Math.floor(k/cols)*ch,w:cw,h:ch}), centre=Object.fromEntries(groups.map((id,k)=>{const cell=cellOf(k);return [id,[cell.x+6,cell.y+cell.h/2-8]];}));
+  ctx.save();
+  // Links first, so the opaque ring cards hide any crossings.
+  ctx.globalCompositeOperation='lighter';
+  rows.forEach((row,i)=>{if(!row.ring||!centre[row.ring]) return;const u=presClamp((now-QP.linkAt-500-i*14)/900)*a;if(u<=0) return;
+    const from=[cells[i].x+cells[i].s/2,cells[i].y], to=centre[row.ring], c=[qpLerp(from[0],to[0],.6),qpLerp(from[1],to[1],.15)], end=presQuad(from,c,to,presEase(u));
+    ctx.globalAlpha=.4*a;ctx.strokeStyle=QP_COLOR.ring;ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(from[0],from[1]);
+    for(let s=1;s<=16;s++) {const p=presQuad(from,c,to,presEase(u)*s/16);ctx.lineTo(p[0],p[1]);}ctx.stroke();
+    if(u<1) presDot(ctx,end[0],end[1],2.4,QP_COLOR.ring,10);});
+  ctx.globalCompositeOperation='source-over';
+  groups.forEach((id,k)=>{
+    const cell=cellOf(k), appear=presClamp((now-QP.linkAt-k*90)/500)*a;if(appear<=0) return;
+    const glyph=qpGlyph(id), P=presFit(glyph.layout,{x:cell.x+12,y:cell.y+12,w:cell.w-24,h:cell.h-40},1.1).pts, hits=rows.filter(row=>row.ring===id).length;
+    ctx.globalAlpha=appear;
+    ctx.fillStyle='rgba(11,21,32,.94)';ctx.strokeStyle='rgba(109,85,168,.6)';ctx.lineWidth=1;ctx.beginPath();ctx.roundRect?ctx.roundRect(cell.x+4,cell.y+4,cell.w-8,cell.h-8,10):ctx.rect(cell.x+4,cell.y+4,cell.w-8,cell.h-8);ctx.fill();ctx.stroke();
+    ctx.strokeStyle='rgba(127,157,181,.25)';ctx.lineWidth=.7;glyph.links.forEach(([x,y])=>{ctx.beginPath();ctx.moveTo(P[x][0],P[x][1]);ctx.lineTo(P[y][0],P[y][1]);ctx.stroke();});
+    glyph.ring.nodes.forEach(([node],i)=>{const hot=touched.has(node);presDot(ctx,P[i][0],P[i][1],hot?3.6:1.9,hot?QP_COLOR.ring:'#4f6a80',hot?12*(1+.15*Math.sin(t/260+i)):0);});
+    ctx.font='500 11px ui-monospace,Menlo,monospace';ctx.fillStyle='#c3a6ff';const rank=data.rings.ranks.get(id)??'?';
+    if(cell.w<150) {ctx.textAlign='center';ctx.fillText(`#${rank}`,cell.x+cell.w/2,cell.y+cell.h-12);}
+    else {ctx.textAlign='left';ctx.fillText(`BQ2 RING #${rank}`,cell.x+14,cell.y+cell.h-14);ctx.textAlign='right';ctx.fillStyle='#8aa1b4';ctx.fillText(plural(hits,'alert'),cell.x+cell.w-14,cell.y+cell.h-14);}
+  });
+  ctx.restore();
+}
+function qpFrame(t) {
+  QP.raf=null;if(!QP.open) return;
+  const n=QP.step, still=!motionAllowed();
+  const target={hay:[1,1,QP.W<820?.3:1,0,0,0,0][n],col:n>=1?1:0,squeeze:n>=2?1:0,dim:n>=2?1:0,grid:n===2||n===3||n===6?1:0,duel:n===3?1:0,chart:n===4?1:0,caseView:n===5?1:0,link:n===6?1:0};
+  for(const key in QP.anim) {const rate=key==='col'?.05:key==='grid'?.05:.1, d=target[key]-QP.anim[key];QP.anim[key]=still||Math.abs(d)<.002?target[key]:QP.anim[key]+d*rate;}
+  const r=QP.replay;
+  if(r?.playing&&n===5) {const dt=Math.min((t-(QP.last||t))/1000,.25), next=r.t+dt*r.span/r.dur*r.speed;if(next>=qpEnd()) {qpSeek(qpEnd());qpSetPlaying(false);} else qpSeek(next);qpTimeline();}
+  QP.last=t;
+  try {
+    qpFreshCanvas();
+    const ctx=element('qp-canvas').getContext('2d');
+    ctx.setTransform(QP.DPR,0,0,QP.DPR,0,0);ctx.clearRect(0,0,QP.W,QP.H);
+    qpDrawDots(ctx);qpDrawGrids(ctx,t);qpDrawChart(ctx);qpDrawCase(ctx,t);qpDrawLink(ctx,t);
+  } catch(error) {if(!QP.warned) {QP.warned=true;console.error('BQ1 presenter frame failed',error);}}
+  QP.raf=requestAnimationFrame(qpFrame);
+}
+
+// ---- controls ----
+function qpCellAt(event) {
+  if(!(QP.step===2||QP.step===3||QP.step===6)||qpTally().on) return -1;
+  const box=element('qp-canvas').getBoundingClientRect(), x=event.clientX-box.left, y=event.clientY-box.top;
+  return qpModelCells().findIndex(c=>Math.abs(x-c.x)<=c.s/2+2&&Math.abs(y-c.y)<=c.s/2+2);
+}
+function qpHideTip() {const tip=element('qp-tip');if(tip) tip.hidden=true;}
+function qpShowTip(i,event) {
+  const row=QP.data.queue[i], tip=element('qp-tip'), stage=element('qp-stage').getBoundingClientRect();
+  tip.innerHTML=`<b>#${integer(row.rank)} · ${presUsd(row.amount_usd_asof)}</b> · ${escapeText(row.payment_format)} · ${escapeText(row.payment_currency)}<br>Score ${Number(row.model_score).toFixed(4)} · ${escapeText(String(row.timestamp).replace('T',' ').slice(0,16))}<br>${escapeText(shortAccount(qpAccount(row.from_bank,row.from_account)))} → ${escapeText(shortAccount(qpAccount(row.to_bank,row.to_account)))}${row.ring?`<br><span style="color:#c3a6ff">Touches BQ2 ring #${row.ringRank}</span>`:''}<br><small>Click to open the case</small>`;
+  tip.hidden=false;const x=event.clientX-stage.left, y=event.clientY-stage.top;tip.style.left=`${Math.min(x+14,stage.width-280)}px`;tip.style.top=`${Math.max(y-90,8)}px`;
+}
+function qpOpenCase(row) {qpSetCase(row);qpCaseOptions();if(QP.step===5) {qpSetPlaying(motionAllowed());if(!motionAllowed()) qpSeek(qpEnd());qpUpdateText();qpTimeline();} else qpGo(5);}
+function qpScrub(event) {
+  const box=element('qp-tl').getBoundingClientRect(), r=QP.replay, lo=r.t0-r.span*.04, u=presClamp((event.clientX-box.left)/box.width);
+  qpSeek(lo+u*(qpEnd()-lo));qpTimeline();
+}
+function qpFullscreen() {const promise=document.fullscreenElement?document.exitFullscreen?.():element('qp').requestFullscreen?.();promise?.catch?.(()=>{});}
+function qpKey(event) {
+  if(!QP.open||event.target?.matches?.('select,input')) return;
+  if(event.target?.closest?.('button')&&(event.key===' '||event.key==='Enter')) return;
+  if(event.key==='ArrowRight'||event.key==='PageDown') {event.preventDefault();qpGo(QP.step+1);}
+  else if(event.key==='ArrowLeft'||event.key==='PageUp') {event.preventDefault();qpGo(QP.step-1);}
+  else if(event.key===' ') {event.preventDefault();if(QP.step===5) qpSetPlaying(!QP.replay.playing);}
+  else if(event.key==='r'||event.key==='R') qpReplayStep();
+  else if(event.key==='f'||event.key==='F') qpFullscreen();
+  else if(event.key==='Escape') {if(!document.fullscreenElement) closeBq1Presenter();}
+  else if(/^[1-5]$/.test(event.key)) qpGo(QP_SCENE_START[+event.key-1]);
+}
+// R replays whatever the current step animates.
+function qpReplayStep() {
+  const A=QP.anim, n=QP.step;
+  if(n===0) A.hay=0;if(n===1) A.col=0;if(n===2||n===6) A.grid=0;if(n===3) QP.tallyAt=qpNow();if(n===4) QP.chartAt=qpNow();if(n===6) QP.linkAt=qpNow();
+  if(n===5) {qpSeek(QP.replay.t0-QP.replay.span*.04);qpSetPlaying(true);}
+}
+// A canvas whose GPU context was dropped (memory pressure) stays blank; swap in a fresh one.
+function qpFreshCanvas() {
+  const old=element('qp-canvas');if(!old?.getContext||!old.getContext('2d')?.isContextLost?.()) return false;
+  const canvas=old.cloneNode(false);old.replaceWith(canvas);qpBindCanvas(canvas);QP.layer=null;QP.image=null;QP.layerKey='';qpResize();return true;
+}
+function qpBindCanvas(canvas) {
+  canvas.onpointermove=event=>{const i=qpCellAt(event);QP.hover=i;canvas.style.cursor=i>=0?'pointer':'';if(i>=0) qpShowTip(i,event);else qpHideTip();};
+  canvas.onpointerleave=()=>{QP.hover=-1;qpHideTip();};
+  canvas.onclick=event=>{const i=qpCellAt(event);if(i>=0) qpOpenCase(QP.data.queue[i]);};
+}
+function qpBind() {
+  element('qp-close').onclick=closeBq1Presenter;element('qp-fs').onclick=qpFullscreen;
+  element('qp-next').onclick=()=>qpGo(QP.step+1);element('qp-back').onclick=()=>qpGo(QP.step-1);
+  element('qp-scenes').onclick=event=>{const button=event.target.closest?.('[data-qp-step]');if(button) qpGo(+button.dataset.qpStep);};
+  element('qp-ks').onclick=event=>{const button=event.target.closest?.('[data-k]');if(button) qpSetK(button.dataset.k);};
+  element('qp-case').onchange=()=>qpOpenCase(qpRow(element('qp-case').value));
+  element('qp-quick').onclick=event=>{const button=event.target.closest?.('[data-rank]');if(button) qpOpenCase(qpRow(button.dataset.rank));};
+  element('qp-play').onclick=()=>qpSetPlaying(!QP.replay.playing);
+  element('qp-speed').onclick=()=>{const r=QP.replay;r.speed=r.speed===1?2:r.speed===2?.5:1;element('qp-speed').textContent=`${r.speed}×`;};
+  const tl=element('qp-tl'), canvas=element('qp-canvas');
+  tl.onpointerdown=event=>{tl.setPointerCapture?.(event.pointerId);qpSetPlaying(false);qpScrub(event);tl.onpointermove=qpScrub;};
+  tl.onpointerup=()=>{tl.onpointermove=null;};
+  qpBindCanvas(canvas);
+  document.addEventListener?.('keydown',qpKey);
+  if(typeof ResizeObserver==='function') new ResizeObserver(()=>{if(QP.open) qpResize();}).observe(element('qp-stage'));
+  else window.addEventListener?.('resize',()=>{if(QP.open) qpResize();});
 }
