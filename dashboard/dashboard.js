@@ -840,7 +840,14 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
     const bar=element('incoming-progressbar');
     bar.setAttribute('aria-valuenow',String(data.processed));bar.setAttribute('aria-valuemax',String(data.expected));
     bar.innerHTML=`<i style="width:${(share*100).toFixed(1)}%"></i>`;bar.hidden=data.state==='completed';
-    if(data.queue.length) streamReplay(data,row=>incomingDetail(row,cutoff));
+    streamLinks(data);
+    if(data.queue.length) {
+      streamReplay(data,row=>incomingDetail(row,cutoff));
+      // The same case explorer as the review queue; rebuilt only when the published queue changes.
+      const key=`${data.generated_at}|${data.queue.length}`;
+      if(incomingStream?.key!==key) {incomingStream={key,data,open:row=>incomingDetail(row,cutoff)};incomingCases.render(data.queue);}
+      else incomingStream.open=row=>incomingDetail(row,cutoff);
+    }
     // Up to ~24 points (thinned above) keeps the shared chart's axis labels readable; first and last are always kept.
     chartLines('incoming-progress',[{name:'Transactions scored',color:'#3fd0b8',rows:points.map(point=>({x:Date.parse(point.at),y:point.processed,
       label:clock(point.at)}))}],Math.max(1,data.expected),null,`Time scored · ${new Date(points[0].at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`,integer);
@@ -938,7 +945,7 @@ function rankChip(row) {
 }
 // The opened row is selected in the case explorer and lit in the queue table.
 function markSelectedRank(row) {
-  if(caseRows.some(item=>item.transaction_id===row.transaction_id)) {if(caseSelected!==row.rank) selectCase(row.rank,{replay:false});return;}
+  if(reviewCases.rows.some(item=>item.transaction_id===row.transaction_id)) {if(reviewCases.selected!==row.rank) reviewCases.select(row.rank,{replay:false});return;}
   element('queue')?.querySelectorAll?.('tbody tr')?.forEach(tr=>tr.classList?.toggle('row-selected',Number(tr.dataset?.rank)===row.rank));
 }
 function priorityChip(rank) {
@@ -1115,7 +1122,7 @@ function renderAml() {
   selectOptions('queue-payment',['',...new Set(allRows.map(row=>row.payment_format))],value=>value||'All formats');
   selectOptions('queue-currency',['',...new Set(allRows.map(row=>row.payment_currency))],value=>value||'All currencies');
   element('detail').hidden=true;renderQueue();
-  mountCaseExplorer();if(element('case-explorer')) {element('case-explorer').hidden=amlMode!=='investigation';renderCaseExplorer();}
+  renderCaseExplorer();
 }
 function renderQueue() {
   if(!snapshot?.exploration) return;
@@ -1136,7 +1143,7 @@ function renderQueue() {
   element('queue').querySelectorAll('tbody tr').forEach((row,index)=>{const button=document.createElement('button');button.textContent=rows[index].transaction_id;button.title='Show evidence';
     // The whole row opens the evidence; the button keeps it reachable by keyboard.
     button.onclick=event=>{event?.stopPropagation?.();showDetail(rows[index]);};row.onclick=()=>showDetail(rows[index]);
-    row.dataset.rank=String(rows[index].rank);row.classList.toggle('row-selected',rows[index].rank===caseSelected);
+    row.dataset.rank=String(rows[index].rank);row.classList.toggle('row-selected',rows[index].rank===reviewCases.selected);
     row.classList.add(`tier-row-${tierFor(rows[index].rank).id}`);row.children[1].replaceChildren(priorityChip(rows[index].rank));row.children[2].replaceChildren(button);
     const evidence=model&&rows[index].model_evidence, split=evidence?evidence.indexOf('; '):-1;
     if(split>0) row.children[8].innerHTML=`<b>${escapeText(evidence.slice(0,split))}</b>${escapeText(evidence.slice(split))}`;});
@@ -1164,18 +1171,18 @@ const instant = timestamp => Date.parse(String(timestamp).slice(0,19)+'Z');
 const trailTime = value => new Date(value).toISOString().slice(0,16).replace('T',' ');
 const trailDay = value => new Date(value).toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'});
 // The sender's trail: earlier payments in time order then this one, the receivers they reached and a one-line summary.
-function caseTrail(events,row) {
+function caseTrail(events,row,{lead='Before this payment, the sender made',none='No earlier outgoing payments from this sender are in the exported history.',self:detectSelf=true}={}) {
   const earlier=[...events].filter(event=>Number.isFinite(instant(event.timestamp))).sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
   const payments=earlier.map(event=>({...event,current:false})).concat([{...row,current:true}]);
   const own=accountKey(row.from_bank,row.from_account), keyOf=payment=>accountKey(payment.to_bank,payment.to_account), receivers=new Map();
   for(const payment of payments) {
-    const key=keyOf(payment), item=receivers.get(key)||{key,bank:payment.to_bank,account:payment.to_account,count:0,usd:0,current:false,self:key===own};
+    const key=keyOf(payment), item=receivers.get(key)||{key,bank:payment.to_bank,account:payment.to_account,count:0,usd:0,current:false,self:detectSelf&&key===own};
     item.count++;item.usd+=Number(payment.amount_usd_asof)||0;item.current||=payment.current;receivers.set(key,item);
   }
   const before=earlier.filter(event=>keyOf(event)===keyOf(row)).length, total=earlier.reduce((sum,event)=>sum+(Number(event.amount_usd_asof)||0),0);
-  const toSelf=earlier.filter(event=>keyOf(event)===own).length, distinct=new Set(earlier.map(keyOf)).size;
-  let summary=earlier.length?`Before this payment, the sender made ${plural(earlier.length,'payment')} to ${plural(distinct,'receiver')}, ${dollars(total)} in total. This payment goes to ${before?`a receiver it paid ${plural(before,'time')} before`:'a receiver it had not paid in the payments shown'}.`
-    :'No earlier outgoing payments from this sender are in the exported history.';
+  const toSelf=detectSelf?earlier.filter(event=>keyOf(event)===own).length:0, distinct=new Set(earlier.map(keyOf)).size;
+  let summary=earlier.length?`${lead} ${plural(earlier.length,'payment')} to ${plural(distinct,'receiver')}, ${dollars(total)} in total. This payment goes to ${before?`a receiver it paid ${plural(before,'time')} before`:'a receiver it had not paid in the payments shown'}.`
+    :none;
   if(toSelf) summary+=` ${toSelf===earlier.length?'All of them':`${integer(toSelf)} of them`} went back to the sender's own account.`;
   return {payments,receivers:[...receivers.values()],summary};
 }
@@ -1206,38 +1213,123 @@ function caseGraphHTML(trail,row,width,height) {
   return `<svg class="case-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeText(trail.summary)}"><g class="case-edges">${edges}</g>${loop}<g class="case-packets"></g>${receivers}${senderNode}</svg>`;
 }
 
-let caseRows=[], caseSelected=null, caseScene=null;
-function mountCaseExplorer() {
-  if(element('case-explorer') || typeof element('investigation-panel')?.insertAdjacentHTML!=='function') return;
-  element('investigation-panel').insertAdjacentHTML('beforebegin',`<article id="case-explorer" class="ring-explorer case-explorer" aria-labelledby="case-explorer-title"><div class="heading"><div><h3 id="case-explorer-title">Case explorer</h3><p id="case-list-note">Pick a queued payment to replay its sender's history.</p></div><div class="controls"><label class="ring-picker-label">Case<select id="case-picker"></select></label></div></div>
-<div class="ring-layout"><nav id="case-rail" class="ring-rail" aria-label="Ranked cases"></nav>
-<div class="ring-canvas"><div class="ring-toolbar"><div><h4 id="case-title"></h4><p id="case-summary"></p></div><div class="ring-actions"><button id="case-evidence" type="button">Open full evidence</button></div></div>
-<div class="ring-stage case-stage"><div id="case-graph" class="case-graph"></div><div id="case-tip" class="ring-tip" role="tooltip" hidden></div>
-<div class="case-timeline"><button type="button" id="case-play" class="sr-play" aria-label="Replay the sender's payments">▶</button><div class="case-clock" id="case-clock"></div><div class="case-track" id="case-track" role="slider" tabindex="0" aria-label="Replay time" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="case-ticks"></div><b id="case-head"></b></div></div>
-<div class="chart-legend ring-legend"><span><i class="case-key-sender"></i>Sender</span><span><i class="legend-receiver"></i>Receiver it paid</span><span><i class="legend-hub"></i>This payment's receiver</span><span><b class="legend-line legend-loop-line"></b>Pays itself</span><span><b class="legend-flow"></b>Payments moving</span></div></div>
-<p class="field-help">Bigger receivers took more money; thicker links carry more payments. Press play or drag the timeline to replay the sender's earlier payments in time order, then this one.</p></div>
-<aside id="case-readout" class="case-readout" aria-live="polite"></aside></div></article>`);
-  element('case-picker').onchange=()=>selectCase(Number(element('case-picker').value));
-  element('case-evidence').onclick=()=>{const row=caseRows.find(item=>item.rank===caseSelected);if(row) showDetail(row);};
-}
-// Rebuilds the rail for the current queue (scorer, period, population, capacity) and keeps the selected case if it is still listed.
-function renderCaseExplorer() {
-  const host=element('case-explorer');
-  if(!host || !snapshot?.exploration) return;
-  const population=selectedPopulation(), model=isModelQueue(), k=selectedCapacity(), data=population[model?'model':'rules'];
-  caseRows=data.queue.slice(0,Number(k)).map((id,index)=>({...projectionRecord(id),rank:index+1}));
-  const ring=row=>ringOf(row.from_bank,row.from_account)||ringOf(row.to_bank,row.to_account);
-  element('case-list-note').textContent=`The ${model?'frozen model':'rule baseline'}'s top ${integer(caseRows.length)}, in rank order. Pick one to replay its sender's history.`;
-  element('case-rail').innerHTML=`<ol>${caseRows.map(row=>{const tier=tierFor(row.rank), linked=ring(row);
-    return `<li><button type="button" data-rank="${row.rank}"><span class="rail-rank">#${row.rank}</span><span class="rail-main"><strong>${escapeText(dollars(row.amount_usd_asof))} · ${escapeText(row.payment_format)}</strong><span><b class="flag flag-${tier.id}">${escapeText(tier.label)}</b>${linked?`<b class="flag flag-loop">BQ2 ring #${integer(linked.rank)}</b>`:''}</span><small>${escapeText(model?`score ${Number(row.model_score).toFixed(4)}`:`rule score ${row.risk_score}`)} · ${escapeText(trailDay(instant(row.timestamp)))} ${escapeText(row.timestamp.slice(11,16))}</small></span></button></li>`;}).join('')}</ol>`;
-  element('case-rail').querySelectorAll?.('[data-rank]').forEach(button=>{button.onclick=()=>selectCase(Number(button.dataset.rank));});
-  if(caseRows.length>10) {
-    const rail=element('case-rail'), more=document.createElement('button');more.type='button';more.className='rail-more';
-    const label=()=>{more.textContent=rail.classList.contains('rail-open')?'Show top 10 only':`Show all ${caseRows.length} cases`;};
-    more.onclick=()=>{rail.classList.toggle('rail-open');label();};label();rail.appendChild(more);
-  }
-  element('case-picker').innerHTML=caseRows.map(row=>`<option value="${row.rank}">#${row.rank} · ${escapeText(dollars(row.amount_usd_asof))} · ${escapeText(row.payment_format)}</option>`).join('');
-  selectCase(caseRows.some(row=>row.rank===caseSelected)?caseSelected:caseRows[0]?.rank,{replay:false});
+// One case explorer component, used by the review queue and the incoming stream. `p` prefixes its element ids.
+// config: place(html) inserts the frame; note(rows); rail(row) → {flags, small}; trail(row) → {trail, summary};
+// readout(row, rows) → html; bind(row, readout) wires readout buttons; evidence(row); selected(row) runs after a selection.
+const CASE_REPLAY_MS=6500, CASE_FLIGHT_MS=900;
+function caseExplorer(p,config) {
+  const self={rows:[],selected:null,scene:null};
+  const el=name=>element(`${p}-${name}`);
+  self.mount=()=>{
+    if(el('explorer')) return true;
+    config.place(`<article id="${p}-explorer" class="ring-explorer case-explorer" aria-labelledby="${p}-explorer-title"><div class="heading"><div><h3 id="${p}-explorer-title">${escapeText(config.title)}</h3><p id="${p}-list-note"></p></div><div class="controls"><label class="ring-picker-label">Case<select id="${p}-picker"></select></label></div></div>
+<div class="ring-layout"><nav id="${p}-rail" class="ring-rail" aria-label="Ranked cases"></nav>
+<div class="ring-canvas"><div class="ring-toolbar"><div><h4 id="${p}-title"></h4><p id="${p}-summary"></p></div><div class="ring-actions"><button id="${p}-evidence" type="button">Open full evidence</button></div></div>
+<div class="ring-stage case-stage"><div id="${p}-graph" class="case-graph"></div><div id="${p}-tip" class="ring-tip" role="tooltip" hidden></div>
+<div class="case-timeline"><button type="button" id="${p}-play" class="sr-play" aria-label="Replay the sender's payments">▶</button><div class="case-clock" id="${p}-clock"></div><div class="case-track" id="${p}-track" role="slider" tabindex="0" aria-label="Replay time" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="${p}-ticks"></div><b id="${p}-head"></b></div></div>
+<div class="chart-legend ring-legend"><span><i class="case-key-sender"></i>Sender</span><span><i class="legend-receiver"></i>Receiver it paid</span><span><i class="legend-hub"></i>This payment's receiver</span>${config.selfLoop===false?'':'<span><b class="legend-line legend-loop-line"></b>Pays itself</span>'}<span><b class="legend-flow"></b>Payments moving</span></div></div>
+<p class="field-help">${escapeText(config.help)}</p></div>
+<aside id="${p}-readout" class="case-readout" aria-live="polite"></aside></div></article>`);
+    if(!el('explorer')) return false;
+    el('picker').onchange=()=>self.select(Number(el('picker').value));
+    el('evidence').onclick=()=>{const row=self.rows.find(item=>item.rank===self.selected);if(row) config.evidence(row);};
+    return true;
+  };
+  // Rebuilds the rail for these rows and keeps the selected case if it is still listed.
+  self.render=rows=>{
+    if(!self.mount()) return;
+    self.rows=rows;
+    el('list-note').textContent=config.note(rows);
+    el('rail').innerHTML=`<ol>${rows.map(row=>{const tier=tierFor(row.rank), meta=config.rail(row);
+      return `<li><button type="button" data-rank="${row.rank}"><span class="rail-rank">#${row.rank}</span><span class="rail-main"><strong>${escapeText(dollars(row.amount_usd_asof))} · ${escapeText(row.payment_format)}</strong><span><b class="flag flag-${tier.id}">${escapeText(tier.label)}</b>${meta.flags||''}</span><small>${escapeText(meta.small)}</small></span></button></li>`;}).join('')}</ol>`;
+    el('rail').querySelectorAll?.('[data-rank]').forEach(button=>{button.onclick=()=>self.select(Number(button.dataset.rank));});
+    if(rows.length>10) {
+      const rail=el('rail'), more=document.createElement('button');more.type='button';more.className='rail-more';
+      const label=()=>{more.textContent=rail.classList.contains('rail-open')?'Show top 10 only':`Show all ${rows.length} cases`;};
+      more.onclick=()=>{rail.classList.toggle('rail-open');label();};label();rail.appendChild(more);
+    }
+    el('picker').innerHTML=rows.map(row=>`<option value="${row.rank}">#${row.rank} · ${escapeText(dollars(row.amount_usd_asof))} · ${escapeText(row.payment_format)}</option>`).join('');
+    self.select(rows.some(row=>row.rank===self.selected)?self.selected:rows[0]?.rank,{replay:false});
+  };
+  self.select=(rank,{replay=true}={})=>{
+    const row=self.rows.find(item=>item.rank===rank);
+    if(!row) return;
+    self.selected=rank;el('picker').value=String(rank);
+    el('rail').querySelectorAll?.('[data-rank]').forEach(button=>button.setAttribute('aria-current',String(Number(button.dataset.rank)===rank)));
+    const {trail,summary}=config.trail(row);
+    el('title').textContent=`Case #${integer(rank)} · ${row.transaction_id}`;
+    el('summary').textContent=summary;
+    el('readout').innerHTML=config.readout(row,self.rows);
+    config.bind?.(row,el('readout'));
+    config.selected?.(row);
+    self.draw(row,trail,replay);
+  };
+  // The case graph and its replay. The replay clock runs 0 → 1 over CASE_REPLAY_MS; each payment flies along its link
+  // at its place in time, so bursts of same-minute payments leave together.
+  self.draw=(row,trail,replay)=>{
+    const host=el('graph');
+    if(!host) return;
+    chartCalls.set(`${p}-graph`,[(r,t)=>self.draw(r,t,false),[row,trail]]);
+    if(self.scene?.raf) cancelAnimationFrame(self.scene.raf);
+    const width=chartWidth(host), height=width<600?380:430;
+    host.innerHTML=caseGraphHTML(trail,row,width,height);
+    const svg=host.querySelector?.('svg');
+    if(!svg?.querySelector) return;
+    const {nodes}=caseLayout(trail.receivers,width,height), paths=new Map();
+    svg.querySelectorAll('.case-edge').forEach((path,i)=>paths.set([...nodes.keys()][i],path));
+    const times=trail.payments.map(payment=>instant(payment.timestamp)), start=Math.min(...times), end=Math.max(...times);
+    const at=trail.payments.map((payment,i)=>end>start?(times[i]-start)/(end-start):i/Math.max(1,trail.payments.length-1));
+    const layer=svg.querySelector('.case-packets'), packets=trail.payments.map(payment=>{
+      const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');dot.setAttribute('class',`case-packet${payment.current?' case-packet-current':''}`);
+      dot.setAttribute('r',payment.current?'6':'4.5');dot.setAttribute('opacity','0');layer.appendChild(dot);return dot;});
+    el('ticks').innerHTML=trail.payments.map((payment,i)=>`<i class="${payment.current?'now':''}" style="left:${(at[i]*100).toFixed(2)}%" title="${escapeText(payment.current?'This payment':'Earlier payment')} · ${escapeText(trailTime(times[i]))} · ${escapeText(dollars(payment.amount_usd_asof))}"></i>`).join('');
+    const scene={u:1,playing:false,raf:null};self.scene=scene;
+    const set=u=>{
+      scene.u=Math.max(0,Math.min(1,u));const now=scene.u*CASE_REPLAY_MS;
+      trail.payments.forEach((payment,i)=>{
+        const v=(now-at[i]*(CASE_REPLAY_MS-CASE_FLIGHT_MS))/CASE_FLIGHT_MS, dot=packets[i], path=paths.get(accountKey(payment.to_bank,payment.to_account));
+        if(!path||v<0||(v>1.25&&!payment.current)) {dot.setAttribute('opacity','0');return;}
+        const point=path.getPointAtLength(Math.min(1,v)*path.getTotalLength());
+        dot.setAttribute('cx',point.x.toFixed(1));dot.setAttribute('cy',point.y.toFixed(1));dot.setAttribute('opacity',v>1&&!payment.current?String(Math.max(0,1-(v-1)*4)):'1');
+      });
+      const clock=start+scene.u*(end-start);
+      el('clock').innerHTML=`${escapeText(trailDay(clock))} · ${escapeText(trailTime(clock).slice(11))}<small>dataset time</small>`;
+      el('head').style.left=`${(scene.u*100).toFixed(2)}%`;el('track').setAttribute('aria-valuenow',String(Math.round(scene.u*100)));
+    };
+    const pause=()=>{scene.playing=false;if(scene.raf) cancelAnimationFrame(scene.raf);scene.raf=null;el('play').textContent='▶';};
+    const play=()=>{
+      if(!animating()) {set(1);return;}
+      if(scene.u>=1) set(0);
+      scene.playing=true;el('play').textContent='❚❚';let last=performance.now();
+      const frame=now=>{try {
+        if(!scene.playing||self.scene!==scene) return;
+        set(scene.u+(now-last)/CASE_REPLAY_MS);last=now;
+        if(scene.u>=1) {pause();return;}
+        scene.raf=requestAnimationFrame(frame);
+      } catch {pause();}};
+      scene.raf=requestAnimationFrame(frame);
+    };
+    el('play').onclick=()=>scene.playing?pause():play();
+    const seek=event=>{const box=el('track').getBoundingClientRect();pause();set((event.clientX-box.left)/box.width);};
+    el('track').onpointerdown=event=>{seek(event);el('track').onpointermove=move=>{if(move.buttons) seek(move);};};
+    el('track').onkeydown=event=>{const step={ArrowLeft:-.05,ArrowRight:.05,Home:-1,End:1}[event.key];if(step!=null) {event.preventDefault();pause();set(scene.u+step);}};
+    // Hover any account for its numbers.
+    const tip=el('tip');
+    svg.addEventListener('pointerover',event=>{try {
+      const target=event.target.closest?.('[data-key]');if(!target) return;
+      const key=target.dataset.key, node=nodes.get(key);
+      tip.innerHTML=key==='sender'?`<span class="tip-role" style="--role:#4fa8ff">Sender</span><span class="tip-title">${escapeText(accountKey(row.from_bank,row.from_account))}</span><span class="tip-foot">${escapeText(plural(trail.payments.length-1,'earlier payment'))} shown, then this one</span>`
+        :`<span class="tip-role" style="--role:${node.current?'#ff6f5e':'#ffb648'}">${node.self?'Sender’s own account':node.current?'This payment’s receiver':'Receiver'}</span><span class="tip-title">${escapeText(key)}</span><span class="tip-grid"><span><small>Payments</small>${integer(node.count)}</span><span><small>USD</small>${escapeText(dollars(node.usd))}</span></span>`;
+      tip.hidden=false;
+      const box=target.getBoundingClientRect(), frame=host.getBoundingClientRect();
+      tip.style.left=`${Math.max(6,Math.min(frame.width-tip.offsetWidth-6,box.left-frame.left+box.width/2-tip.offsetWidth/2))}px`;
+      tip.style.top=`${Math.max(6,box.top-frame.top-tip.offsetHeight-10)}px`;
+    } catch {tip.hidden=true;}});
+    svg.addEventListener('pointerout',event=>{if(!event.relatedTarget?.closest?.('[data-key]')) tip.hidden=true;});
+    set(1);
+    if(replay&&animating()) {set(0);play();}
+  };
+  return self;
 }
 function evidenceParts(row) {
   return (row.model_evidence||'').split('; ').filter(Boolean).map(part=>{const colon=part.lastIndexOf(':');
@@ -1245,7 +1337,7 @@ function evidenceParts(row) {
 }
 // The case readout beside the graph, as in the presenter: chips, the payment's facts and why it ranked high.
 function caseReadoutHTML(row,rows,model,ring) {
-  const tier=tierFor(row.rank), largest=1+rows.filter(item=>item.amount_usd_asof>row.amount_usd_asof).length, parts=model?evidenceParts(row):[];
+  const largest=1+rows.filter(item=>item.amount_usd_asof>row.amount_usd_asof).length, parts=model?evidenceParts(row):[];
   const top=Math.max(.01,...parts.map(part=>Math.abs(part.value)));
   return `<div class="case-chips">${rankChip(row)}${largest<=Math.min(25,rows.length)?`<span class="flag flag-pay">#${integer(largest)} largest amount</span>`:''}${ring?`<button type="button" class="ring-link case-ring" data-ring="${escapeText(ring.ring_id)}">In BQ2 ring #${integer(ring.rank)} →</button>`:''}</div>
 <p class="account-id">${escapeText(row.transaction_id)}</p>
@@ -1253,86 +1345,80 @@ function caseReadoutHTML(row,rows,model,ring) {
 <h4>Why it ranked high</h4>${parts.length?`<div class="case-why">${parts.map(part=>`<div class="${part.value<0?'neg':''}"><span>${escapeText(part.label)}</span><b>${part.value>=0?'+':''}${part.value.toFixed(2)}</b><i style="--w:${(Math.abs(part.value)/top*100).toFixed(0)}%"></i></div>`).join('')}</div><p class="field-help">Signed model contributions to the ranking margin; not probabilities or proof.</p>`
     :`<p>${escapeText(model?'Model contributions are exported for the whole-period top 250 only.':row.risk_reasons||'No rule triggered')}</p>`}`;
 }
-function selectCase(rank,{replay=true}={}) {
-  const row=caseRows.find(item=>item.rank===rank);
-  if(!row) return;
-  caseSelected=rank;element('case-picker').value=String(rank);
-  element('case-rail').querySelectorAll?.('[data-rank]').forEach(button=>button.setAttribute('aria-current',String(Number(button.dataset.rank)===rank)));
-  element('queue')?.querySelectorAll?.('tbody tr')?.forEach(tr=>tr.classList?.toggle('row-selected',Number(tr.dataset?.rank)===rank));
-  const model=isModelQueue(), ring=ringOf(row.from_bank,row.from_account)||ringOf(row.to_bank,row.to_account);
-  const history=snapshot.exploration.aml.histories[row.transaction_id], trail=caseTrail(history?.events||[],row);
-  element('case-title').textContent=`Case #${integer(rank)} · ${row.transaction_id}`;
-  element('case-summary').textContent=history?`${trail.summary}${history.observed_prior_transactions>history.events.length?` Latest ${integer(history.events.length)} of ${integer(history.observed_prior_transactions)} earlier payments shown.`:''}`
-    :'The sender history is exported for the whole-period top 250 only, so this case shows the payment alone.';
-  element('case-readout').innerHTML=caseReadoutHTML(row,caseRows,model,ring);
-  element('case-readout').querySelector?.('.case-ring')?.addEventListener?.('click',()=>openRing(ring.ring_id,ringOf(row.from_bank,row.from_account)?accountKey(row.from_bank,row.from_account):accountKey(row.to_bank,row.to_account)));
-  drawCase(row,trail,replay);
+// The incoming readout: what the stream publishes for the payment, including the sender history the model saw.
+function incomingReadoutHTML(row,rows) {
+  const largest=1+rows.filter(item=>item.amount_usd_asof>row.amount_usd_asof).length;
+  const scored=row.scored_at?new Date(row.scored_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—';
+  return `<div class="case-chips">${rankChip(row)}${row.review_now===true?'<span class="flag flag-urgent">Review now · batch cut-off</span>':''}${largest<=Math.min(25,rows.length)?`<span class="flag flag-pay">#${integer(largest)} largest amount</span>`:''}</div>
+<p class="account-id">${escapeText(row.transaction_id)}</p>
+<div class="ring-facts"><span><small>Amount (prior-day USD)</small>${escapeText(dollars(row.amount_usd_asof))}</span><span><small>Ranking score</small>${Number(row.model_score).toFixed(4)}</span><span><small>Payment · currency</small>${escapeText(row.payment_format)} · ${escapeText(row.payment_currency)}</span><span><small>Event time</small>${escapeText(row.timestamp.replace('T',' ').slice(0,16))}</span><span><small>Scored at (this device)</small>${escapeText(scored)}</span><span><small>Counterparties, 24h / 7d</small>${integer(row.distinct_counterparties_24h)} / ${integer(row.distinct_counterparties_7d)}</span></div>
+<h4>What the model saw of the sender</h4><div class="case-history">${[['Past hour',row.txn_count_1h],['Past 24 hours',row.txn_count_24h],['Past 7 days',row.txn_count_7d]].map(([label,count])=>`<span><b>${integer(count)}</b><small>${label}</small></span>`).join('')}</div>
+<p class="field-help">Earlier payments the Lambda rebuilt from DynamoDB before scoring this one; the payment never counts itself.</p>`;
 }
-// Draws the case graph and its replay. The replay clock runs 0 → 1 over REPLAY_MS; each payment flies along its link
-// at its place in time, so bursts of same-minute payments leave together.
-const CASE_REPLAY_MS=6500, CASE_FLIGHT_MS=900;
-function drawCase(row,trail,replay) {
-  const host=element('case-graph');
+
+// The review queue's explorer: the batch queue for the selected scorer, period, population and capacity.
+const reviewRing=row=>ringOf(row.from_bank,row.from_account)||ringOf(row.to_bank,row.to_account);
+const reviewCases=caseExplorer('case',{
+  title:'Case explorer',
+  help:'Bigger receivers took more money; thicker links carry more payments. Press play or drag the timeline to replay the sender\'s earlier payments in time order, then this one.',
+  place:html=>element('investigation-panel')?.insertAdjacentHTML?.('beforebegin',html),
+  note:rows=>`The ${isModelQueue()?'frozen model':'rule baseline'}'s top ${integer(rows.length)}, in rank order. Pick one to replay its sender's history.`,
+  rail:row=>{const linked=reviewRing(row);return {flags:linked?`<b class="flag flag-loop">BQ2 ring #${integer(linked.rank)}</b>`:'',
+    small:`${isModelQueue()?`score ${Number(row.model_score).toFixed(4)}`:`rule score ${row.risk_score}`} · ${trailDay(instant(row.timestamp))} ${row.timestamp.slice(11,16)}`};},
+  trail:row=>{const history=snapshot.exploration.aml.histories[row.transaction_id], trail=caseTrail(history?.events||[],row);
+    return {trail,summary:history?`${trail.summary}${history.observed_prior_transactions>history.events.length?` Latest ${integer(history.events.length)} of ${integer(history.observed_prior_transactions)} earlier payments shown.`:''}`
+      :'The sender history is exported for the whole-period top 250 only, so this case shows the payment alone.'};},
+  readout:(row,rows)=>caseReadoutHTML(row,rows,isModelQueue(),reviewRing(row)),
+  bind:(row,readout)=>{const ring=reviewRing(row);readout.querySelector?.('.case-ring')?.addEventListener?.('click',()=>openRing(ring.ring_id,ringOf(row.from_bank,row.from_account)?accountKey(row.from_bank,row.from_account):accountKey(row.to_bank,row.to_account)));},
+  evidence:row=>showDetail(row),
+  selected:row=>element('queue')?.querySelectorAll?.('tbody tr')?.forEach(tr=>tr.classList?.toggle('row-selected',Number(tr.dataset?.rank)===row.rank))});
+function renderCaseExplorer() {
+  if(!snapshot?.exploration || !reviewCases.mount()) return;
+  element('case-explorer').hidden=amlMode!=='investigation';
+  const population=selectedPopulation(), data=population[isModelQueue()?'model':'rules'];
+  reviewCases.render(data.queue.slice(0,Number(selectedCapacity())).map((id,index)=>({...projectionRecord(id),rank:index+1})));
+}
+
+// The incoming stream's explorer. It only knows the payments the stream publishes (the ranked queue and the latest
+// arrivals), and account numbers are masked, so a sender's trail is drawn from those payments and has no "pays itself" loop.
+let incomingStream=null;
+function streamTrail(data,row) {
+  const sender=`${row.from_bank}|${row.from_account}`, seen=new Set([row.transaction_id]);
+  const earlier=[...data.queue,...data.latest].filter(item=>`${item.from_bank}|${item.from_account}`===sender && item.timestamp<row.timestamp && !seen.has(item.transaction_id) && seen.add(item.transaction_id));
+  return caseTrail(earlier,row,{lead:'Among the payments this stream publishes, the sender made',none:'None of this sender\'s earlier payments are among the ones this stream publishes (its ranked top 100 and latest arrivals).',self:false});
+}
+const incomingCases=caseExplorer('icase',{
+  title:'Case explorer',selfLoop:false,
+  help:'The same view as BQ1 · Review queue. Account numbers are masked in the stream, so receivers are told apart by bank and the last characters of the account.',
+  place:html=>(element('stream-replay')||element('incoming-progressbar'))?.insertAdjacentHTML?.('afterend',html),
+  note:rows=>`The stream's top ${integer(rows.length)} by ranking score. Pick one to replay what this stream published of its sender.`,
+  rail:row=>({flags:row.review_now===true?'<b class="flag flag-urgent">Review now</b>':'',small:`score ${Number(row.model_score).toFixed(4)} · ${trailDay(instant(row.timestamp))} ${row.timestamp.slice(11,16)}`}),
+  trail:row=>{const trail=streamTrail(incomingStream.data,row);return {trail,summary:trail.summary};},
+  readout:(row,rows)=>incomingReadoutHTML(row,rows),
+  evidence:row=>incomingStream.open(row)});
+
+// Incoming → the other tabs: how this stream relates to the review queue, mule networks and the batch pipeline.
+// Every number comes from the two snapshots; account numbers are masked in the stream, so nothing is matched by account.
+function streamLinksHTML(data,batch) {
+  const names={train:'Training reference',validation:'Validation',test:'Test',tail:'Later period'}, colors={train:'#5f7a8e',validation:'#4fa8ff',test:'#3fd0b8',tail:'#ffb648'};
+  const splits=batch?.splits, periods=splits?Object.keys(splits):[];
+  const counts=periods.map(name=>data.queue.filter(row=>row.timestamp.slice(0,10)>=splits[name][0]&&row.timestamp.slice(0,10)<splits[name][1]).length);
+  const queued=new Set(Object.values(batch?.exploration?.aml?.periods||{}).flatMap(period=>period.scopes.flatMap(scope=>[...scope.model.queue,...scope.rules.queue])));
+  const inBatch=data.queue.filter(row=>queued.has(row.transaction_id)).length;
+  const mix=splits?`<div class="period-bar" role="img" aria-label="${escapeText(periods.map((name,i)=>`${names[name]||name}: ${counts[i]}`).join(', '))}">${periods.map((name,i)=>counts[i]?`<i style="flex:${counts[i]};background:${colors[name]||'#a9bccb'}"></i>`:'').join('')}</div><p class="period-key">${periods.map((name,i)=>counts[i]?`<span><i style="background:${colors[name]||'#a9bccb'}"></i>${escapeText(names[name]||name)} · ${escapeText(windowText(splits[name]))} · <b>${integer(counts[i])}</b></span>`:'').join('')}</p>`:'';
+  return `<div class="link-card"><div class="link-head"><span class="tab-tag">BQ1</span><h4>Review queue</h4></div><p>Scored by the same frozen model and sender features as the batch review queue, one payment at a time. The stream's top ${integer(data.queue.length)} fall on these evaluation days:</p>${mix}<p>${splits?`${inBatch?`${integer(inBatch)} of them also appear`:'None of them appear'} in the batch queues exported for review, so the two queues rank different payments.`:'Load the batch release to compare dates with the review queue.'}</p><button type="button" data-view="aml">Open the review queue →</button></div>
+<div class="link-card"><div class="link-head"><span class="tab-tag">BQ2</span><h4>Mule networks</h4></div><p>Rings come from the verified batch run${batch?.full_rows?` over all ${integer(batch.full_rows)} payments`:''}. The stream masks account numbers, so its payments are not matched to rings here. The stream keeps each sender's own history; a ring needs who paid whom across all accounts.</p><button type="button" data-view="network">Open mule networks →</button></div>
+<div class="link-card"><div class="link-head"><span class="tab-tag">Pipeline</span><h4>Where the scores come from</h4></div><p>Not part of the batch pipeline on the Ingestion tab. Payments go into Amazon Kinesis, keyed by sender so each sender stays in order; a Lambda rebuilds the sender's recent history, scores with the frozen model and commits once to DynamoDB; a second Lambda publishes this page through CloudFront.</p><button type="button" data-view="ingestion">Open the batch pipeline →</button></div>`;
+}
+function streamLinks(data) {
+  if(!element('incoming-links')) {
+    if(typeof element('incoming-kpis')?.insertAdjacentHTML!=='function') return;
+    element('incoming-kpis').insertAdjacentHTML('afterend','<section id="incoming-links" class="link-strip" aria-label="How this stream connects to the other tabs"></section>');
+  }
+  const host=element('incoming-links');
   if(!host) return;
-  chartCalls.set('case-graph',[(r,t)=>drawCase(r,t,false),[row,trail]]);
-  if(caseScene?.raf) cancelAnimationFrame(caseScene.raf);
-  const width=chartWidth(host), height=width<600?380:430;
-  host.innerHTML=caseGraphHTML(trail,row,width,height);
-  const svg=host.querySelector?.('svg');
-  if(!svg?.querySelector) return;
-  const {nodes}=caseLayout(trail.receivers,width,height), paths=new Map();
-  svg.querySelectorAll('.case-edge').forEach((path,i)=>paths.set([...nodes.keys()][i],path));
-  const times=trail.payments.map(payment=>instant(payment.timestamp)), start=Math.min(...times), end=Math.max(...times);
-  const at=trail.payments.map((payment,i)=>end>start?(times[i]-start)/(end-start):i/Math.max(1,trail.payments.length-1));
-  const layer=svg.querySelector('.case-packets'), packets=trail.payments.map(payment=>{
-    const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');dot.setAttribute('class',`case-packet${payment.current?' case-packet-current':''}`);
-    dot.setAttribute('r',payment.current?'6':'4.5');dot.setAttribute('opacity','0');layer.appendChild(dot);return dot;});
-  element('case-ticks').innerHTML=trail.payments.map((payment,i)=>`<i class="${payment.current?'now':''}" style="left:${(at[i]*100).toFixed(2)}%" title="${escapeText(payment.current?'This payment':'Earlier payment')} · ${escapeText(trailTime(times[i]))} · ${escapeText(dollars(payment.amount_usd_asof))}"></i>`).join('');
-  const scene={u:1,playing:false,raf:null};caseScene=scene;
-  const set=u=>{
-    scene.u=Math.max(0,Math.min(1,u));const now=scene.u*CASE_REPLAY_MS;
-    trail.payments.forEach((payment,i)=>{
-      const v=(now-at[i]*(CASE_REPLAY_MS-CASE_FLIGHT_MS))/CASE_FLIGHT_MS, dot=packets[i], path=paths.get(accountKey(payment.to_bank,payment.to_account));
-      if(!path||v<0||(v>1.25&&!payment.current)) {dot.setAttribute('opacity','0');return;}
-      const point=path.getPointAtLength(Math.min(1,v)*path.getTotalLength());
-      dot.setAttribute('cx',point.x.toFixed(1));dot.setAttribute('cy',point.y.toFixed(1));dot.setAttribute('opacity',v>1&&!payment.current?String(Math.max(0,1-(v-1)*4)):'1');
-    });
-    const clock=start+scene.u*(end-start);
-    element('case-clock').innerHTML=`${escapeText(trailDay(clock))} · ${escapeText(trailTime(clock).slice(11))}<small>dataset time</small>`;
-    element('case-head').style.left=`${(scene.u*100).toFixed(2)}%`;element('case-track').setAttribute('aria-valuenow',String(Math.round(scene.u*100)));
-  };
-  const pause=()=>{scene.playing=false;if(scene.raf) cancelAnimationFrame(scene.raf);scene.raf=null;element('case-play').textContent='▶';};
-  const play=()=>{
-    if(!animating()) {set(1);return;}
-    if(scene.u>=1) set(0);
-    scene.playing=true;element('case-play').textContent='❚❚';let last=performance.now();
-    const frame=now=>{try {
-      if(!scene.playing||caseScene!==scene) return;
-      set(scene.u+(now-last)/CASE_REPLAY_MS);last=now;
-      if(scene.u>=1) {pause();return;}
-      scene.raf=requestAnimationFrame(frame);
-    } catch {pause();}};
-    scene.raf=requestAnimationFrame(frame);
-  };
-  element('case-play').onclick=()=>scene.playing?pause():play();
-  const seek=event=>{const box=element('case-track').getBoundingClientRect();pause();set((event.clientX-box.left)/box.width);};
-  element('case-track').onpointerdown=event=>{seek(event);element('case-track').onpointermove=move=>{if(move.buttons) seek(move);};};
-  element('case-track').onkeydown=event=>{const step={ArrowLeft:-.05,ArrowRight:.05,Home:-1,End:1}[event.key];if(step!=null) {event.preventDefault();pause();set(scene.u+step);}};
-  // Hover any account for its numbers.
-  const tip=element('case-tip');
-  svg.addEventListener('pointerover',event=>{try {
-    const target=event.target.closest?.('[data-key]');if(!target) return;
-    const key=target.dataset.key, node=nodes.get(key);
-    tip.innerHTML=key==='sender'?`<span class="tip-role" style="--role:#dff4ff">Sender</span><span class="tip-title">${escapeText(accountKey(row.from_bank,row.from_account))}</span><span class="tip-foot">${escapeText(plural(trail.payments.length-1,'earlier payment'))} shown, then this one</span>`
-      :`<span class="tip-role" style="--role:${node.current?'#ff6f5e':'#ffb648'}">${node.self?'Sender’s own account':node.current?'This payment’s receiver':'Receiver'}</span><span class="tip-title">${escapeText(key)}</span><span class="tip-grid"><span><small>Payments</small>${integer(node.count)}</span><span><small>USD</small>${escapeText(dollars(node.usd))}</span></span>`;
-    tip.hidden=false;
-    const box=target.getBoundingClientRect(), frame=element('case-graph').getBoundingClientRect();
-    tip.style.left=`${Math.max(6,Math.min(frame.width-tip.offsetWidth-6,box.left-frame.left+box.width/2-tip.offsetWidth/2))}px`;
-    tip.style.top=`${Math.max(6,box.top-frame.top-tip.offsetHeight-10)}px`;
-  } catch {tip.hidden=true;}});
-  svg.addEventListener('pointerout',event=>{if(!event.relatedTarget?.closest?.('[data-key]')) tip.hidden=true;});
-  set(1);
-  if(replay&&animating()) {set(0);play();}
+  host.innerHTML=streamLinksHTML(data,snapshot);
+  host.querySelectorAll?.('[data-view]').forEach(button=>{button.onclick=()=>{selectDashboardView(button.dataset.view);scrollTo?.({top:0,behavior:'smooth'});};});
 }
 
 // ---- BQ1 incoming: replay the stream and watch the final ranked queue fill in as each payment is scored ----
@@ -1357,6 +1443,8 @@ function streamReplay(data,open) {
   const anchor=element('incoming-progressbar');
   if(!element('stream-replay')) {
     if(typeof anchor?.insertAdjacentHTML!=='function') return;
+    document.querySelector?.('#incoming > .heading')?.insertAdjacentHTML?.('beforeend','<button id="incoming-play" class="present-button present-cta section-cta" type="button">▶ Replay the stream</button>');
+    if(element('incoming-play')) element('incoming-play').onclick=()=>{element('stream-replay')?.scrollIntoView?.({behavior:'smooth',block:'start'});streamView?.replay?.();};
     anchor.insertAdjacentHTML('afterend',`<article id="stream-replay" class="queue-explorer" aria-labelledby="sr-title"><div class="heading"><div><h3 id="sr-title">Stream replay</h3><p class="qx-note">Press play to replay the stream: each square is a payment in the ranked queue, at its final rank, and it lights up when its score was committed. Hover for details; click to open its evidence.</p></div></div><div class="ring-stage qx-stage-frame"><div class="sr-controls"><button type="button" id="sr-play" class="sr-play" aria-label="Play the stream replay">▶</button><input id="sr-scrub" type="range" min="0" max="1000" value="1000" aria-label="Stream time"><span id="sr-clock" class="sr-clock"></span></div><div class="sr-body"><div class="sr-side"><small>Scored so far</small><strong id="sr-count">0</strong><small id="sr-of"></small><small class="sr-placed-label">Ranked queue placed</small><strong id="sr-placed" class="sr-placed">0</strong><svg id="sr-spark" class="sr-spark" viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"></svg></div><div id="sr-stage" class="qx-stage sr-stage"></div></div></div></article>`);
   }
   const host=element('sr-stage');
@@ -1399,6 +1487,7 @@ function streamReplay(data,open) {
     state.raf=requestAnimationFrame(frame);
   };
   element('sr-play').onclick=()=>state.playing?pause():play();
+  state.replay=()=>{pause();set(start);play();};
   element('sr-scrub').oninput=event=>{pause();set(start+Number(event.target.value)/1000*(end-start));};
   // Hover, keyboard and click, as in the review-queue explorer.
   let current=-1;
@@ -2432,11 +2521,11 @@ function qpStoryHTML(step=QP.step,data=QP.data,k=QP.k,row=QP.row) {
 
 // ---- mounting: the glowing button in the AML heading, and the overlay on first open ----
 function bq1PresenterRefresh() {
-  element('network-present')?.classList?.add('present-cta');
+  element('network-present')?.classList?.add('present-cta','section-cta');
   let button=element('aml-present');
   if(!button) {
     const host=document.querySelector?.('#aml .heading .controls');if(!host?.insertAdjacentHTML) return;
-    host.insertAdjacentHTML('afterbegin','<button id="aml-present" class="present-button present-cta" type="button" hidden>▶ Present the queue</button>');
+    host.insertAdjacentHTML('afterbegin','<button id="aml-present" class="present-button present-cta section-cta" type="button" hidden>▶ Present the queue</button>');
     button=element('aml-present');if(!button) return;
     button.onclick=openBq1Presenter;
   }
