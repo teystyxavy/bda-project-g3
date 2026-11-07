@@ -329,6 +329,41 @@ function paintPipelineFlow(states) {
   svg.querySelector('.map-links').after(layer);
 }
 
+// ---- Pipeline map: each AWS service gets a colour (after AWS's service families) and a plain glyph ----
+const SERVICES={
+  lambda:{name:'AWS Lambda',color:'#ed7100',glyph:'<text x="10" y="15.5" text-anchor="middle" font-size="16" font-weight="700" fill="white">λ</text>'},
+  glue:{name:'AWS Glue',color:'#8c4fff',glyph:'<circle cx="10" cy="10" r="3.2"/><path d="M10 3v2.4M10 14.6V17M3 10h2.4M14.6 10H17M5.1 5.1l1.7 1.7M13.2 13.2l1.7 1.7M14.9 5.1l-1.7 1.7M6.8 13.2l-1.7 1.7"/>'},
+  s3:{name:'Amazon S3',color:'#7aa116',glyph:'<ellipse cx="10" cy="6.5" rx="6" ry="2"/><path d="M4 6.5l1.6 9.2a1.5 1.5 0 0 0 1.5 1.3h5.8a1.5 1.5 0 0 0 1.5-1.3L16 6.5"/>'},
+  cloudfront:{name:'Amazon CloudFront',color:'#3b8eea',glyph:'<circle cx="10" cy="10" r="6.5"/><ellipse cx="10" cy="10" rx="2.8" ry="6.5"/><path d="M3.5 10h13"/>'},
+  sagemaker:{name:'Amazon SageMaker',color:'#01a88d',glyph:'<path d="M5 6.5L15 6.5L10 15Z"/><circle cx="5" cy="6.5" r="2" fill="white"/><circle cx="15" cy="6.5" r="2" fill="white"/><circle cx="10" cy="15" r="2" fill="white"/>'},
+  stepfunctions:{name:'AWS Step Functions',color:'#e7157b',glyph:'<rect x="7" y="2.5" width="6" height="4" rx="1"/><rect x="2.5" y="13.5" width="6" height="4" rx="1"/><rect x="11.5" y="13.5" width="6" height="4" rx="1"/><path d="M10 6.5v3.5M5.5 10h9M5.5 10v3.5M14.5 10v3.5"/>'},
+  source:{name:'Kaggle + historical FX',color:'#20beff',glyph:'<ellipse cx="10" cy="5" rx="6" ry="2.2"/><path d="M4 5v10c0 1.2 2.7 2.2 6 2.2s6-1 6-2.2V5M4 10c0 1.2 2.7 2.2 6 2.2s6-1 6-2.2"/>'}};
+// Which services each map stage runs on (the publish box stacks Lambda, S3 and CloudFront).
+const STAGE_SERVICES={acquire:['lambda'],curate:['glue'],score:['glue'],network:['glue'],baseline:['glue'],train:['sagemaker'],export:['glue'],publish:['lambda','s3','cloudfront']};
+const serviceTile=(id,size=28)=>{const service=SERVICES[id];
+  return `<g class="svc-tile" data-service="${id}"><rect width="${size}" height="${size}" rx="${size/4}" style="fill:${service.color};stroke:none;animation:none;filter:drop-shadow(0 2px 6px rgba(0,0,0,.45))"/><g transform="translate(${(size-20*size/28)/2} ${(size-20*size/28)/2}) scale(${size/28})" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${service.glyph}</g></g>`;};
+const serviceChip=id=>`<span class="svc-chip" style="--svc:${SERVICES[id].color}"><svg viewBox="0 0 28 28" aria-hidden="true">${serviceTile(id)}</svg>${escapeText(SERVICES[id].name)}</span>`;
+function decoratePipelineMap() {
+  const svg=element('ingestion-flow');
+  if(typeof svg?.querySelector!=='function' || svg.querySelector('.svc-tile')) return;
+  svg.querySelectorAll('[data-stage]').forEach(node=>{
+    const services=STAGE_SERVICES[node.dataset.stage]||[], box=node.querySelector('rect'), width=Number(box?.getAttribute('width'))||190, height=Number(box?.getAttribute('height'))||100;
+    const lines=[...node.querySelectorAll('.map-service')];
+    node.insertAdjacentHTML('afterbegin',`<rect class="svc-accent" x="0" y="10" width="4" height="${height-20}" rx="2" style="fill:${SERVICES[services[0]]?.color||'#2a4459'};stroke:none;animation:none;filter:none"/>`);
+    services.forEach((id,i)=>{const line=lines[i];
+      // Beside the service name; a smaller tile in the corner when the name would run under it. The map can be hidden
+      // while this runs, so the name's width is estimated from its length (15px semibold) rather than measured.
+      const crowded=(line?.textContent.length||0)*8.4+14>width-44, y=line?Number(line.getAttribute('y'))-19:10;
+      node.insertAdjacentHTML('beforeend',crowded?`<g transform="translate(${width-26} 7)">${serviceTile(id,20)}</g>`:`<g transform="translate(${width-38} ${y})">${serviceTile(id)}</g>`);});
+  });
+  const source=svg.querySelector('.map-source');
+  if(source) source.insertAdjacentHTML('beforebegin',`<g transform="translate(${Number(source.getAttribute('x'))-100} ${Number(source.getAttribute('y'))-18})">${serviceTile('source',24)}</g>`);
+  const orchestrator=document.querySelector('.map-orchestrator strong');
+  orchestrator?.insertAdjacentHTML('beforebegin',`<svg class="svc-inline" viewBox="0 0 28 28" aria-hidden="true">${serviceTile('stepfunctions')}</svg>`);
+  document.querySelector('.map-legend')?.insertAdjacentHTML('afterend',`<div class="svc-legend" aria-label="AWS services in the diagram">${['source','stepfunctions','lambda','glue','s3','sagemaker','cloudfront'].map(serviceChip).join('')}</div>`);
+}
+decoratePipelineMap();
+
 // ---- Pipeline map: a packet of data travels the whole journey, Kaggle to CloudFront, on a loop ----
 // Fractions of one cycle: each link carries the packet in its window (same order as PIPELINE_LINKS), and each stage
 // lights up as the packet reaches it. Box colours keep showing the selected run; the packets show how data moves.
@@ -519,6 +554,9 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
         ['stage-label',stage.label],['stage-state',stageLabels[stage.status]||stage.status]]) {
         const span=document.createElement('span');span.className=className;span.textContent=text;li.appendChild(span);
       }
+      // The AWS service behind the step, in the map's colours.
+      const services=STAGE_SERVICES[pipelineStage(stage.id)];
+      if(services) li.querySelector?.('.stage-state')?.insertAdjacentHTML?.('beforebegin',`<span class="stage-svcs">${services.map(serviceChip).join('')}</span>`);
       list.appendChild(li);
     }
     element('ingestion-updated').textContent=`Last checked ${date(run.checked_at)} · updates every 10 seconds`;
