@@ -71,8 +71,10 @@ to make it pass.
    the allowlist only guards against unreviewed/destructive changes, it
    doesn't confirm the arguments are right. Specifically check the `network`
    Glue job's `script_location` points at `network_mules.py` and its
-   `non_overridable_arguments` are `{}` (it reads `--OUTPUT`/`--RUN_ID` etc.
-   from the Step Functions call, not baked-in stage args).
+   `non_overridable_arguments` contain only the 3 common arguments (job
+   bookmarks disabled, the log group, and the `_SUCCESS` marker). There must
+   be no `--STAGE` or `--extra-py-files`; it reads `--OUTPUT`/`--RUN_ID` etc.
+   from the Step Functions call, not baked-in stage args.
 6. If the dry run is clean, re-run with `-Execute` to push the image (if
    changed) and apply:
    ```powershell
@@ -122,6 +124,8 @@ that first run.
   Terraform state (`%LOCALAPPDATA%\IS459-G3\terraform-ingestion`) for
   recovery; don't re-run blindly — inspect `terraform state list` /
   `terraform plan` again first.
-- If a test run's `export` fails with the old Athena-shaped error, the Lambda
-  deployment didn't actually pick up PR #6 — redeploy `control.zip` (step 3-6
-  again) rather than patching it in place.
+- If a test run's `export` fails with the old Athena-shaped error, the Glue
+  export job is loading a stale `bda_pipeline.zip` that did not pick up PR #6.
+  Rebuild and redeploy `bda_pipeline.zip` (steps 3-6 again), and confirm the
+  export job points at that artifact. The fix is not in the Lambda's
+  `control.zip`.
