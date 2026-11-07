@@ -1,0 +1,15 @@
+{
+  "bq1_end_date": "2022-09-28",
+  "bq1_rows": 4959272,
+  "bq1_start_date": "2022-09-15",
+  "bq2_rows": 31898238,
+  "main_pointer_unchanged": true,
+  "model": "hist-depth5-delta1",
+  "model_sha256": "0170bef63f4cd257cbcda8c4748cea0dcf90f202134105fb8226d6dde6a0646f",
+  "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/medium-delta1-20261107-183216/index.html",
+  "run_id": "medium-delta1-20261107-183216",
+  "status": "published-isolated-release",
+  "training_requested": false,
+  "recovery": "Publication recovered locally after Glue SDK parameter validation failure; original Glue run remains FAILED.",
+  "cloudfront_hashes_verified": true
+}

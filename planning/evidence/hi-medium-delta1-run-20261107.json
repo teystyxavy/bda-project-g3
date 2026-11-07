@@ -1,0 +1,37 @@
+{
+  "bq1_end_date": "2022-09-28",
+  "bq1_rows": 4959272,
+  "bq1_start_date": "2022-09-15",
+  "bq2_rows": 31898238,
+  "config_key": "pipeline/runs/medium-delta1-20261107-183216/evidence/evaluation-config.json",
+  "job_name": "is459-g3-medium-delta1-20261107-183216",
+  "model": "hist-depth5-delta1",
+  "model_sha256": "0170bef63f4cd257cbcda8c4748cea0dcf90f202134105fb8226d6dde6a0646f",
+  "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/medium-delta1-20261107-183216/index.html",
+  "role_arn": "arn:aws:iam::588738581042:role/is459-g3-medium-delta1-20261107-183216",
+  "run_id": "medium-delta1-20261107-183216",
+  "source_run_id": "20261107-072313-79997f49",
+  "status": "RUNNING",
+  "timeout_minutes": 90,
+  "training_requested": false,
+  "worker_type": "G.2X",
+  "workers": 2,
+  "job_run_id": "jr_f399055ae387747543661cdd12d532822849d27bfe16916cdefef0235a0bfd27",
+  "started_at": "2026-11-07T18:33:39.845000+08:00",
+  "bq2_start_date": "2022-09-01",
+  "bq2_end_date": "2022-09-28",
+  "original_test_dates": [
+    "2022-09-15",
+    "2022-09-16"
+  ],
+  "unseen_dates_start": "2022-09-17",
+  "unseen_dates_end": "2022-09-28",
+  "unseen_date_rows": 6987,
+  "main_pointer_unchanged": true,
+  "automatic_publication": "isolated immutable release, only after all checks pass",
+  "validation": {
+    "selected_release_medium_batch_tests": "33 passed",
+    "score_inference_glue_tests": "38 passed",
+    "dashboard_controls": "29 passed"
+  }
+}

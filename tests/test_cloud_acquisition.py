@@ -30,18 +30,18 @@ class S3:
     def download_file(self, Bucket, Key, Filename, **kwargs): Path(Filename).write_bytes(self.data[Key])
 
 
-def fixture(tmp_path):
-    directory = tmp_path / 'cache/versions/7'
+def fixture(tmp_path, subset='HI-Small'):
+    directory = tmp_path / subset / 'cache/versions/7'
     directory.mkdir(parents=True)
-    with (directory / 'HI-Small_Trans.csv').open('w', newline='') as stream:
+    with (directory / f'{subset}_Trans.csv').open('w', newline='') as stream:
         writer = csv.writer(stream)
         writer.writerow(HEADER)
         for i in range(20):
             writer.writerow(['2022/09/01 12:00', '001', '000A', '002', '000B', i+1,
                 'US Dollar', i+1, 'US Dollar', 'Wire', 0])
-    (directory / 'HI-Small_accounts.csv').write_text('Bank Name,Bank ID,Account Number,Entity ID,Entity Name\nBank,001,000A,E1,Fixture\n')
+    (directory / f'{subset}_accounts.csv').write_text('Bank Name,Bank ID,Account Number,Entity ID,Entity Name\nBank,001,000A,E1,Fixture\n')
     def downloader(handle, path, force_download):
-        assert handle.endswith('/versions/7') or path == 'HI-Small_Trans.csv'
+        assert handle.endswith('/versions/7') or path == f'{subset}_Trans.csv'
         return directory / path
     return downloader
 
@@ -102,7 +102,7 @@ def test_launcher_starts_cloud_workflow_without_accessing_local_data():
             assert kwargs['stateMachineArn'].endswith(':stateMachine:is459-g3-cloud-ingest')
             event = json.loads(kwargs['input'])
             assert event['rows'] == 1000 and event['train'] is False
-            assert set(event) == {'run_id', 'rows', 'dataset_version', 'train', 'refresh', 'rerun'}
+            assert set(event) == {'run_id', 'rows', 'dataset_version', 'train', 'refresh', 'rerun', 'subset'}
             return {'executionArn': 'cloud-execution'}
     args = SimpleNamespace(fx_file=None, deployment=None, rows=1000, train=False,
         dataset_version=None, run_id='cloud-launch', refresh=False, rerun=False)
@@ -110,3 +110,48 @@ def test_launcher_starts_cloud_workflow_without_accessing_local_data():
     workflow = json.loads((root / 'infra/cloud-ingestion/workflow.asl.json').read_text())
     assert workflow['States']['Batch']['Resource'].endswith('startExecution.sync:2')
     assert 'Retry' not in workflow['States']['Acquire'] and 'Retry' not in workflow['States']['Batch']
+
+
+def test_medium_cache_is_isolated_and_reused(tmp_path):
+    s3 = S3()
+    for subset in ['HI-Small', 'HI-Medium']:
+        root = tmp_path / subset; root.mkdir()
+        acquire({'run_id': subset.lower() + '-cloud', 'subset': subset, 'rows': 10,
+                 'dataset_version': 7}, {'s3': s3}, root, downloader=fixture(tmp_path / 'fixtures', subset))
+    small = json.loads(s3.data['pipeline/acquisition/latest.json'])
+    medium = json.loads(s3.data['pipeline/acquisition/HI-Medium/latest.json'])
+    assert small['subset'] == 'HI-Small' and medium['subset'] == 'HI-Medium'
+    manifest = json.loads(s3.data['pipeline/runs/hi-medium-cloud/raw/manifest.json'])
+    assert manifest['subset'] == 'HI-Medium'
+    validate_manifest(manifest, sha(json.loads(s3.data[CONFIG_KEY])))
+    root = tmp_path / 'reuse'; root.mkdir()
+    def no_download(*args, **kwargs): raise AssertionError('Kaggle download attempted')
+    result = acquire({'run_id': 'medium-reuse', 'subset': 'HI-Medium', 'rows': 10,
+                      'dataset_version': 7}, {'s3': s3}, root, downloader=no_download)
+    assert result['rows'] == 10
+    reused = json.loads(s3.data['pipeline/runs/medium-reuse/raw/manifest.json'])
+    assert reused['processing_sha256'] == manifest['processing_sha256']
+    assert reused['dataset_origin'] == 'verified-s3-kaggle-reuse'
+
+
+@pytest.mark.parametrize('options', [
+    {'subset': 'HI-Medium'}, {'subset': 'HI-Medium', 'rows': 1001},
+    {'subset': 'HI-Medium', 'rows': 10, 'train': True},
+    {'subset': 'LI-Medium', 'rows': 10}, {'subset': 'HI-Large', 'rows': 10},
+])
+def test_medium_bounds(options):
+    with pytest.raises(ValueError): request({'run_id': 'medium-bounds', **options})
+
+
+def test_medium_launcher_passes_subset_without_local_data():
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location('medium_cli', root / 'scripts/ingestion/ingest.py')
+    cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+    class States:
+        def start_execution(self, **kwargs):
+            event = json.loads(kwargs['input'])
+            assert event['subset'] == 'HI-Medium' and event['rows'] == 1000
+            return {'executionArn': 'medium-execution'}
+    args = SimpleNamespace(fx_file=None, deployment=None, subset='HI-Medium', rows=1000,
+        train=False, dataset_version=8, run_id='medium-launch', refresh=False, rerun=False)
+    assert cli.cloud_start(args, States())['execution_arn'] == 'medium-execution'

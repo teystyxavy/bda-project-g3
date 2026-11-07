@@ -1,0 +1,210 @@
+{
+  "date": "2026-11-07",
+  "status": "promoted-and-live-configuration-verified",
+  "model": "hist-depth5-delta1",
+  "model_sha256": "0170bef63f4cd257cbcda8c4748cea0dcf90f202134105fb8226d6dde6a0646f",
+  "model_promoted": true,
+  "user_authorized": true,
+  "blocking_run": null,
+  "prepared_directory": "output/delta1-shared-promotion-20261107",
+  "previous_deployment": {
+    "artifact_prefix": "pipeline/deployments/e96360d3eb3fe1384f6c4037d12dad438a3e5c5dcf113d7ed73ea2844735b9a1",
+    "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+    "distribution_id": "EU1WB6XM4GKHQ",
+    "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:653951a13249c020d22e1d67ede14dd1f8aef8ea781848facdd3daf639688f3a",
+    "model_manifest_sha256": "fbf014c5f5f0c69c6a72c046a2416e550d6b26bd50531c669961c26455da9469",
+    "model_prefix": "pipeline/deployments/e96360d3eb3fe1384f6c4037d12dad438a3e5c5dcf113d7ed73ea2844735b9a1/model",
+    "schema_version": 1,
+    "stage_versions": {
+      "curated": "e7f409fd65130ceefa4006506a9323a204ed56c15fd12aaa65dd9285ccb6a80c",
+      "network": "d22132f3e3c49f1cb9ec708f426733fad789f87474a2ca02f14f283f067486d9",
+      "scored": "0a4610e38ef956e33a15c797068addbd4fad5ed3a56b93e4400882dd36afb8ae"
+    }
+  },
+  "proposed_deployment": {
+    "artifact_prefix": "pipeline/deployments/0a94e3a10be2c1083e4d7a3a3e30c39157923e55e30b6961cc3bacf42bd1fac2",
+    "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+    "distribution_id": "EU1WB6XM4GKHQ",
+    "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:653951a13249c020d22e1d67ede14dd1f8aef8ea781848facdd3daf639688f3a",
+    "model_manifest_sha256": "0b9ba30d77237c9f71a1799235316d9f6dfba042dc70c1c31546513da0ea4b6a",
+    "model_prefix": "pipeline/deployments/0a94e3a10be2c1083e4d7a3a3e30c39157923e55e30b6961cc3bacf42bd1fac2/model",
+    "schema_version": 1,
+    "stage_versions": {
+      "curated": "e7f409fd65130ceefa4006506a9323a204ed56c15fd12aaa65dd9285ccb6a80c",
+      "network": "d22132f3e3c49f1cb9ec708f426733fad789f87474a2ca02f14f283f067486d9",
+      "scored": "0a4610e38ef956e33a15c797068addbd4fad5ed3a56b93e4400882dd36afb8ae"
+    }
+  },
+  "validation": [
+    "model manifest and all model artifact hashes passed",
+    "predecessor deployment artifact hashes passed",
+    "existing deployed code, runtime wheels and training image retained",
+    "runtime compatibility: 256-row native-worker score parity passed"
+  ],
+  "streaming_status": "unchanged; requires separate consumer image build and parity validation",
+  "next_step": "Future shared batch runs use Delta1. Streaming consumer remains unchanged.",
+  "promoted_at": "2026-11-07T19:00:26.443060+08:00",
+  "active_deployment": {
+    "artifact_prefix": "pipeline/deployments/0a94e3a10be2c1083e4d7a3a3e30c39157923e55e30b6961cc3bacf42bd1fac2",
+    "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+    "distribution_id": "EU1WB6XM4GKHQ",
+    "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-training@sha256:653951a13249c020d22e1d67ede14dd1f8aef8ea781848facdd3daf639688f3a",
+    "model_manifest_sha256": "0b9ba30d77237c9f71a1799235316d9f6dfba042dc70c1c31546513da0ea4b6a",
+    "model_prefix": "pipeline/deployments/0a94e3a10be2c1083e4d7a3a3e30c39157923e55e30b6961cc3bacf42bd1fac2/model",
+    "schema_version": 1,
+    "stage_versions": {
+      "curated": "e7f409fd65130ceefa4006506a9323a204ed56c15fd12aaa65dd9285ccb6a80c",
+      "network": "d22132f3e3c49f1cb9ec708f426733fad789f87474a2ca02f14f283f067486d9",
+      "scored": "0a4610e38ef956e33a15c797068addbd4fad5ed3a56b93e4400882dd36afb8ae"
+    }
+  },
+  "terraform_changes": [
+    {
+      "address": "aws_glue_job.job[\"baseline\"]",
+      "actions": [
+        "update"
+      ]
+    },
+    {
+      "address": "aws_glue_job.job[\"curate\"]",
+      "actions": [
+        "update"
+      ]
+    },
+    {
+      "address": "aws_glue_job.job[\"export\"]",
+      "actions": [
+        "update"
+      ]
+    },
+    {
+      "address": "aws_glue_job.job[\"network\"]",
+      "actions": [
+        "update"
+      ]
+    },
+    {
+      "address": "aws_glue_job.job[\"score\"]",
+      "actions": [
+        "update"
+      ]
+    },
+    {
+      "address": "aws_lambda_function.control",
+      "actions": [
+        "update"
+      ]
+    },
+    {
+      "address": "aws_s3_object.configuration",
+      "actions": [
+        "update"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"bda_pipeline.zip\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"control.zip\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"curate_transactions.py\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"dashboard/dashboard.css\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"dashboard/dashboard.js\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"dashboard/index.html\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"model/comparison.json\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"model/deployment.json\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"model/features.json\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"model/hist-depth5-delta1.ubj\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"model/model-manifest.json\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"model/selection.json\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"network_mules.py\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"pipeline_stage.py\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"runtime.gluewheels.zip\"]",
+      "actions": [
+        "create"
+      ]
+    },
+    {
+      "address": "aws_s3_object.deployment_artifact[\"score_transactions.py\"]",
+      "actions": [
+        "create"
+      ]
+    }
+  ],
+  "verification": {
+    "live_deployment_config": "passed",
+    "control_lambda_config": "passed",
+    "glue_score_model_manifest": "passed",
+    "uploaded_artifact_hashes": "passed",
+    "new_batch_run_started": false,
+    "terraform_post_apply": "no changes; exit code 0",
+    "deployment_lock_released": true
+  }
+}

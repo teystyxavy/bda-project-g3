@@ -1,0 +1,47 @@
+{
+  "run_id": "hi-large-delta1-20261107-batch",
+  "execution_arn": "arn:aws:states:ap-southeast-1:588738581042:execution:is459-g3-ingest:hi-large-delta1-20261107-batch",
+  "state_machine_arn": "arn:aws:states:ap-southeast-1:588738581042:stateMachine:is459-g3-ingest",
+  "status": "RUNNING",
+  "subset": "HI-Large",
+  "rows": 179702229,
+  "model": "hist-depth5-delta1",
+  "model_sha256": "0170bef63f4cd257cbcda8c4748cea0dcf90f202134105fb8226d6dde6a0646f",
+  "deployment_sha256": "47ce337e104c704632c571c28fca2c5d47a8afe9457792f7897239f004889a2d",
+  "training_requested": false,
+  "source_run_id": "20261105-084819-4f4eae96",
+  "start_time": "2026-11-07T19:26:43.794000+08:00",
+  "validation_window": [
+    "2022-09-11",
+    "2022-09-15"
+  ],
+  "test_window": [
+    "2022-09-15",
+    "2023-01-13"
+  ],
+  "expected_validation_rows": 6623289,
+  "expected_test_rows": 95812493,
+  "expected_bq2_rows": 179702229,
+  "stage_cache": "disabled for outputs above 50 million rows; final-result cache remains enabled",
+  "console_url": "https://ap-southeast-1.console.aws.amazon.com/states/home?region=ap-southeast-1#/executions/details/arn:aws:states:ap-southeast-1:588738581042:execution:is459-g3-ingest:hi-large-delta1-20261107-batch",
+  "states_entered": [
+    "Curate",
+    "ReuseCurated",
+    "Begin"
+  ],
+  "checked_at_utc": "2026-11-07T11:28:36.458942+00:00",
+  "stage_cache_evidence": {
+    "curated": {
+      "hit": false,
+      "reason": "bypassed"
+    },
+    "network": {
+      "hit": false,
+      "reason": "bypassed"
+    },
+    "scored": {
+      "hit": false,
+      "reason": "bypassed"
+    }
+  }
+}

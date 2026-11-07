@@ -1,0 +1,25 @@
+{
+  "source_run_id": "medium-delta1-20261107-183216",
+  "release_id": "medium-delta1-20261107-183216-ui1",
+  "reason": "Remove unavailable evaluation options; disable selector for a single evaluation period.",
+  "files": [
+    {
+      "file": "index.html",
+      "sha256": "caa20daa3423fc6596db3f2a33b0fc27299f58e253670b6ea6f4d2401247079c"
+    },
+    {
+      "file": "dashboard.css",
+      "sha256": "8db3955094f8ae44678c4b1dab11bdf4f480f6a197b1ec7a6cca900d5741bf6c"
+    },
+    {
+      "file": "dashboard.js",
+      "sha256": "4d6a86f3891fafdd3feacb15561ed33ca6de7e5cfaf38443957c815bff29ed8a"
+    },
+    {
+      "file": "dashboard.json",
+      "sha256": "08742df7ebf5e4eb07141c24fcd506f7db1c4d381ec253196ca586b04c909172"
+    }
+  ],
+  "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/medium-delta1-20261107-183216-ui1/index.html",
+  "cloudfront_hashes_verified": true
+}

@@ -92,7 +92,7 @@ resource "aws_iam_role_policy" "acquisition" {
   # ...plus, only when a Kaggle secret is configured, read that one secret.
   ], var.kaggle_secret_arn == "" ? [] : [{ Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = var.kaggle_secret_arn }]) })
 }
-# The acquisition Lambda. Container image; 3 GB memory and 4 GB of /tmp disk
+# The acquisition Lambda. Container image; 3 GB memory and 10 GB of /tmp disk
 # because the HI-Small CSVs are large and are downloaded/unpacked locally;
 # 900 s (the Lambda maximum) timeout for the download; reserved concurrency 1
 # so two acquisitions can never run at once. AWS_SDK_UA_APP_ID only tags API
@@ -106,7 +106,7 @@ resource "aws_lambda_function" "acquisition" {
   memory_size                    = 3072
   timeout                        = 900
   reserved_concurrent_executions = 1
-  ephemeral_storage { size = 4096 }
+  ephemeral_storage { size = 10240 }
   environment { variables = { KAGGLE_SECRET_ARN = var.kaggle_secret_arn, AWS_SDK_UA_APP_ID = "AWSSkill-SageMaker" } }
   depends_on = [aws_iam_role_policy.acquisition, aws_ecr_repository_policy.lambda]
 }

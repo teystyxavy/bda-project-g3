@@ -6,6 +6,12 @@ See [migration validation and deployment](glue-stage-migration.md). A 1,000-row 
 does not establish full-population acceptance of this new Glue runtime.
 
 
+**7 November 2026:** the acquisition Lambda now accepts cloud Medium smoke
+prefixes of 1–1,000 rows, with isolated versioned source caching and 10 GiB
+scratch storage. The 1,000-row cloud smoke passed through public publication,
+with all five Glue jobs successful and the public snapshot hash verified.
+See [deployment and live evidence](../evidence/cloud-medium-result-20261107.json).
+
 Implementation branch: `feature/larger-dataset`.
 
 ## Source and scope
@@ -46,15 +52,20 @@ From the repository root, using the configured project environment:
 # Download/reuse the version-pinned source without starting AWS jobs.
 .\scripts\ingestion\ingest.ps1 -DownloadOnly -Subset HI-Medium -DatasetVersion 8
 
-# Initial AWS smoke: this is paid work, over the first 1,000 source rows.
+# Cloud smoke after the updated acquisition deployment (no local dataset required).
+.\scripts\ingestion\ingest.ps1 -Subset HI-Medium -DatasetVersion 8 -Rows 1000
+
+# Local-acquisition AWS smoke, over the first 1,000 source rows.
 .\scripts\ingestion\ingest.ps1 -Subset HI-Medium -LocalAcquisition -DatasetVersion 8 -Rows 1000
 
 # Full batch: no -Rows limit; acquire locally, upload, process and publish in AWS.
 .\scripts\ingestion\ingest.ps1 -Subset HI-Medium -LocalAcquisition -DatasetVersion 8
 ```
 
-HI-Medium requires local acquisition because the default acquisition Lambda
-remains bounded to HI-Small. Dashboard web run controls also remain HI-Small;
+Full HI-Medium requires local acquisition. The updated cloud acquisition source
+supports bounded Medium smoke runs (1–1,000 rows) after its new image and
+10 GiB scratch-storage configuration are deployed; see
+[cloud ingestion](../../cloud-ingestion/README.md#medium-cloud-smoke-requires-updated-acquisition-deployment). Dashboard web run controls also remain HI-Small;
 the published results identify the subset from the manifest. `-Train` is rejected
 for Medium until a separate training and validation design is implemented.
 Do not use `-Rerun` unless a complete rebuild is needed: unchanged verified inputs

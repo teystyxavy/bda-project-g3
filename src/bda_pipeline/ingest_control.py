@@ -2,7 +2,7 @@
 
 What this file is
 -----------------
-The code of the ``is459-g3-ingest-control`` Lambda (Python 3.12, 256 MB,
+The code of the ``is459-g3-ingest-control`` Lambda (Python 3.12, 1024 MB,
 120 s timeout, reserved concurrency 1; handler
 ``bda_pipeline.ingest_control.lambda_handler``; see
 ``infra/ingestion/main.tf``). It is the "brain" of the batch Step Functions
@@ -167,7 +167,7 @@ CACHED_STAGES = ['curated', 'scored', 'network']
 # bills per second with a one-minute minimum; a G.1X worker is 1 DPU and a
 # G.2X worker 2 DPU. SageMaker training is the only job not run in Glue.
 GLUE_USD_PER_DPU_HOUR = 0.44
-GLUE_DPU_PER_WORKER = {'G.1X': 1, 'G.2X': 2}
+GLUE_DPU_PER_WORKER = {'G.1X': 1, 'G.2X': 2, 'G.4X': 4, 'G.8X': 8}
 SAGEMAKER_USD_PER_HOUR = {'ml.m5.2xlarge': 0.576, 'ml.m5.4xlarge': 1.152}
 
 

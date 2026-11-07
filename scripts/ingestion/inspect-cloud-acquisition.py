@@ -45,6 +45,7 @@ import boto3
 import pandas as pd
 from botocore.config import Config
 from bda_pipeline.acquisition import validate_fx
+from bda_pipeline.dataset_options import resolve_subset, selected_files
 from bda_pipeline.ingest_contract import ACCOUNT, BUCKET, REGION, valid_run
 
 
@@ -106,7 +107,11 @@ def inspect(run_id, output, profile):
     # Only if inputs were committed: verify the S3 source cache and the FX file.
     if 'raw_manifest' in report:
         version = report['raw_manifest']['dataset_version']
-        prefix = f'pipeline/acquisition/versions/{version}'
+        subset = resolve_subset(report['raw_manifest']['subset'])
+        if subset not in ('HI-Small', 'HI-Medium'):
+            raise ValueError('Unsupported cloud source subset')
+        cache_root = 'pipeline/acquisition' + (f'/{subset}' if subset != 'HI-Small' else '')
+        prefix = f'{cache_root}/versions/{version}'
         response = s3.get_object(Bucket=BUCKET, Key=f'{prefix}/record.json')
         with response['Body'] as body: content = body.read(100_001)
         if len(content) > 100_000: raise ValueError('Unexpected source cache record size')
@@ -115,7 +120,7 @@ def inspect(run_id, output, profile):
         # and be encrypted at rest with SSE-S3 (AES256).
         report['source_objects'] = {}
         for name, digest in report['source_cache']['files'].items():
-            if name not in ['HI-Small_Trans.csv', 'HI-Small_accounts.csv']:
+            if name not in selected_files(subset):
                 raise ValueError('Unexpected cached source file')
             head = s3.head_object(Bucket=BUCKET, Key=f'{prefix}/{name}')
             assert head['Metadata']['sha256'] == digest
