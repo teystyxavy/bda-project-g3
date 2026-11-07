@@ -70,7 +70,7 @@ test('line charts keep their dot titles, mark the review capacity and carry a re
   assert.match(html,/<title>Frozen model · 100: 91<\/title>/);
   assert.match(html,/class="chart-pulse"[^>]*stroke="#3fd0b8"/);
   assert.match(html,/<title>Your review capacity: 100 reviews, 91 laundering<\/title>/);
-  assert.match(html,/<table class="sr-only">.*<td>Rules<\/td><td>25<\/td><td>0<\/td>/);
+  assert.match(html,/<div class="sr-only"><table>.*<td>Rules<\/td><td>25<\/td><td>0<\/td>/);
   assert.match(html,/<p class="chart-note">Dots are exact\.<\/p>/);
   // A long curve draws as a line only: no per-point dots to tab through.
   h.run(`chartLines('pr-chart',[{name:'Frozen model',color:'#3fd0b8',rows:Array.from({length:80},(_,i)=>({x:i/79,y:1-i/79,label:'Recall '+i}))}],1,1,'Recall')`);
