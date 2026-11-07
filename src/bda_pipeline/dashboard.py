@@ -122,7 +122,11 @@ def aml_view(frame):
     queue_columns = ['transaction_id', 'timestamp', 'from_bank', 'from_account', 'to_bank',
                      'to_account', 'payment_format', 'payment_currency', 'amount_usd_asof',
                      'risk_score', 'risk_reasons', 'txn_count_1h', 'distinct_counterparties_24h',
-                     'amount_sum_7d', 'corridor_prior_count']
+                     'amount_sum_7d', 'corridor_prior_count',
+                     'in_txn_count_1h', 'in_txn_count_24h', 'in_txn_count_7d',
+                     'distinct_senders_24h', 'distinct_senders_7d']
+    # Legacy snapshots may predate receiver features; do not invent zero counts.
+    queue_columns = [name for name in queue_columns if name in frame or not name.startswith(('in_txn_', 'distinct_senders_'))]
     daily = frame.assign(day=frame.timestamp.dt.strftime('%Y-%m-%d')).groupby('day').agg(
         transactions=('risk_score', 'size'), alerts=('flagged', 'sum')).reset_index()
     histogram = frame.groupby('risk_score').size().rename('transactions').reset_index()

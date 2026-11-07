@@ -60,6 +60,13 @@ def test_full_export_matches_baseline_and_does_not_expose_labels(tmp_path):
     assert snapshot['aml_scope'] == 'full'
     assert snapshot['full_rows'] == len(frame)
     assert all('is_laundering' not in row for view in snapshot['aml'].values() for row in view['queue'])
+    # The public queue must retain receiver history from the scored source.
+    source_rows = frame.set_index('transaction_id')
+    for view in snapshot['aml'].values():
+        for row in view['queue']:
+            for field in ['in_txn_count_1h', 'in_txn_count_24h', 'in_txn_count_7d',
+                          'distinct_senders_24h', 'distinct_senders_7d']:
+                assert row[field] == source_rows.loc[row['transaction_id'], field]
     assert snapshot['treasury']['all']['transactions'] == len(frame)
     with pytest.raises(ValueError, match='fresh'):
         export_verified_batch(curated, verification, tmp_path / 'export', assets, splits=LEGACY_SPLITS)

@@ -445,11 +445,7 @@ test('review cutoff and batch parity show as cards and a review column',async()=
   assert.match(h.el('incoming-queue').innerHTML,/HI-Small:7<\/td>.*<td>Review now<\/td>/);
   assert.match(h.el('incoming-queue').innerHTML,/HI-Small:8<\/td>.*<td>Below cutoff<\/td>/);
   assert.match(h.el('incoming-latest').innerHTML,/<th scope="col">Review<\/th>/);
-  assert.match(h.el('incoming-queue-note').textContent,/1 reach the batch top-100 review cutoff \(score ≥ 0\.9937, set on 2022-09-07 to 2022-09-08 validation days\)/);
-  // A cutoff from another model's batch days names them.
-  const medium=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot({review:{...REVIEW,cutoff:.9953691363,period:'2022-09-15 to 2022-09-28',days:'HI-Medium batch',flagged:0}}))});
-  medium.el('incoming-tab').onclick();await settle();
-  assert.match(medium.el('incoming-queue-note').textContent,/score ≥ 0\.9954, set on 2022-09-15 to 2022-09-28 HI-Medium batch days/);
+  assert.match(h.el('incoming-queue-note').textContent,/1 reach the batch top-100 review cutoff \(score ≥ 0\.9937, taken from the batch covering 2022-09-07 to 2022-09-08\)/);
   // Nothing at the cutoff is stated plainly rather than hidden.
   const none=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot({review:{...REVIEW,flagged:0}}))});
   none.el('incoming-tab').onclick();await settle();
@@ -582,4 +578,18 @@ test('single-period releases remove unavailable options and disable the selector
   assert.equal(control.value,'test');
   assert.equal(control.disabled,true);
   assert.match(control.options[0].textContent,/Sep 15–28/);
+});
+
+
+test('Medium batch cutoff uses batch wording and receiver history preserves zero and missing values',async()=>{
+  const row={...streamRow(1,'HI-Medium:7',.995),in_txn_count_1h:0,in_txn_count_24h:50,in_txn_count_7d:80,distinct_senders_24h:40,distinct_senders_7d:60};
+  const data=streamSnapshot({review:{...REVIEW,period:'2022-09-15 to 2022-09-28',flagged:1},queue:[row,streamRow(2,'HI-Medium:8',.5)]});
+  const h=await harness({configured:false,authenticated:false,fetchHook:streamHook(data)});
+  h.el('incoming-tab').onclick();await settle();
+  assert.match(h.el('incoming-queue-note').textContent,/taken from the batch covering 2022-09-15 to 2022-09-28/);
+  assert.doesNotMatch(h.el('incoming-queue-note').textContent,/validation days/);
+  assert.match(h.el('incoming-queue').innerHTML,/Receiver payments 1h \/ 24h \/ 7d/);
+  assert.match(h.el('incoming-queue').innerHTML,/<td>0 \/ 50 \/ 80<\/td><td>40 \/ 60<\/td>/);
+  assert.match(h.el('incoming-queue').innerHTML,/Unavailable \/ Unavailable/);
+  assert.equal(vm.runInContext('receiverPayments({in_txn_count_1h:null,in_txn_count_24h:-1,in_txn_count_7d:0})',h.context),'Unavailable / Unavailable / 0');
 });
