@@ -17,12 +17,13 @@
 #   * no pipeline run in progress: s3://.../pipeline/lock.json must not exist
 #     (the control Lambda holds this lock during a run; updating Glue/Lambda
 #     mid-run could mix code versions). Checked again right before apply.
-#   * the Terraform plan may only: update the curate/score Glue jobs, control
-#     Lambda + its policy, configuration object and state machine; create the
-#     worker-cancellation EventBridge rule/target/permission and new
-#     content-addressed deployment artifacts; and 'forget' (drop from state
-#     without deleting in S3) the previous artifact objects - so earlier
-#     deployments' artifacts and all run outputs are kept.
+#   * the Terraform plan may only: update the curate/score/network Glue jobs,
+#     control Lambda + its policy, configuration object and state machine;
+#     create the worker-cancellation EventBridge rule/target/permission, the
+#     network Glue job and its log groups, and new content-addressed
+#     deployment artifacts; and 'forget' (drop from state without deleting in
+#     S3) the previous artifact objects - so earlier deployments' artifacts
+#     and all run outputs are kept.
 # The list of planned changes is written to <PreparedDirectory>/deployment-
 # changes.json for review. Without -Execute nothing in AWS is modified.
 # =============================================================================
@@ -83,8 +84,8 @@ try {
     # Allowlist every planned change by address and action. Anything else
     # (a delete, a replace, an unexpected resource) aborts the update.
     $changes = @($plan.resource_changes | Where-Object { ($_.change.actions -join ',') -ne 'no-op' })
-    $allowedUpdates = @('aws_glue_job.job["curate"]', 'aws_glue_job.job["score"]', 'aws_glue_job.job["baseline"]', 'aws_glue_job.job["export"]', 'aws_iam_role.glue', 'aws_iam_role_policy.glue', 'aws_iam_role_policy.workflow', 'aws_iam_role_policy.control', 'aws_lambda_function.control', 'aws_s3_object.configuration', 'aws_sfn_state_machine.ingest')
-    $allowedCreates = @('aws_cloudwatch_event_rule.cancel_workers', 'aws_cloudwatch_event_target.cancel_workers', 'aws_lambda_permission.cancel_workers', 'aws_glue_job.job["baseline"]', 'aws_glue_job.job["export"]', 'aws_cloudwatch_log_group.glue["baseline/error"]', 'aws_cloudwatch_log_group.glue["baseline/output"]', 'aws_cloudwatch_log_group.glue["export/error"]', 'aws_cloudwatch_log_group.glue["export/output"]')
+    $allowedUpdates = @('aws_glue_job.job["curate"]', 'aws_glue_job.job["score"]', 'aws_glue_job.job["baseline"]', 'aws_glue_job.job["export"]', 'aws_glue_job.job["network"]', 'aws_iam_role.glue', 'aws_iam_role_policy.glue', 'aws_iam_role_policy.workflow', 'aws_iam_role_policy.control', 'aws_lambda_function.control', 'aws_s3_object.configuration', 'aws_sfn_state_machine.ingest')
+    $allowedCreates = @('aws_cloudwatch_event_rule.cancel_workers', 'aws_cloudwatch_event_target.cancel_workers', 'aws_lambda_permission.cancel_workers', 'aws_glue_job.job["baseline"]', 'aws_glue_job.job["export"]', 'aws_glue_job.job["network"]', 'aws_cloudwatch_log_group.glue["baseline/error"]', 'aws_cloudwatch_log_group.glue["baseline/output"]', 'aws_cloudwatch_log_group.glue["export/error"]', 'aws_cloudwatch_log_group.glue["export/output"]', 'aws_cloudwatch_log_group.glue["network/error"]', 'aws_cloudwatch_log_group.glue["network/output"]')
     # Only obsolete Processing IAM resources may be deleted; never data/jobs.
     $allowedDeletes = @('aws_iam_role_policy.processing', 'aws_iam_role.processing')
     foreach ($change in $changes) {
