@@ -26,20 +26,23 @@ for(const view of ['aml','incoming','network','ingestion']) element(`${view}-tab
 const reducedMotion = () => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
 const animating = () => typeof requestAnimationFrame==='function' && !reducedMotion();
 // Counts every number in a text up from `from` (same decimals and separators). Dates and clock times stay as they are.
+// Only the element's own leading text moves, so markup inside it (a <small> unit, say) is left alone.
+const counting=new WeakSet();
 function countUp(node,from=0,duration=900) {
-  const text=node?.textContent;
-  if(!text || !animating() || /\d[-:]\d/.test(text) || node.dataset?.counting) return;
+  const target=node?.children?.length?(node.firstChild?.nodeType===3?node.firstChild:null):node;
+  const text=target?.textContent;
+  if(!text || !animating() || /\d[-:]\d/.test(text) || counting.has(target)) return;
   const numbers=[...text.matchAll(/\d[\d,]*(?:\.\d+)?/g)];
   if(!numbers.length) return;
   const parts=numbers.map(match=>({value:Number(match[0].replace(/,/g,'')),decimals:(match[0].split('.')[1]||'').length,commas:match[0].includes(',')}));
   const render=u=>{let index=0;return text.replace(/\d[\d,]*(?:\.\d+)?/g,()=>{const part=parts[index++], value=from+(part.value-from)*u;
     return part.commas?value.toLocaleString('en-US',{minimumFractionDigits:part.decimals,maximumFractionDigits:part.decimals}):value.toFixed(part.decimals);});};
-  const start=performance.now();node.dataset.counting='1';
+  const start=performance.now();counting.add(target);
   const frame=now=>{try {
     const u=Math.min(1,(now-start)/duration), eased=1-Math.pow(1-u,3);
-    node.textContent=u<1?render(eased):text;
-    if(u<1) requestAnimationFrame(frame);else delete node.dataset.counting;
-  } catch {node.textContent=text;delete node.dataset.counting;}};
+    target.textContent=u<1?render(eased):text;
+    if(u<1) requestAnimationFrame(frame);else counting.delete(target);
+  } catch {target.textContent=text;counting.delete(target);}};
   requestAnimationFrame(frame);
 }
 // Charts remember how they were drawn so a tab switch or resize redraws them at the width they are shown.
@@ -1138,7 +1141,8 @@ function renderNetwork() {
   const checked=data.verification?.status==='passed';
   trustStrip('network-context',`${checked?'Glue tables matched an independent recomputation · ':''}${integer(t.accounts)} accounts · ${integer(t.links)} account links after merging repeat payments · ${integer(t.self_transfers)} self-transfers excluded`,checked);
   cards('network-kpis',[
-    ['Rings to investigate',integer(rings.rings),`${integer(rings.accounts)} accounts · largest ${integer(rings.largest)}`],
+    ['Rings to investigate',integer(rings.rings),`${integer(rings.accounts)} accounts · largest ${integer(rings.largest)}`,false,
+      Array.isArray(data.ring_sizes)&&data.ring_sizes.length>1?{values:data.ring_sizes,color:'#ff6f5e',label:'Accounts in each ring, in rank order',caption:`Ring size by rank, #1 → #${integer(data.ring_sizes.length)}`}:null],
     ['Ring accounts touching laundering',share(rings.laundering_rate),`${times(rings.lift)} the ${share(t.laundering_rate)} base rate`,true],
     [`Mule-sized hubs (${p.headline_threshold}+ in and out)`,integer(headline.hubs.accounts),`${share(headline.hubs.laundering_rate)} touch laundering · ${integer(headline.high_volume.accounts)} high-volume listed separately`],
     ['Three-account loops',integer(three.loops),`${integer(three.accounts)} accounts · ${share(three.laundering_rate)} touch laundering`]]);
