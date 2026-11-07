@@ -32,7 +32,7 @@ PUBLIC_FIELDS = {'rank', 'transaction_id', 'timestamp', 'scored_at', 'model_scor
                  'payment_currency', 'receiving_currency', 'from_bank', 'from_account', 'to_bank', 'to_account',
                  *publisher.SENDER_FEATURES}
 # The delta1 model's replay: all 15 behaviour features, receivers preloaded.
-V2 = 'stream-delta1-20261107'
+V2 = 'stream-delta1-fixture'
 V2_FIELDS = PUBLIC_FIELDS | set(publisher.ALL_FEATURES)
 RECEIVER = account_key('030', '80012ABCD')
 # Wall-clock time of the first audit write; each later commit is 5 s apart.
@@ -277,6 +277,16 @@ def test_recorded_parity_matches_the_committed_evidence():
     evidence = json.loads(path.read_text(encoding='utf-8'))
     recorded = publisher.VERIFIED[RUN]
     assert evidence['run_id'] == RUN and evidence['reconciliation']['transactions'] == recorded['transactions']
+    assert evidence['reconciliation']['features_exact'] is recorded['features_exact'] is True
+    assert evidence['reconciliation']['max_absolute_score_difference'] == recorded['max_absolute_score_difference']
+
+
+def test_recorded_delta1_parity_matches_the_committed_evidence():
+    recorded = publisher.VERIFIED['stream-delta1-20261107']
+    path = Path(__file__).resolve().parents[1] / recorded['evidence']
+    evidence = json.loads(path.read_text(encoding='utf-8'))
+    assert evidence['run_id'] == 'stream-delta1-20261107' and evidence['model']['manifest_sha256'] == recorded['model_manifest_sha256'] == publisher.DELTA1_MODEL
+    assert evidence['reconciliation']['transactions'] == recorded['transactions']
     assert evidence['reconciliation']['features_exact'] is recorded['features_exact'] is True
     assert evidence['reconciliation']['max_absolute_score_difference'] == recorded['max_absolute_score_difference']
 
