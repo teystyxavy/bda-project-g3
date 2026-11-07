@@ -1,5 +1,68 @@
 # Bounded streaming demo
 
+## 7 November model with receiver features (`stream-v2-20261107`)
+
+Status, 7 November 2026: **code and local parity done; not deployed.** The 6 October
+run below is unchanged and still serves the live Incoming tab.
+
+The batch model retrained on 1 November (manifest `fbf014c5…`, model `3defe725…`) reads
+five receiver features besides the five sender ones: `in_txn_count_1h/24h/7d` and
+`distinct_senders_24h/7d`. On the HI-Small test days its top 100 holds 91 laundering
+cases, against 44 for the 6 October model. The consumer now computes both sides:
+
+- **Sender state** works as before: the replay contains each selected sender's whole history.
+- **Receiver state** is keyed `<run>:receiver:<hash>`. A receiver is also paid by senders
+  outside the replay. Its other incoming payments are taken from the same verified
+  batch data and preloaded once at version 0 (`receivers.jsonl`,
+  `seed-streaming-receivers.py`). Replayed payments are then added as they are scored.
+  The consumer refuses a payment to a receiver that was not preloaded, and refuses a
+  receiver event older than one already applied. The stream has one shard, one
+  concurrent batch and is sent in event-time order, so every receiver sees its
+  payments in order. A stream with more shards would need a different design.
+- **Commits:** sender state, receiver state and the result commit in one DynamoDB
+  transaction. A preloaded receiver is conditioned on its version, not on not existing.
+- **Not computed:** the amount sums and the sender-receiver prior-pair count. Batch
+  computes them, but the frozen model does not read them.
+  `score_frame(..., features=STREAM_FEATURES)` checks that the supplied features cover
+  everything the model reads.
+
+Local evidence (`output/streaming-demo-v2-20261107/verification.json`, no AWS calls):
+
+- **Cohort:** the same 32 senders and 884 transactions as 6 October, paying 113 receivers.
+- **Preload:** 2,021 payments from other senders. 852 of the 884 transactions have
+  receiver activity in the prior 7 days.
+- **Parity:** all 10 features are exact against the 7 November full batch
+  (`bq1_scored.parquet`, SHA-256 `ab25b397…`, run `20261107-012335-fa192bd1`). The
+  maximum score difference is 0.0 with xgboost 3.4.1 and 3.2.0 (the Lambda's version);
+  both packages are byte-identical.
+- **Scores:** none reaches the model's batch review cutoff (0.8384, the validation
+  top 100). The highest is 0.0351.
+
+Deployment uses its own Terraform state, so the 6 October stack is never planned
+against. It also uses its own ECR repository, because a repository policy names one
+function. It reuses the isolated failure bucket, where each mapping writes under its
+own UUID. Every step needs explicit approval:
+
+1. Initialise `infra/streaming` with `infra/shared.s3.tfbackend`, key
+   `streaming-v2-20261107/terraform.tfstate`, and a separate `TF_DATA_DIR`. Use the
+   variables `run_id=stream-v2-20261107`, `repository_name=is459-g3-streaming-v2`,
+   `use_existing_failure_bucket=true`, `provision_streaming=true` and
+   `model_manifest_sha256=fbf014c5f5f0c69c6a72c046a2416e550d6b26bd50531c669961c26455da9469`.
+   The first apply creates the repository, table, roles, logs and alarm.
+2. Build `output/streaming-container-v2-20261107`
+   (`prepare-streaming-container.py --manifest-sha256 fbf014c5…`). Push it to the new
+   repository and review its scan.
+3. Apply with `image_uri=<repository>@sha256:<digest>` and `provision_stream=true`.
+   This creates the function and a disabled mapping.
+4. Preload the receivers: `seed-streaming-receivers.py --package output/streaming-demo-v2-20261107 --execute-approved`.
+   Upload `events.jsonl` to `streaming/stream-v2-20261107/input/events.jsonl`, then run
+   the preflight (`collect-streaming-evidence.py --run-id stream-v2-20261107 --image <digest> --package …`).
+5. Apply `enable_consumer=true replay_approved=true`. Add the publisher
+   (`provision_publisher`, `enable_publisher`, `publisher_end_time`) as in the steps below.
+   Replay at 10 events/s (about 90 s), then disable the consumer and reconcile.
+6. Record the cloud acceptance in `dashboard_streaming.VERIFIED`. Publish
+   `streaming-config.json` for the new run, then park the stream.
+
 ## Parked
 
 Status, 6 October 2026: **parked to stop shard charges** (about USD 13.69/month).
@@ -32,12 +95,14 @@ Park it again by applying without `-var provision_stream=true`.
 
 ## Incoming AML dashboard view
 
-Status, 1 November 2026: **publisher deployed; dashboard tab not yet published.**
-Steps 1–3 and 5 below are done: 9 resources added, 0 changed, 0 destroyed; schedule
-disabled. One publication returned `completed`, 884/884, all 32 sender histories
-reconciled. CloudFront serves the snapshot with `Cache-Control: no-store` (edge miss).
-Steps 4 and 6 (public tab, live window) are pending team approval; plan them for
-4–5 November with the processing-image rebuild.
+Status, 7 November 2026: **publisher deployed and tab published.** Steps 1–5 below are
+done for `stream-smoke-20261006`. The publisher stack added 9 resources, changed 0 and
+destroyed 0, with the schedule disabled. One publication returned `completed`: 884/884,
+with all 32 sender histories reconciled. `dashboard/streaming-config.json` was published
+on 7 November, so CloudFront shows the Incoming tab. It serves the snapshot with
+`Cache-Control: no-store` (edge miss). Step 6 (a live window) has not been run. The
+deployed publisher predates the review-cutoff and parity fields, so the live snapshot
+does not show them yet.
 
 The input `events.jsonl` (SHA-256 `8f5e2aee…e296f`) was rebuilt from the verified
 6 October curated data, because the original package was not in AWS. All 884 events

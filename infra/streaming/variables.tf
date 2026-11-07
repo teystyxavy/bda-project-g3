@@ -47,7 +47,7 @@ variable "image_uri" {
   type    = string
   default = null
   validation {
-    condition     = var.image_uri == null ? true : can(regex("^588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-streaming@sha256:[0-9a-f]{64}$", var.image_uri))
+    condition     = var.image_uri == null ? true : can(regex("^588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/${var.repository_name}@sha256:[0-9a-f]{64}$", var.image_uri))
     error_message = "Pin the verified image digest in this project's ECR repository."
   }
 }
@@ -63,7 +63,7 @@ variable "enable_consumer" {
   type    = bool
   default = false
   validation {
-    condition     = !var.enable_consumer || (var.provision_streaming && var.provision_failure_bucket && var.provision_stream && var.image_uri != null && var.replay_approved)
+    condition     = !var.enable_consumer || (var.provision_streaming && (var.provision_failure_bucket || var.use_existing_failure_bucket) && var.provision_stream && var.image_uri != null && var.replay_approved)
     error_message = "Consumer activation requires the reviewed image, isolated failure bucket and explicit replay approval."
   }
 }
@@ -130,5 +130,38 @@ variable "publisher_end_time" {
   validation {
     condition     = var.publisher_end_time == null ? true : can(formatdate("YYYY-MM-DD'T'hh:mm:ss", "${var.publisher_end_time}Z"))
     error_message = "Supply a valid UTC date/time without a timezone suffix."
+  }
+}
+# repository_name: the consumer image's ECR repository, created by this stack.
+# A later run kept in its own state uses its own repository, so its repository
+# policy (pull rights for that run's function only) cannot replace the first's.
+variable "repository_name" {
+  type    = string
+  default = "is459-g3-streaming"
+  validation {
+    condition     = can(regex("^is459-g3-streaming(-[a-z0-9-]{1,40})?$", var.repository_name))
+    error_message = "Use the project's streaming repository name."
+  }
+}
+# use_existing_failure_bucket: route failed records to the isolated failure
+# bucket another streaming state already manages (same name), instead of
+# creating it. Failure records are kept under each mapping's own UUID prefix.
+variable "use_existing_failure_bucket" {
+  type    = bool
+  default = false
+  validation {
+    condition     = !(var.use_existing_failure_bucket && var.provision_failure_bucket)
+    error_message = "Either create the failure bucket or reuse the existing one, not both."
+  }
+}
+# model_manifest_sha256: SHA-256 of the frozen model manifest baked into the
+# consumer image. The consumer refuses any other model; the publisher selects
+# the model's feature set and batch review cutoff from it.
+variable "model_manifest_sha256" {
+  type    = string
+  default = "323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f"
+  validation {
+    condition     = can(regex("^[0-9a-f]{64}$", var.model_manifest_sha256))
+    error_message = "Use the reviewed model manifest SHA-256."
   }
 }

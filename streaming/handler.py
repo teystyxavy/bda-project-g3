@@ -27,7 +27,7 @@ import json
 from functools import lru_cache
 import os
 
-from bda_pipeline.streaming import canonical, fingerprint, handle_records
+from bda_pipeline.streaming import STREAM_FEATURES, canonical, fingerprint, handle_records
 from bda_pipeline.inference import score_frame, worker_ranker
 
 
@@ -56,14 +56,16 @@ class DynamoStore:
     result=_get
     state=_get
 
-    def commit(self,key,old_version,state,result_key,result):
-        """Write the new sender state and the result in one DynamoDB transaction.
+    def commit(self,updates,result_key,result):
+        """Write the new sender and receiver states and the result in one DynamoDB transaction.
 
-        Conditions (the whole transaction fails if either is false):
-            * state item: its stored ``version`` still equals ``old_version``
-              (or, for a new sender, the item does not exist yet). This is
-              optimistic locking: a concurrent update makes us fail and retry
-              instead of overwriting.
+        ``updates`` is a list of (key, old_version, state). Conditions (the
+        whole transaction fails if any is false):
+            * each state item: its stored ``version`` still equals
+              ``old_version`` (or, when ``old_version`` is None, the item does
+              not exist yet). This is optimistic locking: a concurrent update
+              makes us fail and retry instead of overwriting. A preloaded
+              receiver exists with version 0 before its first payment.
             * result item: must not exist yet, so a transaction is scored once.
         """
         from boto3.dynamodb.conditions import Attr,ConditionExpressionBuilder
@@ -77,11 +79,20 @@ class DynamoStore:
                 result['ExpressionAttributeValues']=built.attribute_value_placeholders
             return result
         self.ddb.transact_write_items(TransactItems=[
-            {'Put':{'TableName':self.table,'Item':{'pk':key,'version':state['version'],'payload':canonical(state)},
-                    **condition(Attr('version').eq(old_version) if old_version else Attr('pk').not_exists())}},
+            *[{'Put':{'TableName':self.table,'Item':{'pk':key,'version':state['version'],'payload':canonical(state)},
+                      **condition(Attr('pk').not_exists() if old_version is None else Attr('version').eq(old_version))}}
+              for key,old_version,state in updates],
             {'Put':{'TableName':self.table,'Item':{'pk':result_key,'payload':canonical(result)},
                     **condition(Attr('pk').not_exists())}}
         ])
+
+    def preload(self,key,state):
+        """Write one preloaded receiver state (version 0) once; refuses to overwrite an existing item."""
+        from boto3.dynamodb.conditions import Attr,ConditionExpressionBuilder
+        built=ConditionExpressionBuilder().build_expression(Attr('pk').not_exists())
+        self.ddb.put_item(TableName=self.table,Item={'pk':key,'version':state['version'],'payload':canonical(state)},
+                          ConditionExpression=built.condition_expression,
+                          ExpressionAttributeNames=built.attribute_name_placeholders)
 
     def audit(self,key,result):
         """Write the result as JSON to ``s3://<bucket>/<prefix>/audit/<hash>.json``.
@@ -123,8 +134,9 @@ def runtime():
     def predict(txn):
         """Score one transaction dict (raw fields + computed features)."""
         frame=pd.DataFrame([txn]);frame['timestamp']=pd.to_datetime(frame.timestamp)
-        # score_frame applies the same input checks as the batch Glue job.
-        return score_frame(frame,ranker).model_score.iloc[0]
+        # score_frame applies the same input checks as the batch Glue job, to
+        # the ten behaviour features computed here (all the model reads).
+        return score_frame(frame,ranker,STREAM_FEATURES).model_score.iloc[0]
     return store,predict
 
 

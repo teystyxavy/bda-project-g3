@@ -150,3 +150,41 @@ run "armed_publisher_stops_at_end_time" {
     error_message = "An armed schedule fires once a minute and stops at the authorized end time."
   }
 }
+run "second_run_uses_its_own_repository_and_the_existing_failure_bucket" {
+  command = plan
+  variables {
+    run_id                      = "stream-v2-20261107"
+    repository_name             = "is459-g3-streaming-v2"
+    use_existing_failure_bucket = true
+    provision_streaming         = true
+    provision_stream            = true
+    model_manifest_sha256       = "fbf014c5f5f0c69c6a72c046a2416e550d6b26bd50531c669961c26455da9469"
+    image_uri                   = "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-streaming-v2@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+  assert {
+    condition     = aws_ecr_repository.runtime[0].name == "is459-g3-streaming-v2" && length(aws_s3_bucket.failures) == 0 && aws_lambda_event_source_mapping.replay[0].destination_config[0].on_failure[0].destination_arn == "arn:aws:s3:::is459-g3-stream-failures-588738581042-ap-southeast-1"
+    error_message = "A second run keeps its own repository and reuses the isolated failure bucket without managing it."
+  }
+  assert {
+    condition     = aws_lambda_function.consumer[0].environment[0].variables.MANIFEST_SHA256 == "fbf014c5f5f0c69c6a72c046a2416e550d6b26bd50531c669961c26455da9469" && !aws_lambda_event_source_mapping.replay[0].enabled
+    error_message = "The consumer pins the served model manifest and starts disabled."
+  }
+}
+run "image_must_come_from_the_runs_repository" {
+  command = plan
+  variables {
+    repository_name     = "is459-g3-streaming-v2"
+    provision_streaming = true
+    image_uri           = "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-streaming@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+  expect_failures = [var.image_uri]
+}
+run "failure_bucket_is_created_or_reused_not_both" {
+  command = plan
+  variables {
+    provision_streaming         = true
+    provision_failure_bucket    = true
+    use_existing_failure_bucket = true
+  }
+  expect_failures = [var.use_existing_failure_bucket]
+}

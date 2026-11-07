@@ -576,6 +576,8 @@ start();
   // Optional snapshot fields: older snapshots lack them, so each card or column appears only when well formed.
   const review=data=>{const value=data.review;
     return value && Number.isFinite(value.cutoff) && Number.isSafeInteger(value.capacity) && Number.isSafeInteger(value.flagged)?value:null;};
+  const receivers=data=>{const value=data.receivers;
+    return value && Number.isSafeInteger(value.expected) && Number.isSafeInteger(value.complete)?value:null;};
   const parity=data=>{const value=data.verification;
     return value && value.features_exact===true && Number.isSafeInteger(value.transactions) &&
       Number.isFinite(value.max_absolute_score_difference) && typeof value.verified_on==='string'?value:null;};
@@ -595,11 +597,12 @@ start();
       waiting:'Waiting for the first incoming transaction to be scored.',
       running:`Updated ${ago(age(data))}. Committed scores appear here within about 15 seconds; this page checks every 10 seconds.`,
       paused:'The Kinesis consumer is disabled, so nothing new is arriving. Scores committed so far are shown.',
-      completed:`All ${integer(data.expected)} incoming transactions and ${integer(data.senders.expected)} sender histories reconcile with the reviewed input.`,
+      completed:`All ${integer(data.expected)} incoming transactions${receivers(data)?`, ${integer(data.senders.expected)} sender histories and ${integer(data.receivers.expected)} receiver histories`:` and ${integer(data.senders.expected)} sender histories`} reconcile with the reviewed input.`,
       failed:'The streaming consumer reported record failures. Committed scores are shown; later events may be held back until the failure is resolved.'}[data.state];
     const cutoff=review(data), verified=parity(data);
     cards('incoming-kpis',[['Transactions scored',`${integer(data.processed)} / ${integer(data.expected)}`,`${(share*100).toFixed(1)}% of expected transactions`],
       ['Complete sender histories',`${integer(data.senders.complete)} / ${integer(data.senders.expected)}`,'Rolling features need each sender’s full history'],
+      ...(receivers(data)?[['Complete receiver histories',`${integer(data.receivers.complete)} / ${integer(data.receivers.expected)}`,'Payments from other senders preloaded; replayed ones added as scored']]:[]),
       ['Highest ranking score',data.max_score==null?'—':Number(data.max_score).toFixed(4),'Uncalibrated · not a probability'],
       ['Latest event time',eventTime(data.replay_position),'Historical event time · September 2022'],
       ...(cutoff?[['Review now',`${integer(cutoff.flagged)} / ${integer(data.processed)}`,`Score ≥ ${cutoff.cutoff.toFixed(4)} · batch top-${integer(cutoff.capacity)} cutoff`]]:[]),
@@ -619,9 +622,13 @@ start();
     if(!data.latest.length) element('incoming-latest').textContent='No transactions scored yet.';
     const reviewNote=cutoff?` ${cutoff.flagged?`${integer(cutoff.flagged)} reach`:'None reach'} the batch top-${integer(cutoff.capacity)} review cutoff (score ≥ ${cutoff.cutoff.toFixed(4)}, set on ${cutoff.period} validation days).`:'';
     element('incoming-queue-note').textContent=`Top ${integer(data.queue.length)} of ${integer(data.processed)} transactions scored so far; ties use event time then source row. Scores rank review priority and are not probabilities.${reviewNote}`;
-    table('incoming-queue',['Rank','Transaction','Event time','Sender → receiver','Ranking score',...(cutoff?['Review']:[]),'Payment / currency','Prior-day USD','Sender transactions 1h / 24h / 7d','Counterparties 24h / 7d'],
+    // Receiver columns only for a model that reads incoming activity (the snapshot then carries receiver histories).
+    const incoming=receivers(data);
+    table('incoming-queue',['Rank','Transaction','Event time','Sender → receiver','Ranking score',...(cutoff?['Review']:[]),'Payment / currency','Prior-day USD','Sender transactions 1h / 24h / 7d','Counterparties 24h / 7d',
+      ...(incoming?['Receiver payments 1h / 24h / 7d','Distinct senders 24h / 7d']:[])],
       data.queue.map(row=>[row.rank,row.transaction_id,eventTime(row.timestamp),parties(row),Number(row.model_score).toFixed(4),...flag(row),`${row.payment_format} / ${row.payment_currency}`,dollars(row.amount_usd_asof),
-        `${row.txn_count_1h} / ${row.txn_count_24h} / ${row.txn_count_7d}`,`${row.distinct_counterparties_24h} / ${row.distinct_counterparties_7d}`]));
+        `${row.txn_count_1h} / ${row.txn_count_24h} / ${row.txn_count_7d}`,`${row.distinct_counterparties_24h} / ${row.distinct_counterparties_7d}`,
+        ...(incoming?[`${row.in_txn_count_1h} / ${row.in_txn_count_24h} / ${row.in_txn_count_7d}`,`${row.distinct_senders_24h} / ${row.distinct_senders_7d}`]:[])]));
     if(!data.queue.length) element('incoming-queue').textContent='The queue fills as transactions are scored.';
     element('incoming-provenance').textContent=JSON.stringify({run_id:data.run_id,generated_at:data.generated_at,last_progress_at:data.last_progress_at,
       reconciled:data.reconciled,consumer_enabled:data.consumer_enabled,cohort:data.cohort,model:data.model},null,2);

@@ -41,7 +41,9 @@ locals {
   table_arn       = "arn:aws:dynamodb:${var.aws_region}:${var.aws_account_id}:table/${local.name}"
   log_arn         = "arn:aws:logs:${var.aws_region}:${var.aws_account_id}:log-group:/aws/lambda/${local.name}"
   # Frozen model manifest baked into the reviewed consumer image.
-  model_manifest = "323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f"
+  model_manifest = var.model_manifest_sha256
+  # Failed records go to the failure bucket this stack creates, or to the one another streaming state manages.
+  failure_destination = var.provision_failure_bucket || var.use_existing_failure_bucket
   # Exact names the publisher policy template may reference.
   publisher_policy_inputs = {
     region      = var.aws_region
@@ -57,7 +59,7 @@ locals {
 # anyway); images are scanned for known vulnerabilities on push and encrypted.
 resource "aws_ecr_repository" "runtime" {
   count                = local.count
-  name                 = "is459-g3-streaming"
+  name                 = var.repository_name
   image_tag_mutability = "IMMUTABLE"
   force_delete         = false
   encryption_configuration { encryption_type = "AES256" }
@@ -155,7 +157,7 @@ resource "aws_lambda_function" "consumer" {
 #   on_failure -- details of records that still fail go to the S3 failure
 #     bucket for later investigation instead of blocking the shard forever.
 resource "aws_lambda_event_source_mapping" "replay" {
-  count                              = var.provision_failure_bucket && var.provision_stream ? local.function_count : 0
+  count                              = local.failure_destination && var.provision_stream ? local.function_count : 0
   event_source_arn                   = aws_kinesis_stream.replay[0].arn
   function_name                      = aws_lambda_function.consumer[0].arn
   enabled                            = var.enable_consumer
@@ -168,7 +170,7 @@ resource "aws_lambda_event_source_mapping" "replay" {
   maximum_record_age_in_seconds      = 3600
   bisect_batch_on_function_error     = false
   destination_config {
-    on_failure { destination_arn = aws_s3_bucket.failures[0].arn }
+    on_failure { destination_arn = var.provision_failure_bucket ? aws_s3_bucket.failures[0].arn : "arn:aws:s3:::${local.failure_bucket}" }
   }
   depends_on = [aws_iam_role_policy.consumer, aws_s3_bucket_public_access_block.failures, aws_s3_bucket_server_side_encryption_configuration.failures]
 }

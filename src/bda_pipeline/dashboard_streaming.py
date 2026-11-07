@@ -4,21 +4,24 @@ Where this sits in the pipeline
 -------------------------------
 A small scheduled Lambda beside the streaming consumer (``infra/streaming``)::
 
-    Kinesis -> consumer Lambda -> DynamoDB (committed scores + sender state)
+    Kinesis -> consumer Lambda -> DynamoDB (committed scores + sender/receiver state)
     DynamoDB (consistent scan) + reviewed replay events.jsonl (S3, pinned SHA-256)
         -> this Lambda -> s3://<dashboard bucket>/dashboard/streaming/<run>/snapshot.json
         -> CloudFront /streaming/<run>/snapshot.json -> Incoming AML view (polls every 10 s)
 
-It never scores, never changes sender state and only lists the audit copies,
+It never scores, never changes sender or receiver state and only lists the audit copies,
 so a dashboard failure cannot affect predictions. Committed results hold
-identity, event time, sender features and score only; display fields (amount,
+identity, event time, behaviour features and score only; display fields (amount,
 payment format, currencies, banks) are joined from the reviewed replay events.
 Wall-clock scoring times come from the audit copies' S3 write times: the
 consumer writes each one right after its DynamoDB commit.
 
 Each scored transaction is marked ``review_now`` when it reaches the batch
-reviewer cutoff (``REVIEW``), and a run with recorded cloud acceptance carries
-its batch-parity result (``VERIFIED``).
+reviewer cutoff of the served model (``REVIEWS``), and a run with recorded
+cloud acceptance for that model carries its batch-parity result (``VERIFIED``).
+Results must carry exactly the served model's behaviour features
+(``MODEL_FEATURES``); a model with receiver features also needs every
+preloaded receiver to reach its final version before the run completes.
 
 A snapshot is written only after every committed item validates against those
 events. On any failure the previous snapshot stays in place and the browser
@@ -55,20 +58,29 @@ PROGRESS_POINTS = 240
 WINDOW_SECONDS = 50
 SENDER_FEATURES = ['txn_count_1h', 'txn_count_24h', 'txn_count_7d',
                    'distinct_counterparties_24h', 'distinct_counterparties_7d']
+RECEIVER_FEATURES = ['in_txn_count_1h', 'in_txn_count_24h', 'in_txn_count_7d',
+                     'distinct_senders_24h', 'distinct_senders_7d']
 SCORE_MEANING = 'ranking-score-not-calibrated-probability'
+# Frozen model manifests a streaming run may serve.
+OCTOBER_MODEL = '323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f'  # 5 sender features
+NOVEMBER_MODEL = 'fbf014c5f5f0c69c6a72c046a2416e550d6b26bd50531c669961c26455da9469'  # + 5 receiver features
+# Behaviour features every committed result of a run serving that model carries.
+MODEL_FEATURES = {OCTOBER_MODEL: SENDER_FEATURES, NOVEMBER_MODEL: SENDER_FEATURES + RECEIVER_FEATURES}
 # Batch reviewer capacity for the same frozen model: the lowest score in the
-# HI-Small validation top-100 queue (release opt-full-20261006-aws1). It was set
+# HI-Small validation top-100 queue of that model's batch release. It was set
 # on validation days, so it is a capacity, not an invented threshold; labels
-# are never used here. Both records below hold only for this model manifest
-# (model 'f0dc65ca…'), so a run serving another model publishes neither.
-REVIEW = {'cutoff': 0.9937289953, 'capacity': 100, 'period': '2022-09-07 to 2022-09-08',
-          'source_run': 'opt-full-20261006-aws1',
-          'model_manifest_sha256': '323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f'}
-# Recorded cloud acceptance per replay run: every committed score was compared
-# with the frozen batch reference for the same transaction.
+# are never used here. A run serving a model without a record publishes none.
+REVIEWS = {
+    OCTOBER_MODEL: {'cutoff': 0.9937289953, 'capacity': 100, 'period': '2022-09-07 to 2022-09-08',
+                    'source_run': 'opt-full-20261006-aws1', 'model_manifest_sha256': OCTOBER_MODEL},
+    NOVEMBER_MODEL: {'cutoff': 0.8383951783, 'capacity': 100, 'period': '2022-09-07 to 2022-09-08',
+                     'source_run': '20261107-012335-fa192bd1', 'model_manifest_sha256': NOVEMBER_MODEL}}
+# Recorded cloud acceptance per replay run and model: every committed score was
+# compared with the frozen batch reference for the same transaction.
 VERIFIED = {'stream-smoke-20261006': {
     'transactions': 884, 'features_exact': True, 'max_absolute_score_difference': 2.9103830456733704e-11,
-    'verified_on': '2026-10-06', 'evidence': 'planning/evidence/streaming-deployment-result-20261006.json'}}
+    'verified_on': '2026-10-06', 'evidence': 'planning/evidence/streaming-deployment-result-20261006.json',
+    'model_manifest_sha256': OCTOBER_MODEL}}
 
 
 def canonical(value):
@@ -158,21 +170,38 @@ def scan_items(ddb, table, run_id):
             return items
 
 
-def collect(items, run_id, events, senders):
+def arrivals(events):
+    """{receiver_key: number of replayed payments into it}: each preloaded receiver's final version."""
+    counts = {}
+    for event in events.values():
+        receiver = account_key(event['transaction']['to_bank'], event['transaction']['to_account'])
+        counts[receiver] = counts.get(receiver, 0) + 1
+    return counts
+
+
+def collect(items, run_id, events, senders, expected_features=SENDER_FEATURES, receivers=None):
     """Check committed items against the reviewed events.
 
-    Returns ({transaction_id: (result, event)}, {sender_key: version}).
+    ``expected_features`` are the features the served model's results carry;
+    ``receivers`` maps each preloaded receiver to its final version (empty
+    when the model has no receiver features).
+    Returns ({transaction_id: (result, event)}, {sender_key: version}, {receiver_key: version}).
     Raises ValueError on anything the consumer could not have written for
     this replay (unknown identity, changed input, invalid score or features).
     """
-    rows, versions = {}, {}
-    result_prefix, sender_prefix = run_id + ':result:', run_id + ':sender:'
+    rows, versions, received, receivers = {}, {}, {}, receivers or {}
+    result_prefix, sender_prefix, receiver_prefix = run_id + ':result:', run_id + ':sender:', run_id + ':receiver:'
     for item in items:
         key = item['pk']
         if key.startswith(sender_prefix):
             if key[len(sender_prefix):] not in senders:
                 raise ValueError('Unknown sender state')
             versions[key[len(sender_prefix):]] = int(item['version'])
+            continue
+        if key.startswith(receiver_prefix):
+            if key[len(receiver_prefix):] not in receivers:
+                raise ValueError('Unknown receiver state')
+            received[key[len(receiver_prefix):]] = int(item['version'])
             continue
         if not key.startswith(result_prefix):
             raise ValueError('Unexpected streaming item')
@@ -181,18 +210,18 @@ def collect(items, run_id, events, senders):
         score, features = result.get('model_score'), result.get('features', {})
         if (event is None or key != result_prefix + fingerprint(result['transaction_id'])
                 or result.get('input_sha256') != fingerprint(event) or result.get('run_id') != run_id
-                or result.get('score_meaning') != SCORE_MEANING or set(features) != set(SENDER_FEATURES)
+                or result.get('score_meaning') != SCORE_MEANING or set(features) != set(expected_features)
                 or any(type(value) is not int or value < 0 for value in features.values())
                 or type(score) not in (int, float) or not 0 <= score <= 1):
             raise ValueError('Committed result does not match the reviewed replay')
         # Result keys are unique per transaction, so a redelivered event cannot add a row.
         rows[result['transaction_id']] = (result, event)
-    return rows, versions
+    return rows, versions, received
 
 
-def run_state(processed, expected, senders, versions, consumer_enabled, alarm):
-    """Returns (state, reconciled). Completion needs every event and every sender version."""
-    reconciled = processed == expected and versions == senders
+def run_state(processed, expected, senders, versions, consumer_enabled, alarm, receivers=None, received=None):
+    """Returns (state, reconciled). Completion needs every event, every sender version and every receiver version."""
+    reconciled = processed == expected and versions == senders and (received or {}) == (receivers or {})
     if alarm == 'ALARM':
         return 'failed', reconciled
     if reconciled:
@@ -236,10 +265,16 @@ def progress(times, processed, now):
 
 def build_snapshot(items, run_id, events, senders, *, now, consumer_enabled, alarm, committed, model_sha256):
     """``committed`` maps audit object names to their S3 write times (see ``commit_times``)."""
-    rows, versions = collect(items, run_id, events, senders)
+    if model_sha256 not in MODEL_FEATURES:
+        raise ValueError('Unsupported frozen model manifest')
+    features = MODEL_FEATURES[model_sha256]
+    receivers = arrivals(events) if set(RECEIVER_FEATURES) <= set(features) else {}
+    rows, versions, received = collect(items, run_id, events, senders, features, receivers)
     scored = {transaction_id: committed.get(audit_name(run_id, transaction_id)) for transaction_id in rows}
-    same_model = model_sha256 == REVIEW['model_manifest_sha256']
-    cutoff = REVIEW['cutoff'] if same_model else None
+    review = REVIEWS.get(model_sha256)
+    cutoff = review['cutoff'] if review else None
+    verified = VERIFIED.get(run_id)
+    verified = verified if verified and verified['model_manifest_sha256'] == model_sha256 else None
 
     def position(pair):
         """Replay order: event time, then source row (the batch queue's tie policy)."""
@@ -250,23 +285,28 @@ def build_snapshot(items, run_id, events, senders, *, now, consumer_enabled, ala
         return display(*pair, iso(moment) if moment else None, rank, cutoff)
     ranked = sorted(rows.values(), key=lambda pair: (-pair[0]['model_score'], *position(pair)))
     latest = sorted(rows.values(), key=position, reverse=True)[:LATEST]
-    state, reconciled = run_state(len(rows), len(events), senders, versions, consumer_enabled, alarm)
+    state, reconciled = run_state(len(rows), len(events), senders, versions, consumer_enabled, alarm, receivers, received)
     times = [moment for moment in scored.values() if moment]
     points = progress(times, len(rows), now)
     return {'schema_version': SCHEMA_VERSION, 'run_id': run_id, 'generated_at': now, 'state': state,
             'reconciled': reconciled, 'consumer_enabled': consumer_enabled,
-            'cohort': 'Replay of complete sender histories from the verified HI-Small batch; synthetic data',
+            'cohort': ('Replay of complete sender histories from the verified HI-Small batch, with each receiver’s '
+                       'other incoming payments preloaded from the same data; synthetic data') if receivers else
+                      'Replay of complete sender histories from the verified HI-Small batch; synthetic data',
             'expected': len(events), 'processed': len(rows),
             'senders': {'expected': len(senders), 'started': len(versions),
                         'complete': sum(versions.get(key) == final for key, final in senders.items())},
+            **({'receivers': {'expected': len(receivers), 'preloaded': len(received),
+                              'complete': sum(received.get(key) == final for key, final in receivers.items())}}
+               if receivers else {}),
             'replay_position': latest[0][1]['transaction']['timestamp'] if latest else None,
             'max_score': ranked[0][0]['model_score'] if ranked else None,
             'top_k': TOP_K, 'queue': [public(pair, rank) for rank, pair in enumerate(ranked[:TOP_K], 1)],
             'latest': [public(pair) for pair in latest],
             'last_progress_at': iso(max(times)) if times else None, 'progress': points,
-            'review': {**REVIEW, 'flagged': sum(result['model_score'] >= cutoff for result, _ in rows.values())}
-                      if same_model else None,
-            'verification': VERIFIED.get(run_id) if same_model else None,
+            'review': {**review, 'flagged': sum(result['model_score'] >= cutoff for result, _ in rows.values())}
+                      if review else None,
+            'verification': verified,
             'model': {'manifest_sha256': model_sha256, 'score_meaning': SCORE_MEANING}}
 
 

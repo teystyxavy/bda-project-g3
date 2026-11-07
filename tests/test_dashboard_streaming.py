@@ -25,25 +25,29 @@ RUN = 'stream-smoke-20261006'
 SNAPSHOT_KEY = f'dashboard/streaming/{RUN}/snapshot.json'
 ENV = {'RUN_ID': RUN, 'STATE_TABLE': 'is459-g3-' + RUN, 'INPUT_BUCKET': 'pipeline-bucket',
        'INPUT_KEY': f'streaming/{RUN}/input/events.jsonl', 'SITE_BUCKET': 'site-bucket',
-       'MANIFEST_SHA256': publisher.REVIEW['model_manifest_sha256'], 'CONSUMER_ENABLED': 'true', 'ALARM_NAME': f'is459-g3-{RUN}-record-failures'}
+       'MANIFEST_SHA256': publisher.OCTOBER_MODEL, 'CONSUMER_ENABLED': 'true', 'ALARM_NAME': f'is459-g3-{RUN}-record-failures'}
 # Two transactions tie on 0.9 to exercise the event-time tie policy.
 SCORES = {'HI-Small:1': .2, 'HI-Small:2': .9, 'HI-Small:3': .9, 'HI-Small:4': .05, 'HI-Small:5': .6}
 PUBLIC_FIELDS = {'rank', 'transaction_id', 'timestamp', 'scored_at', 'model_score', 'review_now', 'amount_usd_asof', 'payment_format',
                  'payment_currency', 'receiving_currency', 'from_bank', 'from_account', 'to_bank', 'to_account',
                  *streaming.SENDER_FEATURES}
+# The 7 November model's replay: receiver features too, receivers preloaded.
+V2 = 'stream-v2-20261107'
+V2_FIELDS = PUBLIC_FIELDS | set(streaming.RECEIVER_FEATURES)
+RECEIVER = account_key('030', '80012ABCD')
 # Wall-clock time of the first audit write; each later commit is 5 s apart.
 COMMIT_START = datetime(2026, 11, 5, 10, 0, tzinfo=timezone.utc)
 
 
-def replay():
-    """Two complete sender histories, five events in replay (event-time) order."""
+def replay(run=RUN):
+    """Two complete sender histories, five events in replay (event-time) order, all paying one receiver."""
     rows = [('001', '8000EBD30', 0), ('002', '8000F4580', 5), ('001', '8000EBD30', 10),
             ('002', '8000F4580', 15), ('001', '8000EBD30', 20)]
     ordinals, events = {}, []
     for index, (bank, account, minute) in enumerate(rows, start=1):
         sender = account_key(bank, account)
         ordinals[sender] = ordinals.get(sender, 0) + 1
-        events.append({'run_id': RUN, 'ordinal': ordinals[sender], 'transaction': {
+        events.append({'run_id': run, 'ordinal': ordinals[sender], 'transaction': {
             'transaction_id': f'HI-Small:{index}', 'source_row_index': index,
             'timestamp': (datetime(2022, 9, 1) + timedelta(minutes=minute)).isoformat(),
             'from_bank': bank, 'from_account': account, 'to_bank': '030', 'to_account': '80012ABCD',
@@ -107,26 +111,52 @@ class FakeCloudWatch:
         return {'MetricAlarms': [{'AlarmName': AlarmNames[0], 'StateValue': self.state}]}
 
 
-@pytest.fixture
-def aws(monkeypatch):
-    events = replay()
+def environment(monkeypatch, run, manifest):
+    events = replay(run)
     raw = ('\n'.join(canonical(event) for event in events) + '\n').encode()
-    fake = {'dynamodb': FakeDynamo(), 's3': FakeS3({('pipeline-bucket', ENV['INPUT_KEY']): raw}),
-            'cloudwatch': FakeCloudWatch()}
+    key = f'streaming/{run}/input/events.jsonl'
+    fake = {'dynamodb': FakeDynamo(), 's3': FakeS3({('pipeline-bucket', key): raw}), 'cloudwatch': FakeCloudWatch()}
     monkeypatch.setattr(publisher, 'clients', lambda: fake)
     publisher.reviewed_events.cache_clear()
-    yield SimpleNamespace(events=events, store=MemoryStore(), env={**ENV, 'INPUT_SHA256': hashlib.sha256(raw).hexdigest()}, **fake)
+    # The replay setup preloads the receiver before any payment arrives (no other incoming payments here).
+    store = MemoryStore({f'{run}:receiver:{RECEIVER}': {'version': 0, 'last_time': -1, 'history': []}})
+    env = {**ENV, 'RUN_ID': run, 'STATE_TABLE': 'is459-g3-' + run, 'INPUT_KEY': key, 'MANIFEST_SHA256': manifest,
+           'ALARM_NAME': f'is459-g3-{run}-record-failures', 'INPUT_SHA256': hashlib.sha256(raw).hexdigest()}
+    return SimpleNamespace(run=run, events=events, store=store, env=env, **fake)
+
+
+@pytest.fixture
+def aws(monkeypatch):
+    """The 6 October run: its consumer committed sender features only and kept no receiver state."""
+    yield environment(monkeypatch, RUN, publisher.OCTOBER_MODEL)
+    publisher.reviewed_events.cache_clear()
+
+
+@pytest.fixture
+def aws2(monkeypatch):
+    yield environment(monkeypatch, V2, publisher.NOVEMBER_MODEL)
     publisher.reviewed_events.cache_clear()
 
 
 def consume(aws, events):
     """Score events with the consumer's own logic; expose its items to the scan and its audit writes to the listing."""
     for event in events:
-        process_event(event, RUN, aws.store, lambda txn: SCORES[txn['transaction_id']])
+        process_event(event, aws.run, aws.store, lambda txn: SCORES[txn['transaction_id']])
     for result_key in aws.store.audits:
-        key = f'streaming/{RUN}/audit/{streaming.fingerprint(result_key)}.json'
+        key = f'streaming/{aws.run}/audit/{streaming.fingerprint(result_key)}.json'
         aws.s3.audits.setdefault(key, COMMIT_START + timedelta(seconds=5 * len(aws.s3.audits)))
     aws.dynamodb.items = stored_items(aws.store)
+    if aws.env['MANIFEST_SHA256'] == publisher.OCTOBER_MODEL:
+        # What the 6 October consumer wrote: sender features only, no receiver items.
+        aws.dynamodb.items = [october(item) for item in aws.dynamodb.items if ':receiver:' not in item['pk']]
+
+
+def october(item):
+    if ':result:' not in item['pk']:
+        return item
+    result = json.loads(item['payload'])
+    result['features'] = {name: result['features'][name] for name in streaming.SENDER_FEATURES}
+    return {**item, 'payload': canonical(result)}
 
 
 def published(aws, now='2026-11-05T10:00:00Z'):
@@ -151,7 +181,7 @@ def test_running_snapshot_ranks_committed_scores_without_private_fields(aws):
     assert all(set(row) == PUBLIC_FIELDS for row in data['queue'] + data['latest'])
     assert data['queue'][0]['from_account'] == '••••4580' and data['queue'][0]['txn_count_1h'] == 0
     body = put['Body'].decode()
-    for private in ['8000EBD30', '8000F4580', '80012ABCD', 'input_sha256', 'is_laundering', ':sender:']:
+    for private in ['8000EBD30', '8000F4580', '80012ABCD', 'input_sha256', 'is_laundering', ':sender:', ':receiver:']:
         assert private not in body
     # Strongly consistent and fully paginated.
     assert len(aws.dynamodb.requests) > 1 and all(request['ConsistentRead'] for request in aws.dynamodb.requests)
@@ -169,9 +199,9 @@ def test_review_flag_uses_the_batch_cutoff_over_every_committed_score(aws, monke
     consume(aws, aws.events)
     data = published(aws)[1]
     # Fixture scores top out at 0.9, below the batch top-100 cutoff.
-    assert data['review'] == {**publisher.REVIEW, 'flagged': 0}
+    assert data['review'] == {**publisher.REVIEWS[publisher.OCTOBER_MODEL], 'flagged': 0}
     assert not any(row['review_now'] for row in data['queue'] + data['latest'])
-    monkeypatch.setitem(publisher.REVIEW, 'cutoff', .6)
+    monkeypatch.setitem(publisher.REVIEWS[publisher.OCTOBER_MODEL], 'cutoff', .6)
     data = published(aws)[1]
     # Inclusive cutoff, counted over all committed scores rather than the shown rows.
     assert data['review']['flagged'] == 3
@@ -184,13 +214,60 @@ def test_batch_parity_is_reported_only_for_a_run_with_recorded_acceptance(aws):
     assert publisher.VERIFIED.get('another-run') is None
 
 
-def test_another_model_gets_neither_the_cutoff_nor_the_parity_record(aws):
+def test_a_model_without_records_gets_neither_the_cutoff_nor_the_parity_record(aws, monkeypatch):
     consume(aws, aws.events)
-    aws.env['MANIFEST_SHA256'] = 'e' * 64
+    monkeypatch.delitem(publisher.REVIEWS, publisher.OCTOBER_MODEL)
+    monkeypatch.setitem(publisher.VERIFIED[RUN], 'model_manifest_sha256', publisher.NOVEMBER_MODEL)
     data = published(aws)[1]
     assert data['review'] is None and data['verification'] is None
     assert all(row['review_now'] is None for row in data['queue'] + data['latest'])
     assert data['state'] == 'completed' and data['processed'] == 5
+
+
+def test_unknown_model_or_mismatched_features_publish_nothing(aws):
+    consume(aws, aws.events)
+    with pytest.raises(ValueError, match='Unsupported'):
+        publisher.publish({**aws.env, 'MANIFEST_SHA256': 'e' * 64})
+    # Sender-only results cannot be served as the 7 November model.
+    with pytest.raises(ValueError, match='does not match'):
+        publisher.publish({**aws.env, 'MANIFEST_SHA256': publisher.NOVEMBER_MODEL})
+    assert aws.s3.puts == []
+
+
+def test_november_run_carries_receiver_features_and_reconciles_receivers(aws2):
+    consume(aws2, aws2.events[:3])
+    summary, data = published(aws2)
+    assert summary == {'state': 'running', 'processed': 3, 'expected': 5}
+    assert all(set(row) == V2_FIELDS for row in data['queue'] + data['latest'])
+    # Two earlier payments into the shared receiver, from two distinct senders, inside 24 hours.
+    assert data['latest'][0]['in_txn_count_24h'] == 2 and data['latest'][0]['distinct_senders_24h'] == 2
+    assert data['receivers'] == {'expected': 1, 'preloaded': 1, 'complete': 0}
+    assert data['review'] == {**publisher.REVIEWS[publisher.NOVEMBER_MODEL], 'flagged': 2}
+    assert data['verification'] is None and 'preloaded' in data['cohort']
+    consume(aws2, aws2.events)
+    summary, data = published(aws2)
+    assert summary['state'] == 'completed' and data['reconciled'] is True
+    assert data['receivers'] == {'expected': 1, 'preloaded': 1, 'complete': 1}
+    assert ':receiver:' not in aws2.s3.puts[-1]['Body'].decode()
+
+
+def test_november_run_without_preloaded_receivers_never_completes(aws2):
+    consume(aws2, aws2.events)
+    aws2.dynamodb.items = [item for item in aws2.dynamodb.items if ':receiver:' not in item['pk']]
+    summary, data = published(aws2)
+    assert summary['state'] == 'running' and data['reconciled'] is False
+    assert data['receivers'] == {'expected': 1, 'preloaded': 0, 'complete': 0}
+
+
+def test_november_run_rejects_unknown_receivers_and_sender_only_results(aws2):
+    consume(aws2, aws2.events[:2])
+    aws2.dynamodb.items.append({'pk': f'{V2}:receiver:{"f" * 64}', 'version': Decimal(0), 'payload': '{}'})
+    with pytest.raises(ValueError, match='Unknown receiver'):
+        publisher.publish(aws2.env)
+    aws2.dynamodb.items = [october(item) for item in aws2.dynamodb.items[:-1]]
+    with pytest.raises(ValueError, match='does not match'):
+        publisher.publish(aws2.env)
+    assert aws2.s3.puts == []
 
 
 def test_recorded_parity_matches_the_committed_evidence():
