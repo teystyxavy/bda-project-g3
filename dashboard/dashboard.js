@@ -4,7 +4,7 @@ let activeView='aml';
 let snapshotLoad=0;
 const element = id => document.getElementById(id);
 const integer = value => Number(value).toLocaleString('en-US');
-const percent = value => value == null ? 'Unavailable' : `${(value * 100).toFixed(2)}%`;
+const percent = value => value == null ? 'Unavailable' : `${(value * 100).toFixed(1)}%`;
 const compact = value => new Intl.NumberFormat('en-US', {notation:'compact',maximumFractionDigits:2}).format(value);
 const dollars = value => `$${compact(value)}`;
 const escapeText = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
@@ -21,6 +21,8 @@ function selectDashboardView(view) {
 }
 for(const view of ['aml','incoming','network','ingestion']) element(`${view}-tab`).onclick=()=>selectDashboardView(view);
 
+// The trust strip under each tab's heading; verified adds the ✓ Verified chip.
+function trustStrip(target,text,verified) {element(target).className=`trust-strip${verified?' verified':''}`;element(target).textContent=text;}
 function cards(target, items) {
   element(target).innerHTML = items.map(([label,value,detail,answer]) => `<div class="kpi${answer?' kpi-answer':''}"><span>${escapeText(label)}</span><strong>${escapeText(value)}</strong><span>${escapeText(detail)}</span></div>`).join('');
 }
@@ -29,12 +31,13 @@ function table(target, headings, rows) {
   element(target).innerHTML = `<table><thead><tr>${headings.map(label=>`<th scope="col">${escapeText(label)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(value=>`<td>${escapeText(value)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 
-// scale 'log' sizes bars by log10(1 + value) so one huge bucket cannot hide the rest; color(row, index) tints each bar.
-function bars(target, rows, label, value, formatter=integer, {scale='linear', color}={}) {
+// scale 'log' sizes bars by log10(1 + value) so one huge bucket cannot hide the rest; color(row, index) tints each bar;
+// mark {index, text} draws a labelled divider above that row.
+function bars(target, rows, label, value, formatter=integer, {scale='linear', color, mark}={}) {
   if (!rows.length) { element(target).textContent='No observations in this period.'; return; }
   const size = scale==='log' ? number=>Math.log10(1+Math.max(0,number)) : number=>number;
   const maximum = Math.max(...rows.map(row=>size(row[value])),scale==='log'?1e-9:1);
-  element(target).innerHTML = `<div class="bars">${rows.map((row,index)=>`<div class="bar-row" title="${escapeText(label(row))}: ${escapeText(formatter(row[value]))}"><span class="bar-label">${escapeText(label(row))}</span><div class="bar-track"><div class="bar-fill" style="width:${size(row[value])/maximum*100}%${color?`;background:${color(row,index)}`:''}"></div></div><span class="bar-value">${escapeText(formatter(row[value]))}</span></div>`).join('')}</div>`;
+  element(target).innerHTML = `<div class="bars">${rows.map((row,index)=>`${mark&&mark.index===index?`<p class="bar-mark">${escapeText(mark.text)}</p>`:''}<div class="bar-row" title="${escapeText(label(row))}: ${escapeText(formatter(row[value]))}"><span class="bar-label">${escapeText(label(row))}</span><div class="bar-track"><div class="bar-fill" style="width:${size(row[value])/maximum*100}%${color?`;background:${color(row,index)}`:''}"></div></div><span class="bar-value">${escapeText(formatter(row[value]))}</span></div>`).join('')}</div>`;
 }
 
 function trend(target, rows, field, formatter, selected) {
@@ -44,10 +47,10 @@ function trend(target, rows, field, formatter, selected) {
   const xvalue=row=>left+(Date.parse(row.day)-start)/Math.max(end-start,1)*plotWidth;
   const yvalue=row=>top+plotHeight-(row[field]??0)/maximum*plotHeight;
   const points=rows.filter(row=>row[field]!=null).map(row=>`${xvalue(row)},${yvalue(row)}`).join(' ');
-  const ticks=[0,.5,1].map(fraction=>`<line x1="${left}" x2="${left+plotWidth}" y1="${top+plotHeight-fraction*plotHeight}" y2="${top+plotHeight-fraction*plotHeight}" stroke="#dce6eb"/><text x="${left-8}" y="${top+plotHeight-fraction*plotHeight+4}" text-anchor="end" font-size="11" fill="#526879">${escapeText(formatter(maximum*fraction))}</text>`).join('');
-  const dates=rows.filter((row,index)=>index===0||index===rows.length-1||index%4===0).map(row=>`<text x="${xvalue(row)}" y="202" text-anchor="middle" font-size="11" fill="#526879">Sep ${Number(row.day.slice(-2))}</text>`).join('');
-  const marks=rows.filter(row=>row[field]!=null).map(row=>`<circle tabindex="0" cx="${xvalue(row)}" cy="${yvalue(row)}" r="${row.day===selected?6:3.5}" fill="${row.day===selected?'#bd7819':'#168477'}"><title>${escapeText(row.day)}: ${escapeText(formatter(row[field]))}</title></circle>`).join('');
-  element(target).innerHTML=`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeText(field)} by day">${ticks}<polyline points="${points}" fill="none" stroke="#168477" stroke-width="2.5"/>${marks}${dates}</svg><details><summary>Daily values</summary><div id="${target}-values"></div></details>`;
+  const ticks=[0,.5,1].map(fraction=>`<line x1="${left}" x2="${left+plotWidth}" y1="${top+plotHeight-fraction*plotHeight}" y2="${top+plotHeight-fraction*plotHeight}" stroke="#1d3347"/><text x="${left-8}" y="${top+plotHeight-fraction*plotHeight+4}" text-anchor="end" font-size="11" fill="#8aa1b4">${escapeText(formatter(maximum*fraction))}</text>`).join('');
+  const dates=rows.filter((row,index)=>index===0||index===rows.length-1||index%4===0).map(row=>`<text x="${xvalue(row)}" y="202" text-anchor="middle" font-size="11" fill="#8aa1b4">Sep ${Number(row.day.slice(-2))}</text>`).join('');
+  const marks=rows.filter(row=>row[field]!=null).map(row=>`<circle tabindex="0" cx="${xvalue(row)}" cy="${yvalue(row)}" r="${row.day===selected?6:3.5}" fill="${row.day===selected?'#bd7819':'#3fd0b8'}"><title>${escapeText(row.day)}: ${escapeText(formatter(row[field]))}</title></circle>`).join('');
+  element(target).innerHTML=`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeText(field)} by day">${ticks}<polyline points="${points}" fill="none" stroke="#3fd0b8" stroke-width="2.5"/>${marks}${dates}</svg><details><summary>Daily values</summary><div id="${target}-values"></div></details>`;
   table(`${target}-values`,['Date',field==='hhi'?'HHI':'USD volume'],rows.map(row=>[row.day,row[field]==null?'Unavailable':formatter(row[field])]));
 }
 
@@ -460,7 +463,7 @@ start();
   }
 
   function enterReadOnly() {
-    element('ingestion-title').textContent=config?'Ingest data. Follow every stage.':'Follow every stage in AWS.';
+    element('ingestion-title').textContent=config?'Is today’s data in, processed and verified?':'Follow every stage in AWS.';
     element('ingestion-intro').textContent='Watch the latest pipeline run move from acquisition to verified results. Status comes straight from AWS Step Functions.';
     element('ingestion-empty-title').textContent='Checking AWS';
     element('ingestion-empty-text').textContent='The latest pipeline run appears here.';
@@ -589,10 +592,19 @@ start();
       Array.isArray(data.queue) && Array.isArray(data.latest) && Array.isArray(data.progress) && data.progress.length>0;
   }
 
+  // One incoming transaction's evidence: who paid whom, its score and the sender's rolling history.
+  function incomingDetail(row,cutoff) {
+    const panel=element('incoming-detail');panel.hidden=false;
+    panel.innerHTML=`<div class="heading"><h3>Transaction ${escapeText(row.transaction_id)}</h3><button id="incoming-close" type="button">Close evidence</button></div><div class="transfer-path"><span>Sender<br><strong>${escapeText(row.from_bank)} / ${escapeText(row.from_account)}</strong></span><span aria-hidden="true">→</span><span>Receiver<br><strong>${escapeText(row.to_bank)} / ${escapeText(row.to_account)}</strong></span></div><div class="evidence-facts"><span><small>Event time</small>${escapeText(eventTime(row.timestamp))}</span><span><small>Scored at</small>${row.scored_at?escapeText(clock(row.scored_at)):'—'}</span><span><small>Ranking score</small>${Number(row.model_score).toFixed(4)}${cutoff?` · ${row.review_now===true?'Review now':'below the batch cutoff'}`:''}</span><span><small>Payment</small>${escapeText(row.payment_format)} / ${escapeText(row.payment_currency)}</span><span><small>Prior-day USD valuation</small>${dollars(row.amount_usd_asof)}</span><span><small>Sender payments, past 1h / 24h / 7d</small>${integer(row.txn_count_1h)} / ${integer(row.txn_count_24h)} / ${integer(row.txn_count_7d)}</span><span><small>Sender counterparties, past 24h / 7d</small>${integer(row.distinct_counterparties_24h)} / ${integer(row.distinct_counterparties_7d)}</span></div><p class="field-help">The rolling history counts only the sender’s payments before this one. Scores rank review priority; they are not probabilities.</p>`;
+    element('incoming-close').onclick=()=>{panel.hidden=true;};
+    panel.scrollIntoView?.({behavior:'smooth',block:'start'});
+  }
+
   function render(data) {
     const old=stale(data), share=data.expected?data.processed/data.expected:0;
     element('incoming-state').textContent=old?'Stale':states[data.state];
     element('incoming-state').dataset.state=old||data.state==='failed'?'failed':data.state==='running'?'running':'';
+    element('incoming-message').className=!old&&data.state==='completed'&&data.reconciled!==false?'trust-strip verified':'note';
     element('incoming-message').textContent=old?`No successful update for ${Math.round(age(data)/60)} min. The last published scores are shown.`:{
       waiting:'Waiting for the first incoming transaction to be scored.',
       running:`Updated ${ago(age(data))}. Committed scores appear here within about 15 seconds; this page checks every 10 seconds.`,
@@ -600,19 +612,20 @@ start();
       completed:`All ${integer(data.expected)} incoming transactions and ${integer(data.senders.expected)} sender histories reconcile with the reviewed input.`,
       failed:'The streaming consumer reported record failures. Committed scores are shown; later events may be held back until the failure is resolved.'}[data.state];
     const cutoff=review(data), verified=parity(data);
-    cards('incoming-kpis',[['Transactions scored',`${integer(data.processed)} / ${integer(data.expected)}`,`${(share*100).toFixed(1)}% of expected transactions`],
+    const answer=cutoff?'review':verified?'parity':'scored';
+    cards('incoming-kpis',[['Transactions scored',`${integer(data.processed)} / ${integer(data.expected)}`,`${(share*100).toFixed(1)}% of expected transactions`,answer==='scored'],
       ['Complete sender histories',`${integer(data.senders.complete)} / ${integer(data.senders.expected)}`,'Rolling features need each sender’s full history'],
       ['Highest ranking score',data.max_score==null?'—':Number(data.max_score).toFixed(4),'Uncalibrated · not a probability'],
       ['Latest event time',eventTime(data.replay_position),'Historical event time · September 2022'],
-      ...(cutoff?[['Review now',`${integer(cutoff.flagged)} / ${integer(data.processed)}`,`Score ≥ ${cutoff.cutoff.toFixed(4)} · batch top-${integer(cutoff.capacity)} cutoff`]]:[]),
+      ...(cutoff?[['Review now',`${integer(cutoff.flagged)} / ${integer(data.processed)}`,`Score ≥ ${cutoff.cutoff.toFixed(4)} · batch top-${integer(cutoff.capacity)} cutoff`,true]]:[]),
       ...(verified?[['Matches batch model',`${integer(verified.transactions)} / ${integer(verified.transactions)}`,
-        `Max score difference ${verified.max_absolute_score_difference.toExponential(1)} · recorded ${verified.verified_on}`]]:[])]);
+        `Max score difference ${verified.max_absolute_score_difference.toExponential(1)} · recorded ${verified.verified_on}`,answer==='parity']]:[])]);
     const bar=element('incoming-progressbar');
     bar.setAttribute('aria-valuenow',String(data.processed));bar.setAttribute('aria-valuemax',String(data.expected));
     bar.innerHTML=`<i style="width:${(share*100).toFixed(1)}%"></i>`;
     // Up to ~24 points keeps the shared chart's axis labels readable; first and last are always kept.
     const step=Math.ceil(data.progress.length/24), points=data.progress.filter((point,index,all)=>index%step===0||index===all.length-1);
-    chartLines('incoming-progress',[{name:'Transactions scored',color:'#14786f',rows:points.map(point=>({x:Date.parse(point.at),y:point.processed,
+    chartLines('incoming-progress',[{name:'Transactions scored',color:'#3fd0b8',rows:points.map(point=>({x:Date.parse(point.at),y:point.processed,
       label:clock(point.at)}))}],Math.max(1,data.expected),null,`Time scored · ${new Date(points[0].at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`,integer);
     // Review column only when the snapshot carries the batch cutoff.
     const flag=row=>cutoff?[row.review_now===true?'Review now':'Below cutoff']:[];
@@ -621,9 +634,13 @@ start();
     if(!data.latest.length) element('incoming-latest').textContent='No transactions scored yet.';
     const reviewNote=cutoff?` ${cutoff.flagged?`${integer(cutoff.flagged)} reach`:'None reach'} the batch top-${integer(cutoff.capacity)} review cutoff (score ≥ ${cutoff.cutoff.toFixed(4)}, set on ${cutoff.period} validation days).`:'';
     element('incoming-queue-note').textContent=`Top ${integer(data.queue.length)} of ${integer(data.processed)} transactions scored so far; ties use event time then source row. Scores rank review priority and are not probabilities.${reviewNote}`;
-    table('incoming-queue',['Rank','Transaction','Event time','Sender → receiver','Ranking score',...(cutoff?['Review']:[]),'Payment / currency','Prior-day USD','Sender transactions 1h / 24h / 7d','Counterparties 24h / 7d'],
-      data.queue.map(row=>[row.rank,row.transaction_id,eventTime(row.timestamp),parties(row),Number(row.model_score).toFixed(4),...flag(row),`${row.payment_format} / ${row.payment_currency}`,dollars(row.amount_usd_asof),
-        `${row.txn_count_1h} / ${row.txn_count_24h} / ${row.txn_count_7d}`,`${row.distinct_counterparties_24h} / ${row.distinct_counterparties_7d}`]));
+    table('incoming-queue',['Rank','Priority','Transaction','Event time','Sender → receiver','Ranking score',...(cutoff?['Review']:[]),'Payment / currency','Prior-day USD'],
+      data.queue.map(row=>[row.rank,tierFor(row.rank).label,row.transaction_id,eventTime(row.timestamp),parties(row),Number(row.model_score).toFixed(4),...flag(row),`${row.payment_format} / ${row.payment_currency}`,dollars(row.amount_usd_asof)]));
+    element('incoming-queue').querySelectorAll?.('tbody tr').forEach((tr,index)=>{const row=data.queue[index];if(!row||!tr.children) return;
+      const button=document.createElement('button');button.textContent=row.transaction_id;button.title='Show evidence';
+      button.onclick=event=>{event?.stopPropagation?.();incomingDetail(row,cutoff);};tr.onclick=()=>incomingDetail(row,cutoff);
+      tr.classList.add(`tier-row-${tierFor(row.rank).id}`);tr.children[1].replaceChildren(priorityChip(row.rank));tr.children[2].replaceChildren(button);});
+    element('incoming-detail').hidden=true;
     if(!data.queue.length) element('incoming-queue').textContent='The queue fills as transactions are scored.';
     element('incoming-provenance').textContent=JSON.stringify({run_id:data.run_id,generated_at:data.generated_at,last_progress_at:data.last_progress_at,
       reconciled:data.reconciled,consumer_enabled:data.consumer_enabled,cohort:data.cohort,model:data.model},null,2);
@@ -644,6 +661,7 @@ start();
       element('incoming-checked').textContent=`Checked ${clock(Date.now())}`;
     } catch(error) {
       failures++;
+      element('incoming-message').className='note';
       element('incoming-message').textContent=`Incoming scores unavailable: ${error.name==='AbortError'?'request timed out':error.message}.${latest?' The last published scores are retained.':''}`;
       if(latest) {element('incoming-state').textContent='Stale';element('incoming-state').dataset.state='failed';}
     } finally {
@@ -683,15 +701,27 @@ function selectedPopulation() {
 function selectedCapacity() {return element('review-capacity').value||'100';}
 // Review priority by queue rank, matching the review capacities (25, 100, 250): rank-based, so no score
 // threshold is invented and labels are never needed to assign a tier.
-const TIERS=[{id:'urgent',label:'Urgent',last:25},{id:'high',label:'High',last:100},{id:'review',label:'Review',last:Infinity}];
+const TIERS=[{id:'urgent',label:'Urgent',first:1,last:25,color:'#ff6f5e'},{id:'high',label:'High',first:26,last:100,color:'#ffb648'},{id:'review',label:'Review',first:101,last:Infinity,color:'#cfae7a'}];
 function tierFor(rank) {return TIERS.find(tier=>rank<=tier.last);}
+// Labelled laundering inside each tier of the top `capacity`, from the cumulative hits at each tier boundary.
+function tierHits(metrics,capacity) {
+  return TIERS.map(tier=>{const last=Math.min(tier.last,capacity), upper=metrics[last], lower=tier.first>1?metrics[tier.first-1]:{hits:0};
+    return upper&&lower&&last>=tier.first?{...tier,last,reviewed:last-tier.first+1,hits:upper.hits-lower.hits}:null;}).filter(Boolean)
+    .map(tier=>({...tier,rate:tier.hits/tier.reviewed}));
+}
+// The histogram bucket ('low–high' label) holding score; the last bucket includes its upper edge.
+function bucketFor(histogram,score) {
+  const index=histogram.findIndex(row=>{const [low,high]=row.label.split('–').map(Number);return score>=low&&score<high;});
+  return index>=0?index:histogram.length-1;
+}
 function priorityChip(rank) {
   const tier=tierFor(rank), chip=document.createElement('span');
   chip.className=`priority priority-${tier.id}`;chip.textContent=tier.label;
   return chip;
 }
-// Signal strength as one warm hue: pale for weak signals, deep red for the strongest.
-const heatFill = level => `rgba(196,52,38,${(0.22+0.78*Math.max(0,Math.min(1,level||0))).toFixed(2)})`;
+// On the night background a faint red reads as brown, so the scale runs from slate to the explorer's hub coral.
+const heatFill = level => {const t=Math.max(0,Math.min(1,level||0)), mix=(from,to)=>Math.round(from+(to-from)*t);
+  return `rgb(${mix(61,255)},${mix(84,111)},${mix(104,94)})`;};
 function initialiseExploration() {
   if(explorationReady) return;
   explorationReady=true;
@@ -718,7 +748,7 @@ function chartLines(target,series,maxY=1,maxX=null,xLabel='Date',yFormatter=perc
   if(!valid.length) {element(target).textContent='No measurements for this selection.';return;}
   const minX=xLabel==='Recall'?0:Math.min(...valid.map(row=>row.x)), endX=maxX??Math.max(...valid.map(row=>row.x));
   const x=row=>left+(row.x-minX)/Math.max(endX-minX,1e-9)*w, y=row=>top+h-row.y/Math.max(maxY,1e-9)*h;
-  const ticks=[0,.5,1].map(f=>`<line x1="${left}" x2="${left+w}" y1="${top+h-f*h}" y2="${top+h-f*h}" stroke="#dce6eb"/><text x="${left-8}" y="${top+h-f*h+4}" text-anchor="end">${escapeText(yFormatter(f*maxY))}</text>`).join('');
+  const ticks=[0,.5,1].map(f=>`<line x1="${left}" x2="${left+w}" y1="${top+h-f*h}" y2="${top+h-f*h}" stroke="#1d3347"/><text x="${left-8}" y="${top+h-f*h+4}" text-anchor="end">${escapeText(yFormatter(f*maxY))}</text>`).join('');
   const paths=series.map(item=>`<polyline points="${item.rows.filter(row=>row.y!=null).map(row=>`${x(row)},${y(row)}`).join(' ')}" fill="none" stroke="${item.color}" stroke-width="2.5"/>${item.rows.filter(row=>row.y!=null).map(row=>`<circle tabindex="0" cx="${x(row)}" cy="${y(row)}" r="3" fill="${item.color}"><title>${escapeText(item.name)} · ${escapeText(row.label)}: ${escapeText(yFormatter(row.y))}</title></circle>`).join('')}`).join('');
   const sample=series[0].rows.filter((row,index,rows)=>index===0||index===rows.length-1||index%4===0);
   const dates=xLabel==='Recall'?[0,.5,1].map(f=>`<text x="${left+f*w}" y="210" text-anchor="middle">${percent(f)}</text>`).join(''):
@@ -734,7 +764,7 @@ function renderAml() {
     scores.querySelector('p').textContent='Rule baseline across the selected period.';
     for(const id of ['aml-explore-controls','aml-context','aml-mode','queue-controls','queue-coverage','evaluation-charts']) element(id).hidden=true;
     element('investigation-panel').hidden=false;element('validation-diagnostics').hidden=false;
-    element('model-comparison').hidden=!snapshot?.model;element('aml-note').hidden=false;
+    element('model-comparison').hidden=!snapshot?.model;element('aml-note').hidden=false;element('capture-card').hidden=true;
     renderAmlLegacy();return;
   }
   initialiseExploration();
@@ -752,8 +782,15 @@ function renderAml() {
   cards('aml-kpis',[['Transactions in population',integer(metrics.rows),`${population.label} · ${evaluationPeriodLabel(period)}`],['Review capacity',integer(metrics.k),`Top ${k} · chronological tie policy`],
     [`Laundering in top ${integer(metrics.k)}`,percent(metrics.precision_at_k),`${integer(metrics.hits)} of ${integer(metrics.k)} · ${otherName} ${percent(other.precision_at_k)}`,true],
     ['Share of all laundering caught',percent(metrics.recall_at_k),`of ${integer(metrics.positives)} laundering cases · ${otherName} ${percent(other.recall_at_k)}`]]);
+  const capture=['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#ffb648':'#3fd0b8',
+    rows:Object.entries(population[kind].metrics_by_k).map(([capacity,m])=>({x:Number(capacity),y:m.hits,label:capacity}))}));
+  element('capture-card').hidden=amlMode==='evaluation';
+  element('capture-note').textContent=`Laundering found as the queue grows from 25 to ${integer(population.capacity)} reviews. Labels only score the ranking.`;
+  chartLines('capture-chart',capture,Math.max(1,...capture.flatMap(series=>series.rows.map(row=>row.y))),null,'Payments reviewed',value=>integer(Math.round(value)));
   const pipeline=snapshot.pipeline||{};
-  element('aml-context').textContent=`${population.label} · ${evaluationPeriodLabel(period)} · ${model?'Frozen model':'Rule baseline'} · Dataset ${pipeline.dataset_version??'unversioned'} · ${pipeline.source_scope==='smoke-prefix'?'Demo sample':'Full verified source'} · Model ${snapshot.model.provenance.model_sha256.slice(0,12)} · Data publication ${pipeline.refresh_time||snapshot.generated_at}. ${snapshot.exploration.aml.filter_policy}`;
+  const demo=pipeline.source_scope==='smoke-prefix';
+  trustStrip('aml-context',`${demo?'Demo sample':'Full source, reconciled before publishing'} · ${population.label} · ${evaluationPeriodLabel(period)} · ${model?'Frozen model':'Rule baseline'} ${snapshot.model.provenance.model_sha256.slice(0,12)} · Dataset ${pipeline.dataset_version??'unversioned'} · Published ${String(pipeline.refresh_time||snapshot.generated_at).slice(0,10)}`,!demo);
+  element('aml-filter-note').textContent=snapshot.exploration.aml.filter_policy;
   element('aml-note').textContent=`Average precision ${metrics.average_precision==null?'Unavailable':metrics.average_precision.toFixed(4)} · lift@${metrics.k} ${metrics.lift_at_k==null?'Unavailable':metrics.lift_at_k.toFixed(2)+'×'}. Scores rank review priority; they are not probabilities.`+(period==='tail'?' Later-period evaluation; compare separately from the main test period.':' Retrospective evaluation; labels are absent from investigation records.');
   element('investigation-panel').hidden=amlMode!=='investigation';
   element('model-comparison').hidden=amlMode!=='evaluation';
@@ -766,15 +803,23 @@ function renderAml() {
   table('comparison',['Scorer','Label-positive in queue',`Precision@${k}`,`Recall@${k}`,'Lift','Average precision'],['model','rules'].map(kind=>{
     const m=population[kind].metrics_by_k[k];return [kind==='model'?'Frozen model':'Rules',`${m.hits} / ${m.k}`,percent(m.precision_at_k),percent(m.recall_at_k),m.lift_at_k==null?'Unavailable':m.lift_at_k.toFixed(2)+'×',m.average_precision==null?'Unavailable':m.average_precision.toFixed(4)];}));
   const alertArticle=element('alerts').closest('article'), scoreArticle=element('scores').closest('article');
-  alertArticle.querySelector('h3').textContent='Selected review queue through time';
-  alertArticle.querySelector('p').textContent=`Top ${k} for the entire selected period and population, grouped by date; these are review selections, not a model alert threshold.`;
-  bars('alerts',data.daily_by_k[k],row=>row.day,'reviewed');
+  alertArticle.querySelector('h3').textContent='Laundering found per priority tier';
+  alertArticle.querySelector('p').textContent=`Share of each tier of the top ${k} that is laundering. It thins out further down the queue, which is why ranks 1–25 are Urgent. Labels only score the ranking.`;
+  bars('alerts',tierHits(data.metrics_by_k,Number(k)),tier=>`${tier.label} · ranks ${integer(tier.first)}–${integer(tier.last)} · ${integer(tier.hits)} of ${integer(tier.reviewed)}`,'rate',percent,{color:tier=>tier.color});
   scoreArticle.querySelector('h3').textContent=model?'Model score distribution':'Rule score distribution';
-  scoreArticle.querySelector('p').textContent='Every transaction in the selected population; queue-search filters do not change this chart.';
   // Log widths so the large low-score bucket does not hide the rest; higher-score buckets are drawn deeper red.
-  bars('scores',data.histogram,row=>row.label,'transactions',integer,{scale:'log',color:(row,index)=>heatFill(index/Math.max(1,data.histogram.length-1))});
-  chartLines('pr-chart',['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#b5823d':'#14786f',rows:population[kind].pr_curve.map(row=>({x:row.recall,y:row.precision,label:`Recall ${percent(row.recall)}`}))})),1,1,'Recall');
-  chartLines('capacity-chart',['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#b5823d':'#14786f',rows:Object.entries(population[kind].metrics_by_k).map(([capacity,m])=>({x:Number(capacity),y:m.hits,label:capacity}))})),Math.max(1,...['model','rules'].flatMap(kind=>Object.values(population[kind].metrics_by_k).map(m=>m.hits))),null,'Transactions reviewed',integer);
+  const cutoff=data.queue.length?projectionRecord(data.queue[Math.min(Number(k),data.queue.length)-1]):null, cutScore=cutoff&&Number(model?cutoff.model_score:cutoff.risk_score);
+  const cutIndex=Number.isFinite(cutScore)?bucketFor(data.histogram,cutScore):-1, edges=row=>row.label.split('–');
+  const scored=data.histogram.reduce((sum,row)=>sum+row.transactions,0), first=data.histogram[0];
+  const high=cutIndex>=0?data.histogram.slice(cutIndex).reduce((sum,row)=>sum+row.transactions,0):null;
+  // Headline first: how decisive the scores are, then how to read the bars.
+  scoreArticle.querySelector('p').textContent=(first&&scored?`${percent(first.transactions/scored)} of ${integer(scored)} transactions score below ${edges(first)[1]}`+
+    (high==null?'. ':`; only ${integer(high)} score ${edges(data.histogram[cutIndex])[0]} or higher. `):'')+
+    'Bar length uses a log scale so the small high-score groups stay visible; the counts are exact. Queue filters do not change this chart.';
+  bars('scores',data.histogram,row=>row.label,'transactions',integer,{scale:'log',color:(row,index)=>heatFill(index/Math.max(1,data.histogram.length-1)),
+    mark:cutIndex>=0?{index:cutIndex,text:`Your top ${k} starts here · score ≥ ${model?cutScore.toFixed(4):integer(cutScore)} ↓`}:undefined});
+  chartLines('pr-chart',['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#ffb648':'#3fd0b8',rows:population[kind].pr_curve.map(row=>({x:row.recall,y:row.precision,label:`Recall ${percent(row.recall)}`}))})),1,1,'Recall');
+  chartLines('capacity-chart',['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#ffb648':'#3fd0b8',rows:Object.entries(population[kind].metrics_by_k).map(([capacity,m])=>({x:Number(capacity),y:m.hits,label:capacity}))})),Math.max(1,...['model','rules'].flatMap(kind=>Object.values(population[kind].metrics_by_k).map(m=>m.hits))),null,'Transactions reviewed',integer);
   const allRows=data.queue.map(projectionRecord);
   selectOptions('queue-payment',['',...new Set(allRows.map(row=>row.payment_format))],value=>value||'All formats');
   selectOptions('queue-currency',['',...new Set(allRows.map(row=>row.payment_currency))],value=>value||'All currencies');
@@ -810,8 +855,9 @@ function showDetail(row) {
   const parts=(row.model_evidence||'').split('; ').filter(Boolean).map(part=>{const colon=part.lastIndexOf(':');return {label:part.slice(0,colon),value:Number(part.slice(colon+1).replace('margin','').trim())};}).filter(part=>Number.isFinite(part.value));
   const maximum=Math.max(.01,...parts.map(part=>Math.abs(part.value)));
   element('detail').hidden=false;
-  element('detail').innerHTML=`<div class="heading"><h3>Transaction ${escapeText(row.transaction_id)}</h3><button id="close-detail">Close evidence</button></div><div class="transfer-path"><span>Sender<br><strong>${escapeText(row.from_bank)} / ${escapeText(row.from_account)}</strong></span><span aria-hidden="true">→</span><span>Receiver<br><strong>${escapeText(row.to_bank)} / ${escapeText(row.to_account)}</strong></span></div><div class="evidence-facts"><span><small>Event time</small>${escapeText(row.timestamp.replace('T',' '))}</span><span><small>Original payment</small>${row.amount_paid==null?'Amount not retained in this export':escapeText(integer(row.amount_paid))} ${escapeText(row.payment_currency)}</span><span><small>Prior-day USD valuation</small>${dollars(row.amount_usd_asof)}</span><span><small>Payment format</small>${escapeText(row.payment_format)}</span><span><small>Prior hour</small>${integer(row.txn_count_1h)} outgoing transactions</span><span><small>Prior 24 hours</small>${integer(row.distinct_counterparties_24h)} counterparties</span></div><h3>${model?'Signed model contributions':'Rule evidence'}</h3>${model?(parts.length?`<div class="contribution-list">${parts.map(part=>`<div><span>${escapeText(part.label)}</span><div class="signed-track"><i style="${part.value>=0?'left:50%':'right:50%'};width:${Math.abs(part.value)/maximum*48}%;background:${part.value>=0?'#14786f':'#b5823d'}"></i></div><strong>${part.value>=0?'+':''}${part.value.toFixed(4)}</strong></div>`).join('')}</div><p class="field-help">Displayed contributions sum to ${parts.reduce((sum,p)=>sum+p.value,0).toFixed(4)}; bias ${Number(row.explanation_bias_margin).toFixed(4)}; remaining features ${(Number(row.explanation_total_margin)-Number(row.explanation_bias_margin)-parts.reduce((sum,p)=>sum+p.value,0)).toFixed(4)}; full margin ${Number(row.explanation_total_margin).toFixed(4)}. Positive contributions push the ranking score up. These are model explanations, not causal proof or probabilities.</p>`:'<p>Signed explanations are exported for the whole-period top 250. This filtered-population record shows observed behaviour signals; an exact model contribution is unavailable.</p>'):`<p>${escapeText(row.risk_reasons||'No rule triggered')}</p>`}<h3>Account activity preceding this transaction</h3>${history?`<p>${integer(history.observed_prior_transactions)} preceding outgoing transactions observed since the dataset began. Latest ${history.events.length} shown; no later activity is included.</p><div id="account-timeline" class="table-wrap"></div>`:'<p>Account history is exported for the whole-period model/rule top 250. This record is outside that bounded history projection.</p>'}`;
+  element('detail').innerHTML=`<div class="heading"><h3>Transaction ${escapeText(row.transaction_id)}</h3><button id="close-detail">Close evidence</button></div><div class="transfer-path"><span>Sender<br><strong>${escapeText(row.from_bank)} / ${escapeText(row.from_account)}</strong></span><span aria-hidden="true">→</span><span>Receiver<br><strong>${escapeText(row.to_bank)} / ${escapeText(row.to_account)}</strong></span></div>${ringLinks(row)}<div class="evidence-facts"><span><small>Event time</small>${escapeText(row.timestamp.replace('T',' '))}</span><span><small>Original payment</small>${row.amount_paid==null?'Amount not retained in this export':escapeText(integer(row.amount_paid))} ${escapeText(row.payment_currency)}</span><span><small>Prior-day USD valuation</small>${dollars(row.amount_usd_asof)}</span><span><small>Payment format</small>${escapeText(row.payment_format)}</span><span><small>Prior hour</small>${integer(row.txn_count_1h)} outgoing transactions</span><span><small>Prior 24 hours</small>${integer(row.distinct_counterparties_24h)} counterparties</span></div><h3>${model?'Signed model contributions':'Rule evidence'}</h3>${model?(parts.length?`<div class="contribution-list">${parts.map(part=>`<div><span>${escapeText(part.label)}</span><div class="signed-track"><i style="${part.value>=0?'left:50%':'right:50%'};width:${Math.abs(part.value)/maximum*48}%;background:${part.value>=0?'#3fd0b8':'#ffb648'}"></i></div><strong>${part.value>=0?'+':''}${part.value.toFixed(4)}</strong></div>`).join('')}</div><p class="field-help">Displayed contributions sum to ${parts.reduce((sum,p)=>sum+p.value,0).toFixed(4)}; bias ${Number(row.explanation_bias_margin).toFixed(4)}; remaining features ${(Number(row.explanation_total_margin)-Number(row.explanation_bias_margin)-parts.reduce((sum,p)=>sum+p.value,0)).toFixed(4)}; full margin ${Number(row.explanation_total_margin).toFixed(4)}. Positive contributions push the ranking score up. These are model explanations, not causal proof or probabilities.</p>`:'<p>Signed explanations are exported for the whole-period top 250. This filtered-population record shows observed behaviour signals; an exact model contribution is unavailable.</p>'):`<p>${escapeText(row.risk_reasons||'No rule triggered')}</p>`}<h3>Account activity preceding this transaction</h3>${history?`<p>${integer(history.observed_prior_transactions)} preceding outgoing transactions observed since the dataset began. Latest ${history.events.length} shown; no later activity is included.</p><div id="account-timeline" class="table-wrap"></div>`:'<p>Account history is exported for the whole-period model/rule top 250. This record is outside that bounded history projection.</p>'}`;
   element('detail').scrollIntoView?.({behavior:'smooth',block:'start'});
+  element('detail').querySelectorAll?.('.ring-link').forEach(button=>{button.onclick=()=>openRing(button.dataset.ring,button.dataset.account);});
   if(history) table('account-timeline',['Event time','Receiver bank / account','Payment','Prior-day USD'],history.events.map(event=>[event.timestamp.replace('T',' ').slice(0,16),`${event.to_bank} / ${event.to_account}`,event.payment_format,dollars(event.amount_usd_asof)]));
   element('close-detail').onclick=()=>{element('detail').hidden=true;};
 }
@@ -836,6 +882,40 @@ const ringRow = id => snapshot.network.ring_list.find(item=>item.ring_id===id);
 const leadAccount = id => snapshot.network.graphs[id].nodes[0]?.id || id;
 
 // Within-ring direction of each account: hub/loop, or a counterparty that only sends, only receives, or both.
+// Ring account ids drop the bank's leading zeros (network.account_key), so BQ1 rows are keyed the same way.
+const accountKey=(bank,account)=>`${String(bank).replace(/^0+/,'')||'0'}:${account}`;
+let ringIndexFor=null, ringIndex=new Map();
+// The best-ranked listed ring that draws this account, or null (only the listed rings' accounts are known here).
+function ringOf(bank,account) {
+  const net=snapshot?.network;
+  if(!net?.graphs||!net.ring_list) return null;
+  if(ringIndexFor!==net) {
+    ringIndexFor=net;ringIndex=new Map();
+    for(const row of net.ring_list) for(const node of net.graphs[row.ring_id]?.nodes||[]) if(!ringIndex.has(node.id)) ringIndex.set(node.id,row);
+  }
+  return ringIndex.get(accountKey(bank,account))||null;
+}
+// BQ1 -> BQ2: buttons naming the mule ring the sender or receiver belongs to.
+function ringLinks(row) {
+  const links=[['Sender',row.from_bank,row.from_account],['Receiver',row.to_bank,row.to_account]].map(([who,bank,account])=>{const ring=ringOf(bank,account);
+    return ring?`<button type="button" class="ring-link" data-ring="${escapeText(ring.ring_id)}" data-account="${escapeText(accountKey(bank,account))}">${who} is in mule ring #${integer(ring.rank)} →</button>`:'';}).join('');
+  return links?`<div class="ring-links">${links}</div>`:'';
+}
+function openRing(id,account) {
+  selectDashboardView('network');selectRing(id,account);
+  element('ring-explorer').scrollIntoView?.({behavior:'smooth',block:'start'});
+}
+// One ring as one case: each drawn account, its role and its payments inside the ring. Laundering labels are left out.
+function ringCase(id) {
+  const row=ringRow(id), graph=snapshot.network.graphs[id], roles=flowRoles(graph);
+  const total=(links,key)=>links.reduce((sum,link)=>sum+(Number(link[key])||0),0), money=value=>Math.round(value*100)/100;
+  return graph.nodes.map(node=>{const sent=graph.links.filter(link=>link.source===node.id), received=graph.links.filter(link=>link.target===node.id);
+    return {ring_rank:row.rank,ring_id:id,account:node.id,role:roles[node.id],payments_in_ring_received:total(received,'txns'),payments_in_ring_sent:total(sent,'txns'),
+      usd_in_ring_received:money(total(received,'usd')),usd_in_ring_sent:money(total(sent,'usd')),distinct_senders_all_data:node.fan_in,distinct_receivers_all_data:node.fan_out,
+      usd_received_all_data:money(node.in_usd),usd_sent_all_data:money(node.out_usd),accounts_in_file:`${graph.shown_accounts} of ${graph.total_accounts}`};})
+    .sort((a,b)=>(b.role==='hub')-(a.role==='hub')||(b.payments_in_ring_received+b.payments_in_ring_sent)-(a.payments_in_ring_received+a.payments_in_ring_sent));
+}
+
 function flowRoles(graph) {
   const sends=new Set(graph.links.map(link=>link.source)), receives=new Set(graph.links.map(link=>link.target));
   return Object.fromEntries(graph.nodes.map(node=>[node.id,node.role!=='counterparty'?node.role:
@@ -846,14 +926,15 @@ function renderNetwork() {
   const data=snapshot?.network;
   element('network-body').hidden=!data;element('network-empty').hidden=Boolean(data);
   if(!data) {
-    element('network-context').textContent=`${integer(snapshot?.full_rows||0)} transactions in this release.`;
+    trustStrip('network-context',`${integer(snapshot?.full_rows||0)} transactions in this release.`,false);
     element('network-empty').textContent='This release was published before the mule-network analysis. Run the pipeline again to publish BQ2 network results.';
     return;
   }
   const t=data.totals, p=data.parameters, headline=data.thresholds.find(row=>row.headline)||data.thresholds[0];
   const three=data.loops.three_account, rings=data.rings;
   element('network-question').textContent=data.question;
-  element('network-context').innerHTML=`${data.verification?.status==='passed'?'<span class="verified-chip">✓ Verified</span> Glue tables matched an independent recomputation · ':''}${escapeText(integer(t.accounts))} accounts · ${escapeText(integer(t.links))} account links after merging repeat payments · ${escapeText(integer(t.self_transfers))} self-transfers excluded`;
+  const checked=data.verification?.status==='passed';
+  trustStrip('network-context',`${checked?'Glue tables matched an independent recomputation · ':''}${integer(t.accounts)} accounts · ${integer(t.links)} account links after merging repeat payments · ${integer(t.self_transfers)} self-transfers excluded`,checked);
   cards('network-kpis',[
     ['Rings to investigate',integer(rings.rings),`${integer(rings.accounts)} accounts · largest ${integer(rings.largest)}`],
     ['Ring accounts touching laundering',share(rings.laundering_rate),`${times(rings.lift)} the ${share(t.laundering_rate)} base rate`,true],
@@ -883,6 +964,7 @@ function renderNetwork() {
     bindPresenter();
     element('ring-picker').onchange=()=>selectRing(element('ring-picker').value);
     element('ring-search').oninput=()=>findAccount(element('ring-search').value);
+    element('ring-export').onclick=()=>{if(selectedRing) download(ringCase(selectedRing),`ring-${ringRow(selectedRing).rank}-case.csv`);};
     element('ring-reset').onclick=()=>{if(selectedRing){delete ringLayouts[selectedRing];stopRingScene();ringScene=null;renderRing();}};
     element('ring-flow').onclick=toggleRingFlow;
     element('ring-zoom-in').onclick=()=>zoomRing(1.3);element('ring-zoom-out').onclick=()=>zoomRing(1/1.3);element('ring-fit').onclick=()=>ringScene&&fitRing(ringScene);
@@ -899,7 +981,7 @@ function renderNetwork() {
 
 function renderRingList(data) {
   element('ring-list-note').textContent=`Top ${data.ring_list.length} of ${integer(data.rings.rings)} rings. ${data.definitions.ranking}`;
-  element('ring-rail').innerHTML=`<ol>${data.ring_list.map(row=>`<li><button type="button" data-ring="${escapeText(row.ring_id)}" title="Ring ${escapeText(row.ring_id)}"><span class="rail-rank">#${row.rank}</span><span class="rail-main"><strong>${escapeText(shortAccount(leadAccount(row.ring_id)))}</strong><span>${row.hubs?`<b class="flag flag-hub">${plural(row.hubs,'hub')}</b>`:''}${row.loops?`<b class="flag flag-loop">${plural(row.loops,'loop')}</b>`:''}</span><small>${integer(row.accounts)} accounts · ${dollars(row.usd)}</small></span></button></li>`).join('')}</ol>`;
+  element('ring-rail').innerHTML=`<ol>${data.ring_list.map(row=>`<li><button type="button" data-ring="${escapeText(row.ring_id)}" title="Ring ${escapeText(row.ring_id)}"><span class="rail-rank">#${row.rank}</span><span class="rail-main"><strong>${escapeText(shortAccount(leadAccount(row.ring_id)))}</strong><span>${row.hubs?`<b class="flag flag-hub">${plural(row.hubs,'hub')}</b>`:''}${row.loops?`<b class="flag flag-loop">${plural(row.loops,'loop')}</b>`:''}<b class="flag flag-pay" title="Rings rank by hubs, then loops, then payments">${plural(row.txns,'payment')}</b></span><small>${integer(row.accounts)} accounts · ${dollars(row.usd)}</small></span></button></li>`).join('')}</ol>`;
   element('ring-rail').querySelectorAll?.('[data-ring]').forEach(button=>{button.onclick=()=>selectRing(button.dataset.ring);});
   // The rail lists the top 10 (plus the selected ring) and grows on request, so it never needs its own scroll box.
   if(data.ring_list.length>10&&typeof document.createElement==='function') {

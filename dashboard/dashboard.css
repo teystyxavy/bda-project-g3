@@ -96,3 +96,123 @@ nav{flex-wrap:wrap}.ingestion-layout{display:grid;grid-template-columns:minmax(2
 /* Queue rows open their evidence. */
 #queue tbody tr{cursor:pointer}#queue tbody tr:hover td{background:#eef7f5}
 #queue td button{color:#10675f;border-color:#9fcfc7;font-weight:600}#queue td button::after{content:' ›'}
+/* BQ1 summary: cards beside the capture chart. */
+.aml-summary{display:grid;gap:16px;margin:20px 0}.aml-summary .kpis{margin:0}
+.aml-summary:has(>.capture-card:not([hidden])){grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.aml-summary:has(>.capture-card:not([hidden])) .kpis{grid-template-columns:1fr 1fr}
+.capture-card{margin:0}.capture-card p{margin:0 0 6px;font-size:13px}
+.bar-mark{margin:6px 0 0;padding:6px 0 0;border-top:2px dashed #c43426;color:#9c2a1f;font-size:12px;font-weight:600}
+@media(max-width:760px){.aml-summary:has(>.capture-card:not([hidden])){grid-template-columns:1fr}}
+/* Tier chart above the full-width score chart: no empty space beside a short card. */
+.grid:has(#alerts){grid-template-columns:1fr}
+
+/* ---- Night theme: the whole site takes the ring explorer's look ----
+   Deep navy canvas, thin blue-grey borders, light text and the explorer's glow accents:
+   teal (answers, model), amber (rules, high), coral (urgent, hubs), blue (senders), violet (loops). */
+:root{color-scheme:dark;color:#d8e6f1;background:#09131e}
+body{background:radial-gradient(1100px 520px at 50% -8%,#14283c 0,rgba(9,19,30,0) 72%),#09131e;min-height:100vh}
+body::before{content:"";position:fixed;inset:0;background-image:radial-gradient(rgba(150,185,215,.06) 1px,transparent 1.3px);background-size:22px 22px;pointer-events:none;z-index:-1}
+header{background:#070f18;border-bottom:1px solid #1d3347}
+.eyebrow,.section-eyebrow,.incoming-eyebrow{font-family:ui-monospace,Menlo,monospace;color:#3fd0b8;letter-spacing:.12em}
+.badge{border-color:#2a4459;color:#b7c9d7}
+nav{background:rgba(9,19,30,.92);border-bottom:1px solid #1d3347;backdrop-filter:blur(6px)}
+h1,h2,h3,h4{color:#e6f0f7}
+p,pre,.terms dd,.check-control small,.stage-state,.checked-at,.evidence-facts small{color:#8fa6b8}
+a{color:#4fa8ff}
+footer{color:#5f7a8e}
+button,select,input{background:#0f1f2e;color:#d8e6f1;border-color:#2a4459}
+button:hover{background:#16304a;border-color:#3f6684}
+nav button[aria-pressed=true],.subnav button[aria-pressed=true]{background:rgba(63,208,184,.14);color:#3fd0b8;border-color:#3fd0b8;box-shadow:0 0 14px rgba(63,208,184,.18)}
+button:focus-visible,select:focus-visible,summary:focus-visible{outline-color:#ffb648}
+.primary{background:#3fd0b8;border-color:#3fd0b8;color:#05211c}
+.primary:hover:not(:disabled){background:#5fe0ca}
+.check-control input{accent-color:#3fd0b8}
+.kpi,article,details{background:#0d1b29;border-color:#1d3347;box-shadow:0 12px 32px rgba(0,0,0,.22)}
+article article,article details,article .kpi,details details,details .kpi{background:#102131;box-shadow:none}
+.kpi span{color:#8aa1b4}
+.kpi strong{color:#e6f0f7}
+.kpi-answer{border-color:#3fd0b8;box-shadow:inset 0 4px 0 #3fd0b8,0 0 28px rgba(63,208,184,.12)}
+.kpi-answer strong{color:#3fd0b8}
+.note,.method-line{background:rgba(255,182,72,.07);border-left-color:#ffb648;color:#e6cfa8}
+.context-bar,.run-notice{background:#0f1f2e;border-color:#1d3347;color:#9fb4c6}
+.verified-chip{background:rgba(63,208,184,.14);color:#3fd0b8}
+.bar-track,.stream-progress,.signed-track{background:#16293a}
+.bar-fill,.stream-progress i{background:#3fd0b8}
+.signal-base .bar-fill{background:#5f7a8e}
+.signal-row small{color:#7f97a9}
+.bar-mark{border-top-color:#ff6f5e;color:#ff9d90}
+th{background:#10202f;color:#b7c9d7}
+th,td{border-bottom-color:#1a2e40}
+tbody tr:hover,#queue tbody tr:hover td{background:#12263a}
+aside{background:#0f2230;border:1px solid #1d3347}
+.transfer-path{background:#0b1622}
+.flag-hub{background:rgba(255,111,94,.16);color:#ff8f80}
+.flag-loop{background:rgba(183,148,255,.16);color:#c9b2ff}
+.priority-urgent{background:#ff6f5e;color:#2b0d08}
+.priority-high{background:#ffb648;color:#2a1700}
+.priority-review{background:rgba(207,174,122,.22);color:#e8cf9f}
+#queue tr.tier-row-urgent td:first-child{box-shadow:inset 4px 0 #ff6f5e}
+#queue tr.tier-row-high td:first-child{box-shadow:inset 4px 0 #ffb648}
+#queue tr.tier-row-review td:first-child{box-shadow:inset 4px 0 #cfae7a}
+#queue td button{color:#3fd0b8;border-color:#245c55;background:rgba(63,208,184,.08)}
+.analysis-chart text,.currency-flow text{fill:#8aa1b4}
+.heatmap td{border-color:#09131e}
+.connection{background:#12263a;color:#b7c9d7}
+.connection[data-state=running],.empty-mark{background:rgba(63,208,184,.14);color:#3fd0b8}
+.connection[data-state=failed]{background:rgba(255,111,94,.14);color:#ff8f80}
+.stage-list li{border-bottom-color:#1a2e40}
+.stage-dot{border-color:#2a4459;color:#8aa1b4}
+.stage-list li[data-state=running] .stage-dot{background:#3fd0b8;border-color:#3fd0b8;color:#05211c}
+.stage-list li[data-state=complete] .stage-dot{background:rgba(63,208,184,.14);color:#3fd0b8}
+.stage-list li[data-state=failed] .stage-dot{background:rgba(255,111,94,.14);color:#ff8f80}
+.stage-list li[data-state=running] .stage-state{color:#3fd0b8}
+.map-orchestrator{background:rgba(183,148,255,.08);color:#9fb4c6}
+.map-orchestrator strong{color:#c9b2ff}
+.active-services{background:#0f2230;color:#d8e6f1}
+.map-node rect{fill:#0f1f2e;stroke:#2a4459}
+.map-node[data-state=running] rect{fill:rgba(63,208,184,.12);stroke:#3fd0b8}
+.map-node[data-state=complete] rect{fill:#0f2a28;stroke:#2f8f80}
+.map-node[data-state=reused] rect,.map-node[data-state=skipped] rect{fill:rgba(183,148,255,.1);stroke:#7c68b0}
+.map-node[data-state=failed] rect,.map-node[data-state=stopped] rect{fill:rgba(255,111,94,.1);stroke:#ff6f5e}
+.map-service{fill:#e6f0f7}.map-purpose,.map-source{fill:#9fb4c6}.map-artifact,.map-status,.map-lane{fill:#7f97a9}
+.map-node[data-state=running] .map-status,.map-node[data-state=complete] .map-status{fill:#3fd0b8}
+.map-legend{color:#8fa6b8}
+.map-legend span[data-state]::before{background:#2a4459}
+.map-legend span[data-state=running]::before{background:#3fd0b8}
+.map-legend span[data-state=failed]::before{background:#ff6f5e}
+.ring-rail{background:#0b1724;border-color:#1d3347}
+.ring-rail button:hover{background:#12263a;border-color:#2a4459}
+.ring-rail button[aria-current=true]{background:#12263a;border-color:#3fd0b8;box-shadow:inset 3px 0 0 #3fd0b8,0 0 16px rgba(63,208,184,.12)}
+.ring-rail .rail-more{background:#0f1f2e}
+.rail-main strong{color:#e6f0f7}.rail-rank,.rail-main small{color:#7f97a9}
+.ring-chips span{background:#12263a;color:#9fb4c6;border:1px solid #1d3347}
+.ring-chips strong{color:#e6f0f7}
+#ring-node{background:#0b1724;border-color:#1d3347}
+#ring-node h4{color:#b7c9d7}
+.present-button{background:rgba(255,111,94,.12);color:#ff9d90;border-color:#ff6f5e}
+.present-button:hover{background:rgba(255,111,94,.22);color:#ffd2cc}
+#ring-node *{border-color:#1a2e40}
+.ring-facts{color:#e6f0f7}
+.ring-flows li{color:#d0deea}.ring-flows li span:last-child{color:#7f97a9}
+/* One trust strip under every tab's heading; teal ✓ chip when the data was checked. */
+.trust-strip{display:block;margin:14px 0 18px;padding:11px 16px;border:1px solid #1d3347;border-left:3px solid #2a4459;border-radius:8px;background:#0f1f2e;color:#9fb4c6;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.trust-strip.verified{border-left-color:#3fd0b8}
+.trust-strip.verified::before{content:"✓ Verified";display:inline-block;margin-right:10px;padding:2px 9px;border-radius:20px;background:rgba(63,208,184,.14);color:#3fd0b8;font-weight:600}
+/* Run line lives in the header, under the dataset badge. */
+.header-meta{display:flex;flex-direction:column;align-items:flex-end;gap:8px;min-width:0}
+header #status{margin:0;font-size:12px;color:#8aa1b4;text-align:right;max-width:640px}
+/* Headings keep their action (Present rings) on the right. */
+#network .heading{flex-wrap:nowrap;align-items:flex-start}#network .heading>div{flex:1;min-width:0}.present-button{flex:none}
+/* The incoming queue behaves like the review queue. */
+#incoming-queue tbody tr{cursor:pointer}#incoming-queue tbody tr:hover td{background:#12263a}
+#incoming-queue tr.tier-row-urgent td:first-child{box-shadow:inset 4px 0 #ff6f5e}
+#incoming-queue tr.tier-row-high td:first-child{box-shadow:inset 4px 0 #ffb648}
+#incoming-queue td button{padding:5px 8px;font-size:12px;font-weight:600;color:#3fd0b8;border-color:#245c55;background:rgba(63,208,184,.08)}
+#incoming-queue td button::after{content:' ›'}
+@media(max-width:760px){.header-meta{align-items:flex-start}header #status{text-align:left}#network .heading{flex-wrap:wrap}}
+.flag-pay{background:#16293a;color:#b7c9d7}
+/* BQ1 evidence -> BQ2 ring, and the ring's case export. */
+.ring-links{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 4px}
+.ring-link{font-size:13px;font-weight:600;color:#ff9d90;border-color:#ff6f5e;background:rgba(255,111,94,.1)}
+.ring-link:hover{background:rgba(255,111,94,.2);border-color:#ff8f80}
+.ring-actions{display:flex;gap:8px;flex:none}

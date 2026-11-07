@@ -500,11 +500,43 @@ test('queue priority follows rank and signal bars deepen with strength',async()=
   const h=await harness();
   const text=expression=>vm.runInContext(expression,h.context);
   assert.deepEqual([1,25,26,100,101,2000].map(rank=>text(`tierFor(${rank}).id`)),['urgent','urgent','high','high','review','review']);
-  assert.equal(text(`heatFill(0)`),'rgba(196,52,38,0.22)');assert.equal(text(`heatFill(1)`),'rgba(196,52,38,1.00)');assert.equal(text(`heatFill(7)`),'rgba(196,52,38,1.00)');
+  assert.equal(text(`heatFill(0)`),'rgb(61,84,104)');assert.equal(text(`heatFill(1)`),'rgb(255,111,94)');assert.equal(text(`heatFill(7)`),'rgb(255,111,94)');
   vm.runInContext(`bars('scores',[{label:'low',transactions:859856},{label:'high',transactions:37}],row=>row.label,'transactions',integer,{scale:'log',color:(row,index)=>heatFill(index)})`,h.context);
   const scores=h.el('scores').innerHTML;
-  assert.match(scores,/width:100%;background:rgba\(196,52,38,0\.22\)/);
-  assert.match(scores,/width:26\.\d+%;background:rgba\(196,52,38,1\.00\)/);
+  assert.match(scores,/width:100%;background:rgb\(61,84,104\)/);
+  assert.match(scores,/width:26\.\d+%;background:rgb\(255,111,94\)/);
   vm.runInContext(`cards('network-kpis',[['Plain','1','a'],['Answer','2','b',true]])`,h.context);
   assert.match(h.el('network-kpis').innerHTML,/<div class="kpi"><span>Plain<\/span>.*<div class="kpi kpi-answer"><span>Answer<\/span>/);
+});
+
+test('tier chart, capture chart helpers and the queue cut-off marker',async()=>{
+  const h=await harness();
+  const text=expression=>vm.runInContext(expression,h.context);
+  const metrics=hits=>({hits});
+  const model=JSON.stringify({25:metrics(25),50:metrics(48),100:metrics(91),250:metrics(175)});
+  assert.deepEqual(JSON.parse(text(`JSON.stringify(tierHits(${model},250).map(t=>[t.id,t.reviewed,t.hits,t.rate]))`)),
+    [['urgent',25,25,1],['high',75,66,0.88],['review',150,84,0.56]]);
+  assert.deepEqual(JSON.parse(text(`JSON.stringify(tierHits(${model},50).map(t=>[t.id,t.last,t.hits]))`)),[['urgent',25,25],['high',50,23]]);
+  const histogram=JSON.stringify([{label:'0.00–0.50'},{label:'0.50–0.95'},{label:'0.95–1.00'}]);
+  assert.equal(text(`bucketFor(${histogram},0.9938)`),2);assert.equal(text(`bucketFor(${histogram},1)`),2);assert.equal(text(`bucketFor(${histogram},0.6)`),1);
+  vm.runInContext(`bars('scores',[{label:'a',transactions:5},{label:'b',transactions:2}],row=>row.label,'transactions',integer,{mark:{index:1,text:'Your top 100 starts here'}})`,h.context);
+  assert.match(h.el('scores').innerHTML,/bar-row".*<p class="bar-mark">Your top 100 starts here<\/p><div class="bar-row" title="b/);
+});
+
+test('BQ1 evidence links to the mule ring and a ring exports as a case without labels',async()=>{
+  const h=await harness();
+  const text=expression=>vm.runInContext(expression,h.context);
+  assert.equal(text(`accountKey('0023289','808839F70')`),'23289:808839F70');assert.equal(text(`accountKey('000','A')`),'0:A');
+  vm.runInContext(`snapshot={network:{ring_list:[{rank:1,ring_id:'r1',hubs:1,loops:0,txns:3},{rank:2,ring_id:'r2',hubs:0,loops:1,txns:1}],graphs:{
+    r1:{nodes:[{id:'28:HUB',role:'hub',fan_in:2,fan_out:1,in_usd:10,out_usd:9.999,touches_laundering:true},{id:'5:S',role:'counterparty',fan_in:0,fan_out:1,in_usd:0,out_usd:4,touches_laundering:false},{id:'6:R',role:'counterparty',fan_in:1,fan_out:0,in_usd:9,out_usd:0,touches_laundering:false}],
+      links:[{source:'5:S',target:'28:HUB',txns:2,usd:4},{source:'28:HUB',target:'6:R',txns:1,usd:9}],shown_accounts:3,total_accounts:3},
+    r2:{nodes:[{id:'28:HUB',role:'loop'}],links:[],shown_accounts:1,total_accounts:1}}}}`,h.context);
+  assert.equal(text(`ringOf('0028','HUB').rank`),1);assert.equal(text(`ringOf('9','NOPE')`),null);
+  const links=text(`ringLinks({from_bank:'005',from_account:'S',to_bank:'1',to_account:'X'})`);
+  assert.match(links,/data-ring="r1" data-account="5:S">Sender is in mule ring #1 →/);assert.doesNotMatch(links,/Receiver/);
+  assert.equal(text(`ringLinks({from_bank:'1',from_account:'X',to_bank:'1',to_account:'Y'})`),'');
+  const rows=JSON.parse(text(`JSON.stringify(ringCase('r1'))`));
+  assert.deepEqual(rows.map(row=>[row.account,row.role,row.payments_in_ring_received,row.payments_in_ring_sent]),[['28:HUB','hub',2,1],['5:S','sender',0,2],['6:R','receiver',1,0]]);
+  assert.equal(rows[0].usd_sent_all_data,10);assert.equal(rows[0].accounts_in_file,'3 of 3');
+  assert.ok(rows.every(row=>!Object.keys(row).some(key=>/laundering/.test(key))));
 });
