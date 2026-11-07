@@ -69,9 +69,7 @@ nav{flex-wrap:wrap}.ingestion-layout{display:grid;grid-template-columns:minmax(2
 .pres-toast{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:3;background:rgba(23,12,38,.92);border:1px solid #b794ff;color:#e6dcff;border-radius:999px;padding:8px 16px;font-size:13px;white-space:nowrap;box-shadow:0 0 22px rgba(183,148,255,.35)}
 .pres-toast b{font-family:ui-monospace,Menlo,monospace;font-weight:500}
 .pres-foot{display:grid;gap:10px}
-/* BQ1 presenter (built by dashboard.js) and the glowing present buttons. */
-#qp-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
-#qp-tl{width:100%;height:38px;display:block;cursor:pointer;touch-action:none;min-width:0}
+/* BQ1 presenter (built by dashboard.js; its canvases carry their own sizing so a stale stylesheet cannot distort them) and the glowing present buttons. */
 .qp-rules{color:#ffb648}.pres-story h2 em.qp-ring{color:#c3a6ff}
 .qp-capacity{position:absolute;right:16px;top:16px;z-index:2;display:flex;align-items:center;gap:4px;background:rgba(9,18,28,.82);border:1px solid #1f3346;border-radius:999px;padding:4px 4px 4px 14px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#8aa1b4;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 .qp-capacity #qp-ks{display:flex;gap:2px;margin-left:6px}.qp-capacity button{background:transparent;border:1px solid transparent;border-radius:999px;padding:5px 11px;font:500 12px ui-monospace,Menlo,monospace;color:#c4d3df}
