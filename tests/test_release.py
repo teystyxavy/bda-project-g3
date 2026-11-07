@@ -64,3 +64,33 @@ def test_reject_private_path_in_other_assets(tmp_path):
     (source / 'dashboard.js').write_text('C:\\Users\\private\\secret')
     with pytest.raises(ValueError, match='private path'):
         prepare_release(source, tmp_path / 'release')
+
+
+def test_medium_snapshot_above_old_demo_limit_preserves_content(tmp_path):
+    source, snapshot = fixture(tmp_path)
+    snapshot['exploration'] = {'description': 'x' * 10_000_000}
+    (source / 'dashboard.json').write_text(json.dumps(snapshot))
+    manifest = prepare_release(source, tmp_path / 'release')
+    exported = json.loads((tmp_path / 'release/site/dashboard.json').read_bytes())
+    assert exported['exploration'] == snapshot['exploration']
+    assert exported['model'] == snapshot['model']
+    assert manifest['total_bytes'] > 10_000_000
+
+
+def test_oversized_snapshot_reports_size_and_limit(tmp_path, monkeypatch):
+    from bda_pipeline import release
+    source, _ = fixture(tmp_path)
+    size = (source / 'dashboard.json').stat().st_size
+    monkeypatch.setitem(release.ASSET_MAX_BYTES, 'dashboard.json', size - 1)
+    with pytest.raises(ValueError, match=rf'dashboard.json \({size} bytes; limit {size - 1}\)'):
+        prepare_release(source, tmp_path / 'release')
+    assert not (tmp_path / 'release').exists()
+
+
+def test_total_release_budget_still_enforced(tmp_path, monkeypatch):
+    from bda_pipeline import release
+    source, _ = fixture(tmp_path)
+    monkeypatch.setattr(release, 'RELEASE_MAX_BYTES', 1)
+    with pytest.raises(ValueError, match='package guard'):
+        prepare_release(source, tmp_path / 'release')
+    assert not (tmp_path / 'release').exists()

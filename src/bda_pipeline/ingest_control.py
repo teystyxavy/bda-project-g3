@@ -58,7 +58,7 @@ from .ingest_contract import (
     ACCOUNT, REGION, BUCKET, SITE_BUCKET, MACHINE, DATABASE, canonical, sha,
     valid_run, validate_manifest, paths, stage_request, run_profile, training_job_request,
 )
-from .release import ASSETS, _inspect, SENSITIVE_TEXT
+from .release import ASSETS, ASSET_MAX_BYTES, RELEASE_MAX_BYTES, _inspect, SENSITIVE_TEXT
 from .stage_cache import register, reuse
 
 
@@ -536,19 +536,19 @@ def handle(event, config, clients):
                 or {item['file'] for item in release['files']} != set(ASSETS)
                 or (manifest['train'] and release['verification'].get('training', {}).get('status') != 'passed')):
             raise ValueError('Unverified or incomplete release')
-        # Load each file into memory (max 10 MB each, 12 MB total), check its
+        # Load each file within the shared release budgets, check its
         # size and SHA-256 against the manifest, and scan for secrets or
         # private paths (SENSITIVE_TEXT) before anything becomes public.
         blobs = {}
         for item in release['files']:
-            if not 0 < item['bytes'] <= 10_000_000: raise ValueError('Oversized release file')
+            if not 0 < item['bytes'] <= ASSET_MAX_BYTES[item['file']]: raise ValueError('Oversized release file')
             response = s3.get_object(Bucket=BUCKET, Key=f"{p['export']}/release/site/{item['file']}")
-            with response['Body'] as stream: data = stream.read(10_000_001)
+            with response['Body'] as stream: data = stream.read(ASSET_MAX_BYTES[item['file']] + 1)
             if len(data) != item['bytes'] or hashlib.sha256(data).hexdigest() != item['sha256']:
                 raise ValueError('Release file hash mismatch')
             if SENSITIVE_TEXT.search(data.decode('utf-8')): raise ValueError('Private content in release')
             blobs[item['file']] = data
-        if sum(map(len, blobs.values())) > 12_000_000: raise ValueError('Release too large')
+        if sum(map(len, blobs.values())) > RELEASE_MAX_BYTES: raise ValueError('Release too large')
         snapshot = json.loads(blobs['dashboard.json'])
         # Recursive check for credential-like keys and row-level labels in the queue.
         _inspect(snapshot)
