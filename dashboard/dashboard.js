@@ -1698,7 +1698,7 @@ function bindPresenter() {
 // and snapshot.network. The export carries no per-payment labels, so ground
 // truth appears only as each queue's published hit count, drawn as a tally.
 // The button and overlay are built here, so index.html needs no markup.
-const QP_STEPS=7, QP_SCENE_START=[0,2,3,5,6], QP_KS=['25','50','100','250'], QP_MAX_DOTS=1200000;
+const QP_STEPS=7, QP_SCENE_START=[0,2,3,5,6], QP_KS=['25','50','100','250'], QP_MAX_DOTS=1200000, QP_MAX_GLOW=1500;
 const QP_COLOR={model:'#3fd0b8',rules:'#ffb648',hit:'#ff2e55',miss:'#2c4255',ring:'#b794ff',flag:'#ffb648',sender:'#4fa8ff',receiver:'#ffb648'};
 const QP_HEAT=['#4fa8ff','#3fd0b8','#ffb648','#ff6f5e'];
 const QP={open:false,snap:null,step:0,data:null,k:'100',row:null,raf:null,last:0,W:0,H:0,DPR:1,pts:null,layer:null,image:null,layerKey:'',storyBottom:200,
@@ -1916,8 +1916,9 @@ function qpBuildPoints() {
   counts.forEach((count,b)=>{start[b]=at;const height=Math.log10(1+data.hist[b])/peak;
     for(let j=0;j<count;j++,at++) {const a=random()*Math.PI*2, r=Math.pow(random(),.62);hx[at]=.5+Math.cos(a)*r*.5;hy[at]=.5+Math.sin(a)*r*.5;pb[at]=40+random()*90|0;bin[at]=b;cx[at]=(b+.14+random()*.72)/bins;cy[at]=random()*height;}});
   start[bins]=n;
-  const seeds=presRandom(77);
-  QP.pts={n,hx,hy,cx,cy,pb,bin,start,bins,heights:data.hist.map(count=>Math.log10(1+count)/peak),seed:QP.data.queue.map(()=>[seeds(),seeds()])};
+  const seeds=presRandom(77), tint=Array.from({length:bins},(_,b)=>{const c=parseInt((b?qpHeat(b/(bins-1)):'#6ab4e8').slice(1),16);return [c>>16,c>>8&255,c&255];});
+  // Only the highest-scoring dots get a glow sprite (bounded cost); the rest stay pixels in their band colour.
+  QP.pts={n,hx,hy,cx,cy,pb,bin,start,bins,tint,glowFrom:Math.max(start[1]??n,n-QP_MAX_GLOW),heights:data.hist.map(count=>Math.log10(1+count)/peak),seed:QP.data.queue.map(()=>[seeds(),seeds()])};
 }
 function qpDisc() {const {W,H}=QP;return {cx:W*.56,cy:H*.52,rx:Math.min(W*.47,H*.78),ry:H*.44};}
 function qpHistBox() {
@@ -1937,7 +1938,10 @@ function qpRenderLayer() {
   for(let i=0;i<P.n;i++) {
     const x0=d.cx+(P.hx[i]-.5)*2*d.rx, y0=d.cy+(P.hy[i]-.5)*2*d.ry, X=qpLerp(x0,box.x+P.cx[i]*box.w,col)|0, Y=qpLerp(y0,box.base-P.cy[i]*box.h,col)|0;
     if(X<0||Y<0||X>=w||Y>=h) continue;
-    const k=(Y*w+X)*4, b=P.pb[i]*fade;px[k]=Math.min(110,px[k]+b*.5);px[k+1]=Math.min(205,px[k+1]+b*.8);px[k+2]=Math.min(255,px[k+2]+b);px[k+3]=255;
+    const k=(Y*w+X)*4, b=P.pb[i]*fade;
+    if(P.bin[i]&&col>.5) {const t=P.tint[P.bin[i]], a=b/130;px[k]=Math.min(255,px[k]+t[0]*a);px[k+1]=Math.min(255,px[k+1]+t[1]*a);px[k+2]=Math.min(255,px[k+2]+t[2]*a);}
+    else {px[k]=Math.min(110,px[k]+b*.5);px[k+1]=Math.min(205,px[k+1]+b*.8);px[k+2]=Math.min(255,px[k+2]+b);}
+    px[k+3]=255;
   }
   QP.layer.getContext('2d').putImageData(image,0,0);QP.layerKey=key;return QP.layer;
 }
@@ -1950,7 +1954,7 @@ function qpDrawDots(ctx) {
   const box=qpHistBox(), d=qpDisc(), alpha=col*A.hay*(1-.6*A.dim);
   ctx.save();ctx.globalAlpha=alpha;
   // The rare high-score payments glow in their band's heat colour.
-  for(let i=P.start[1]??P.n;i<P.n;i++) {const [x,y]=qpDotXY(i,col,box,d);presDot(ctx,x,y,1.4,qpHeat(P.bin[i]/(P.bins-1)),5);}
+  for(let i=P.glowFrom;i<P.n;i++) {const [x,y]=qpDotXY(i,col,box,d);presDot(ctx,x,y,1.4,qpHeat(P.bin[i]/(P.bins-1)),5);}
   ctx.font='500 10px ui-monospace,Menlo,monospace';ctx.textAlign='center';
   const bw=box.w/P.bins;
   QP.data.hist.forEach((count,b)=>{if(!count||(bw<34&&b%4&&b!==P.bins-1)) return;ctx.fillStyle=b?qpHeat(b/(P.bins-1)):'#9fd6ff';
