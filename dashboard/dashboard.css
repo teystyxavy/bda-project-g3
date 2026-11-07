@@ -335,3 +335,19 @@ footer{color:var(--faint)}
 @media(prefers-reduced-motion:reduce){.stream-run[data-state=live] .stream-dot{animation:none}}
 #incoming .grid:has(#incoming-progress){grid-template-columns:1fr}
 .stream-progress{height:8px;border-radius:var(--radius-pill)}.stream-progress i{background:linear-gradient(90deg,#1c8f7f,var(--teal));box-shadow:0 0 12px rgba(63,208,184,.45)}
+/* Pipeline map: links light up as data moves; running stages pulse, finished ones glow softly, failures glow coral. */
+.map-links path{transition:stroke .4s,opacity .4s}
+.map-links path[data-flow=idle]{opacity:.55}
+.map-links path[data-flow=done]{stroke:#2f8f80}
+.map-links path[data-flow=running]{stroke:var(--teal);filter:drop-shadow(0 0 4px rgba(63,208,184,.7))}
+.map-links path[data-flow=failed]{stroke:var(--coral);opacity:.8}
+.flow-dot{fill:#d9fff7;filter:drop-shadow(0 0 5px var(--teal)) drop-shadow(0 0 2px var(--teal))}
+.map-node rect{transition:fill .4s,stroke .4s,filter .4s}
+.map-node[data-state=running] rect{filter:drop-shadow(0 0 10px rgba(63,208,184,.55));animation:node-breathe 2s ease-in-out infinite}
+.map-node[data-state=complete] rect{filter:drop-shadow(0 0 6px rgba(63,208,184,.22))}
+.map-node[data-state=failed] rect,.map-node[data-state=stopped] rect{filter:drop-shadow(0 0 10px rgba(255,111,94,.45))}
+.map-node[data-state=failed] .map-status,.map-node[data-state=stopped] .map-status{fill:var(--coral-soft)}
+.map-node[data-state=reused] .map-status,.map-node[data-state=skipped] .map-status{fill:var(--violet-soft)}
+@keyframes node-breathe{50%{filter:drop-shadow(0 0 18px rgba(63,208,184,.8))}}
+@media(prefers-reduced-motion:reduce){.map-node[data-state=running] rect{animation:none}}
+.pipeline-map{background:radial-gradient(ellipse at 50% 55%,rgba(24,48,74,.55),rgba(13,27,41,0) 70%),var(--glass),var(--surface)}
