@@ -194,3 +194,28 @@ test('the case readout shows rank, facts and why it ranked high, with no launder
   assert.doesNotMatch(html,/is_laundering|laundering label|labelled/i);
   assert.equal(h.run(`rankChip({rank:26})`),'<span class="priority priority-high rank-chip">#26 · High</span>');
 });
+
+test('incoming links count the stream by evaluation day and never match masked accounts',async()=>{
+  const h=await harness();
+  h.context.data={queue:[{transaction_id:'HI-Small:1',timestamp:'2022-09-02T10:00:00'},{transaction_id:'HI-Small:2',timestamp:'2022-09-07T10:00:00'},{transaction_id:'HI-Small:3',timestamp:'2022-09-10T10:00:00'}]};
+  h.context.batch={full_rows:5078345,splits:{train:['2022-09-01','2022-09-07'],validation:['2022-09-07','2022-09-09'],test:['2022-09-09','2022-09-11']},
+    exploration:{aml:{periods:{test:{scopes:[{model:{queue:['HI-Small:3']},rules:{queue:[]}}]}}}}};
+  const html=h.run('streamLinksHTML(data,batch)');
+  assert.match(html,/Training reference · Sep 1–6 · <b>1<\/b>/);assert.match(html,/Validation · Sep 7–8 · <b>1<\/b>/);assert.match(html,/Test · Sep 9–10 · <b>1<\/b>/);
+  assert.match(html,/1 of them also appear in the batch queues exported for review/);
+  assert.match(html,/over all 5,078,345 payments/);assert.match(html,/not matched to rings here/);
+  assert.equal((html.match(/data-view="(aml|network|ingestion)"/g)||[]).length,3);
+  assert.match(h.run('streamLinksHTML(data,null)'),/Load the batch release to compare dates/);
+});
+
+test('an incoming case uses only that sender\'s earlier published payments and no self loop',async()=>{
+  const h=await harness();
+  const pay=(id,time,to,from='••••9010')=>({transaction_id:id,timestamp:time,from_bank:'021745',from_account:from,to_bank:'0232259',to_account:to,amount_usd_asof:1000,payment_format:'ACH'});
+  h.context.data={queue:[pay('A','2022-09-02T16:04:00','••••D3C0'),pay('B','2022-09-05T06:30:00','••••D3C0'),pay('C','2022-09-01T06:41:00','••••9010')],
+    latest:[pay('D','2022-09-01T07:00:00','••••AAAA','••••1111'),pay('C','2022-09-01T06:41:00','••••9010')]};
+  const trail=JSON.parse(h.run(`JSON.stringify(streamTrail(data,data.queue[1]))`));
+  assert.deepEqual(trail.payments.map(payment=>payment.transaction_id),['C','A','B']);
+  assert.ok(trail.receivers.every(item=>!item.self));
+  assert.match(trail.summary,/^Among the payments this stream publishes, the sender made 2 payments to 2 receivers/);
+  assert.match(JSON.parse(h.run(`JSON.stringify(streamTrail(data,data.queue[2]))`)).summary,/^None of this sender's earlier payments/);
+});
