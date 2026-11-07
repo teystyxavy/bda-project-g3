@@ -476,3 +476,26 @@ th{font-weight:700;color:var(--text-strong);background:#15293c;font-size:12.5px;
 .case-history{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.case-history span{display:grid;gap:2px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgba(16,33,49,.6)}
 .case-history b{font:650 20px var(--display);color:var(--text-strong);font-variant-numeric:tabular-nums}.case-history small{font-size:11px;color:var(--muted)}
 @media(max-width:1000px){.link-strip{grid-template-columns:1fr}}
+/* Ingestion map boxes: deep navy cards with a slate outline, as in the design reference.
+   Waiting = quiet slate; in progress = the bright light-blue outline and glow; other states keep their colour. */
+.map-node rect{fill:#0e1a2c;stroke:#34465c;stroke-width:1.5;rx:12;ry:12}
+.map-node.map-optional rect{fill:#0c1727;stroke:#3a4c63;stroke-dasharray:5 4}
+.map-node[data-state=pending] rect{fill:#0e1a2c;stroke:#34465c;filter:none}
+.map-node[data-state=running] rect{fill:#0f2036;stroke:#8fd0ff;stroke-width:2.5;filter:drop-shadow(0 0 12px rgba(120,190,255,.55))}
+.map-node[data-state=complete] rect{fill:#0e1f2e;stroke:#3a9c8c;filter:drop-shadow(0 0 6px rgba(63,208,184,.2))}
+.map-node[data-state=reused] rect,.map-node[data-state=skipped] rect{fill:#141a30;stroke:#7a6cb8}
+.map-node[data-state=failed] rect,.map-node[data-state=stopped] rect{fill:#241822;stroke:#f0705f}
+.map-node[data-state=running] .map-status{fill:#9fdcff}
+.map-node[data-state=pending] .map-status{fill:#d6e2ee}
+.map-service{fill:#f2f6fb}.map-purpose{fill:#d3deea}.map-artifact{fill:#8ea3b8}
+.pipeline-map{background:radial-gradient(ellipse at 50% 50%,rgba(22,40,66,.6),rgba(10,18,32,0) 70%),#0a1424}
+.map-links{stroke:#8da1b6}
+/* Each box takes its AWS service colour as an outline and a faint tint, like the service chips in the legend. */
+.map-node[data-stage=acquire]{--svc:#ed7100}
+.map-node[data-stage=curate],.map-node[data-stage=score],.map-node[data-stage=network],.map-node[data-stage=baseline],.map-node[data-stage=export]{--svc:#8c4fff}
+.map-node[data-stage=train]{--svc:#01a88d}
+.map-node[data-stage=publish]{--svc:#7aa116}
+.map-node[data-state=pending] rect,.map-node[data-state=complete] rect,.map-node[data-state=reused] rect,.map-node[data-state=skipped] rect{
+  stroke:color-mix(in srgb,var(--svc) 55%,transparent);fill:color-mix(in srgb,var(--svc) 12%,#0a1424)}
+.map-node[data-stage=publish][data-state=pending] rect,.map-node[data-stage=publish][data-state=complete] rect{stroke:url(#svc-publish);stroke-opacity:.6}
+.map-node[data-state=complete] rect{filter:drop-shadow(0 0 7px color-mix(in srgb,var(--svc) 40%,transparent))}
