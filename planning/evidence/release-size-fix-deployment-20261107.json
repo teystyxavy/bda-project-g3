@@ -1,0 +1,33 @@
+{
+  "date": "2026-11-07",
+  "verified_at_utc": "2026-11-07T09:14:05.789770+00:00",
+  "status": "deployed-and-readback-verified",
+  "scope": "Dashboard release size fix; no pipeline execution started",
+  "artifact_prefix": "pipeline/deployments/e96360d3eb3fe1384f6c4037d12dad438a3e5c5dcf113d7ed73ea2844735b9a1",
+  "deployment_sha256": "784f36c5050bdb193ac68fbc5a86cd6a895b82506bfc35fe71ddcb82e832478b",
+  "terraform": {
+    "added": 16,
+    "changed": 7,
+    "destroyed": 0
+  },
+  "validation": {
+    "focused_tests_passed": 51,
+    "integration_tests_deselected_missing_xgboost": 3,
+    "s3_package_hashes": "matched",
+    "lambda_state": "Active",
+    "lambda_last_update_status": "Successful",
+    "glue_jobs_verified": [
+      "is459-g3-ingest-curate",
+      "is459-g3-ingest-score",
+      "is459-g3-ingest-network",
+      "is459-g3-ingest-baseline",
+      "is459-g3-ingest-export"
+    ],
+    "predecessor_artifacts": "retained",
+    "failed_run_lock": "preserved"
+  },
+  "limits": {
+    "dashboard_json_bytes": 32000000,
+    "release_bytes": 34000000
+  }
+}
