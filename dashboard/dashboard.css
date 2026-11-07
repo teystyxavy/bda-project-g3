@@ -280,3 +280,30 @@ footer{color:var(--faint)}
 .kpi-answer strong{text-shadow:0 0 18px rgba(63,208,184,.35)}
 .kpi-spark{display:block;width:100%;height:34px;margin-top:10px;overflow:visible}
 @media(max-width:760px){nav{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;padding:0 8px}nav button{white-space:nowrap;padding:13px 10px 12px}}
+/* ---- Charts: glowing lines drawn in when shown, gradient areas, crosshair readout in the ring explorer's tooltip style ---- */
+.chart-box{position:relative}
+.analysis-chart{overflow:visible;border-radius:var(--radius-sm)}
+.analysis-chart:focus-visible{outline:2px solid var(--amber);outline-offset:4px}
+.analysis-chart text,.chart-axis{font-size:12px;fill:var(--muted);font-variant-numeric:tabular-nums}
+.chart-title{fill:var(--faint);letter-spacing:.04em}
+.chart-grid{stroke:var(--line);stroke-dasharray:2 5}.chart-base{stroke:var(--line-strong);stroke-dasharray:none}
+.chart-line{fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;animation:chart-draw 1.3s cubic-bezier(.3,.7,.2,1) both}
+.chart-area{animation:chart-fade 1.2s .2s ease both}
+.chart-dot{animation:chart-fade .5s .9s ease both}
+.chart-marker{animation:chart-fade .5s 1.1s ease both}
+.chart-pulse{fill:none;stroke-width:2;transform-box:fill-box;transform-origin:center;animation:ring-pulse 2.4s ease-out infinite}
+.chart-cross{stroke:var(--text-soft);stroke-width:1;stroke-dasharray:3 3;opacity:.7;pointer-events:none}
+.chart-hover{pointer-events:none}
+.chart-tip{min-width:150px}.chart-tip .tip-title{margin:0 0 6px;font-weight:600}
+.chart-tip-row{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:4px}.chart-tip-row b{font:600 13px var(--mono);font-variant-numeric:tabular-nums}
+.chart-note{font-size:12px;margin:8px 0 0}
+.chart-legend i{width:10px;height:10px}
+@keyframes chart-draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@keyframes chart-fade{from{opacity:0}}
+.spark-line{stroke-dasharray:1;animation:chart-draw 1.3s .2s cubic-bezier(.3,.7,.2,1) both}
+/* Bars grow from zero when their tab opens; their values count up in step. */
+.bar-fill{animation:bar-grow 1s cubic-bezier(.2,.8,.2,1) both}.bar-track{border-radius:var(--radius-pill)}.bar-fill{border-radius:var(--radius-pill)}
+.bar-value,.signal-row strong{font-variant-numeric:tabular-nums}
+@keyframes bar-grow{from{width:0}}
+.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+@media(prefers-reduced-motion:reduce){.chart-line,.chart-area,.chart-dot,.chart-marker,.chart-pulse,.spark-line,.bar-fill{animation:none}}

@@ -18,13 +18,69 @@ function selectDashboardView(view) {
   const live=['ingestion','incoming'].includes(view);
   element('status').hidden=live;element('methods').hidden=live;
   if(view==='network' && snapshot) renderNetwork();
+  replaySection(view);
 }
 for(const view of ['aml','incoming','network','ingestion']) element(`${view}-tab`).onclick=()=>selectDashboardView(view);
 
+// ---- Shared motion: count-up numbers, charts drawn at their real width, a replay whenever a tab opens ----
+const reducedMotion = () => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
+const animating = () => typeof requestAnimationFrame==='function' && !reducedMotion();
+// Counts every number in a text up from `from` (same decimals and separators). Dates and clock times stay as they are.
+function countUp(node,from=0,duration=900) {
+  const text=node?.textContent;
+  if(!text || !animating() || /\d[-:]\d/.test(text) || node.dataset?.counting) return;
+  const numbers=[...text.matchAll(/\d[\d,]*(?:\.\d+)?/g)];
+  if(!numbers.length) return;
+  const parts=numbers.map(match=>({value:Number(match[0].replace(/,/g,'')),decimals:(match[0].split('.')[1]||'').length,commas:match[0].includes(',')}));
+  const render=u=>{let index=0;return text.replace(/\d[\d,]*(?:\.\d+)?/g,()=>{const part=parts[index++], value=from+(part.value-from)*u;
+    return part.commas?value.toLocaleString('en-US',{minimumFractionDigits:part.decimals,maximumFractionDigits:part.decimals}):value.toFixed(part.decimals);});};
+  const start=performance.now();node.dataset.counting='1';
+  const frame=now=>{try {
+    const u=Math.min(1,(now-start)/duration), eased=1-Math.pow(1-u,3);
+    node.textContent=u<1?render(eased):text;
+    if(u<1) requestAnimationFrame(frame);else delete node.dataset.counting;
+  } catch {node.textContent=text;delete node.dataset.counting;}};
+  requestAnimationFrame(frame);
+}
+// Charts remember how they were drawn so a tab switch or resize redraws them at the width they are shown.
+const chartCalls=new Map();
+function redrawCharts(scope) {
+  for(const [target,[draw,args]] of chartCalls) {
+    const host=element(target);
+    if(host && (!scope || scope.contains?.(host)) && host.offsetParent!==null) draw(...args);
+  }
+}
+// Opening a tab replays its numbers and redraws its charts, so every view arrives the same way.
+function replaySection(view) {
+  const section=element(view);
+  if(!section?.querySelectorAll || section.hidden) return;
+  redrawCharts(section);
+  section.querySelectorAll('.kpi strong, .bar-value, .signal-row strong').forEach(node=>countUp(node));
+}
+let resizeTimer=null;
+window.addEventListener?.('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>redrawCharts(element(activeView)),180);});
+// Chart width in CSS pixels: the host's width when it is on screen, else a sensible default.
+const chartWidth = host => Math.round(Math.min(1100,Math.max(300,host?.clientWidth||600)));
+
 // The trust strip under each tab's heading; verified adds the ✓ Verified chip.
 function trustStrip(target,text,verified) {element(target).className=`trust-strip${verified?' verified':''}`;element(target).textContent=text;}
+// A small trend line for a KPI card: values in order, drawn with the chart glow.
+function sparkline(values,color='#3fd0b8',label='') {
+  const points=values.filter(Number.isFinite);
+  if(points.length<2) return '';
+  const low=Math.min(...points), high=Math.max(...points), span=high-low||1;
+  const xy=points.map((value,index)=>[index/(points.length-1)*100,30-(value-low)/span*26]);
+  const line=xy.map(([x,y],index)=>`${index?'L':'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+  return `<svg class="kpi-spark" viewBox="0 0 100 34" preserveAspectRatio="none" role="img" aria-label="${escapeText(label)}"><path d="${line} L100 34 L0 34 Z" fill="${color}" opacity=".12"/><path class="spark-line" d="${line}" pathLength="1" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" style="filter:drop-shadow(0 0 4px ${color})"/></svg>`;
+}
+// items: [label, value, detail, answer?, spark?]; spark is {values, color, label}.
 function cards(target, items) {
-  element(target).innerHTML = items.map(([label,value,detail,answer]) => `<div class="kpi${answer?' kpi-answer':''}"><span>${escapeText(label)}</span><strong>${escapeText(value)}</strong><span>${escapeText(detail)}</span></div>`).join('');
+  const host=element(target), previous=new Map();
+  host.querySelectorAll?.('.kpi')?.forEach(card=>previous.set(card.firstChild?.textContent,card.querySelector('strong')?.textContent));
+  host.innerHTML = items.map(([label,value,detail,answer,spark]) => `<div class="kpi${answer?' kpi-answer':''}"><span>${escapeText(label)}</span><strong>${escapeText(value)}</strong><span>${escapeText(detail)}</span>${spark?sparkline(spark.values,spark.color,spark.label):''}</div>`).join('');
+  // Count up on first show and when a value changes, not on every quiet refresh.
+  host.querySelectorAll?.('.kpi')?.forEach(card=>{const strong=card.querySelector('strong'), before=previous.get(card.firstChild?.textContent);
+    if(before!==strong?.textContent) countUp(strong,before&&!/\d[-:]\d/.test(before)?Number(before.match(/\d[\d,]*(?:\.\d+)?/)?.[0].replace(/,/g,''))||0:0);});
 }
 
 function table(target, headings, rows) {
@@ -38,6 +94,7 @@ function bars(target, rows, label, value, formatter=integer, {scale='linear', co
   const size = scale==='log' ? number=>Math.log10(1+Math.max(0,number)) : number=>number;
   const maximum = Math.max(...rows.map(row=>size(row[value])),scale==='log'?1e-9:1);
   element(target).innerHTML = `<div class="bars">${rows.map((row,index)=>`${mark&&mark.index===index?`<p class="bar-mark">${escapeText(mark.text)}</p>`:''}<div class="bar-row" title="${escapeText(label(row))}: ${escapeText(formatter(row[value]))}"><span class="bar-label">${escapeText(label(row))}</span><div class="bar-track"><div class="bar-fill" style="width:${size(row[value])/maximum*100}%${color?`;background:${color(row,index)}`:''}"></div></div><span class="bar-value">${escapeText(formatter(row[value]))}</span></div>`).join('')}</div>`;
+  element(target).querySelectorAll?.('.bar-value')?.forEach(node=>countUp(node));
 }
 
 function trend(target, rows, field, formatter, selected) {
@@ -743,18 +800,71 @@ function selectOptions(id,values,label=value=>value) {
   control.innerHTML=values.map(value=>`<option value="${escapeText(value)}">${escapeText(label(value))}</option>`).join('');
   control.value=values.includes(previous)?previous:values[0];
 }
-function chartLines(target,series,maxY=1,maxX=null,xLabel='Date',yFormatter=percent) {
-  const width=600,height=240,left=72,top=18,w=485,h=168;
+// Line chart drawn at its on-screen width: glowing lines over gradient fills, drawn in each time it is shown.
+// Hover, or focus it and press ←/→, for a crosshair readout; a hidden table carries the same numbers for screen readers.
+// options.markers: [{x, y, color, label, pulse}] extra points such as the chosen review size; options.note: a line under the chart.
+function chartLines(target,series,maxY=1,maxX=null,xLabel='Date',yFormatter=percent,options={}) {
+  const host=element(target);
+  chartCalls.set(target,[chartLines,[target,series,maxY,maxX,xLabel,yFormatter,options]]);
   const valid=series.flatMap(item=>item.rows).filter(row=>row.y!=null && Number.isFinite(row.y));
-  if(!valid.length) {element(target).textContent='No measurements for this selection.';return;}
-  const minX=xLabel==='Recall'?0:Math.min(...valid.map(row=>row.x)), endX=maxX??Math.max(...valid.map(row=>row.x));
+  if(!valid.length) {host.textContent='No measurements for this selection.';return;}
+  const width=chartWidth(host), narrow=width<520, height=narrow?232:262;
+  const left=narrow?50:64, right=18, top=16, w=width-left-right, h=height-top-50, recall=xLabel==='Recall';
+  const minX=recall?0:Math.min(...valid.map(row=>row.x)), endX=maxX??Math.max(...valid.map(row=>row.x));
   const x=row=>left+(row.x-minX)/Math.max(endX-minX,1e-9)*w, y=row=>top+h-row.y/Math.max(maxY,1e-9)*h;
-  const ticks=[0,.5,1].map(f=>`<line x1="${left}" x2="${left+w}" y1="${top+h-f*h}" y2="${top+h-f*h}" stroke="#1d3347"/><text x="${left-8}" y="${top+h-f*h+4}" text-anchor="end">${escapeText(yFormatter(f*maxY))}</text>`).join('');
-  const paths=series.map(item=>`<polyline points="${item.rows.filter(row=>row.y!=null).map(row=>`${x(row)},${y(row)}`).join(' ')}" fill="none" stroke="${item.color}" stroke-width="2.5"/>${item.rows.filter(row=>row.y!=null).map(row=>`<circle tabindex="0" cx="${x(row)}" cy="${y(row)}" r="3" fill="${item.color}"><title>${escapeText(item.name)} · ${escapeText(row.label)}: ${escapeText(yFormatter(row.y))}</title></circle>`).join('')}`).join('');
-  const sample=series[0].rows.filter((row,index,rows)=>index===0||index===rows.length-1||index%4===0);
-  const dates=xLabel==='Recall'?[0,.5,1].map(f=>`<text x="${left+f*w}" y="210" text-anchor="middle">${percent(f)}</text>`).join(''):
-    sample.map(row=>`<text x="${x(row)}" y="210" text-anchor="middle">${escapeText(row.label)}</text>`).join('');
-  element(target).innerHTML=`<div class="chart-legend">${series.map(item=>`<span><i style="background:${item.color}"></i>${escapeText(item.name)}</span>`).join('')}</div><svg class="analysis-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeText(xLabel)} comparison">${ticks}${paths}${dates}<text x="${left+w/2}" y="235" text-anchor="middle">${escapeText(xLabel)}</text></svg>`;
+  const id=`chart-${target}`, n=value=>value.toFixed(1);
+  const drawn=series.map(item=>({...item,points:item.rows.filter(row=>row.y!=null && Number.isFinite(row.y)).map(row=>({...row,px:x(row),py:y(row)}))}));
+  const grid=[0,.25,.5,.75,1].map(f=>`<line class="chart-grid${f?'':' chart-base'}" x1="${left}" x2="${left+w}" y1="${n(top+h-f*h)}" y2="${n(top+h-f*h)}"/>${f%.5===0?`<text class="chart-axis" x="${left-9}" y="${n(top+h-f*h+4)}" text-anchor="end">${escapeText(yFormatter(f*maxY))}</text>`:''}`).join('');
+  const defs=drawn.map((item,i)=>`<linearGradient id="${id}-fill${i}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${item.color}" stop-opacity="${i?.13:.3}"/><stop offset="1" stop-color="${item.color}" stop-opacity="0"/></linearGradient>`).join('');
+  const lines=drawn.map((item,i)=>{
+    if(!item.points.length) return '';
+    const d=item.points.map((p,index)=>`${index?'L':'M'}${n(p.px)} ${n(p.py)}`).join(' ');
+    const area=item.points.length>1?`<path class="chart-area" d="${d} L${n(item.points.at(-1).px)} ${top+h} L${n(item.points[0].px)} ${top+h} Z" fill="url(#${id}-fill${i})"/>`:'';
+    const dots=item.points.length<=30?item.points.map(p=>`<circle class="chart-dot" cx="${n(p.px)}" cy="${n(p.py)}" r="3" fill="${item.color}"><title>${escapeText(item.name)} · ${escapeText(p.label)}: ${escapeText(yFormatter(p.y))}</title></circle>`).join(''):'';
+    return `${area}<path class="chart-line" d="${d}" pathLength="1" stroke="${item.color}" style="filter:drop-shadow(0 0 5px ${item.color})"/>${dots}`;}).join('');
+  const markers=(options.markers||[]).map(mark=>{const px=x(mark), py=y(mark);
+    return `<g class="chart-marker">${mark.pulse?`<circle class="chart-pulse" cx="${n(px)}" cy="${n(py)}" r="6" stroke="${mark.color}"/>`:''}<circle cx="${n(px)}" cy="${n(py)}" r="${mark.pulse?6:4}" fill="${mark.color}" stroke="#09131e" stroke-width="2"><title>${escapeText(mark.label)}</title></circle></g>`;}).join('');
+  // X labels: as many as fit, always the first and last.
+  const rows=series[0].rows, every=Math.ceil(rows.length/Math.max(2,Math.floor(w/(narrow?78:96))));
+  const sample=rows.filter((row,index)=>index===0||index===rows.length-1||index%every===0&&rows.length-1-index>=every/2);
+  const ticks=recall?[0,.25,.5,.75,1].map(f=>`<text class="chart-axis" x="${n(left+f*w)}" y="${top+h+20}" text-anchor="middle">${percent(f)}</text>`).join(''):
+    sample.map(row=>`<text class="chart-axis" x="${n(x(row))}" y="${top+h+20}" text-anchor="middle">${escapeText(row.label)}</text>`).join('');
+  const data=drawn.flatMap(item=>item.points.map(p=>`<tr><td>${escapeText(item.name)}</td><td>${escapeText(p.label)}</td><td>${escapeText(yFormatter(p.y))}</td></tr>`)).slice(0,400).join('');
+  host.innerHTML=`<div class="chart-legend">${series.map(item=>`<span><i style="background:${item.color};box-shadow:0 0 8px ${item.color}"></i>${escapeText(item.name)}</span>`).join('')}</div><div class="chart-box"><svg class="analysis-chart" viewBox="0 0 ${width} ${height}" tabindex="0" role="img" aria-label="${escapeText(xLabel)} comparison. Use the left and right arrow keys to read values."><defs>${defs}</defs>${grid}${lines}${markers}<line class="chart-cross" x1="0" x2="0" y1="${top}" y2="${top+h}" visibility="hidden"/><g class="chart-hover"></g>${ticks}<text class="chart-axis chart-title" x="${n(left+w/2)}" y="${height-6}" text-anchor="middle">${escapeText(xLabel)}</text></svg><div class="ring-tip chart-tip" role="tooltip" hidden></div></div><table class="sr-only"><caption>${escapeText(xLabel)} values</caption><thead><tr><th scope="col">Series</th><th scope="col">${escapeText(xLabel)}</th><th scope="col">Value</th></tr></thead><tbody>${data}</tbody></table>${options.note?`<p class="chart-note">${escapeText(options.note)}</p>`:''}`;
+  bindChartHover(host,drawn,{left,w,width,recall,xLabel,yFormatter});
+}
+// Crosshair readout: the nearest point of every series to the pointer, or to the key-stepped position.
+function bindChartHover(host,drawn,{left,w,width,recall,xLabel,yFormatter}) {
+  const svg=host.querySelector?.('svg'), tip=host.querySelector?.('.chart-tip');
+  if(!svg?.addEventListener || !tip) return;
+  const cross=svg.querySelector('.chart-cross'), hover=svg.querySelector('.chart-hover');
+  const anchors=[...new Map(drawn.flatMap(item=>item.points).sort((a,b)=>a.px-b.px).map(p=>[p.px.toFixed(1),p])).values()];
+  let index=-1;
+  const scale=()=>svg.getBoundingClientRect().width/width;
+  const hide=()=>{tip.hidden=true;cross.setAttribute('visibility','hidden');hover.innerHTML='';};
+  const show=i=>{try {
+    index=Math.max(0,Math.min(anchors.length-1,i));const anchor=anchors[index];
+    const near=drawn.filter(item=>item.points.length).map(item=>({item,p:item.points.reduce((best,p)=>Math.abs(p.px-anchor.px)<Math.abs(best.px-anchor.px)?p:best)}));
+    cross.setAttribute('x1',anchor.px);cross.setAttribute('x2',anchor.px);cross.setAttribute('visibility','visible');
+    hover.innerHTML=near.map(({item,p})=>`<circle cx="${p.px}" cy="${p.py}" r="5.5" fill="${item.color}" stroke="#09131e" stroke-width="2" style="filter:drop-shadow(0 0 6px ${item.color})"/>`).join('');
+    tip.innerHTML=`<span class="tip-title">${escapeText(recall?anchor.label:`${xLabel}: ${anchor.label}`)}</span>${near.map(({item,p})=>`<span class="chart-tip-row" style="--role:${item.color}"><span class="tip-role">${escapeText(item.name)}</span><b>${escapeText(yFormatter(p.y))}</b></span>`).join('')}`;
+    tip.hidden=false;
+    const k=scale(), boxWidth=svg.getBoundingClientRect().width, tipWidth=tip.offsetWidth, px=anchor.px*k;
+    tip.style.left=`${Math.max(4,Math.min(boxWidth-tipWidth-4,px+(px>boxWidth*.6?-tipWidth-14:14)))}px`;
+    tip.style.top=`${Math.max(4,Math.min(...near.map(({p})=>p.py))*k-tip.offsetHeight-12)}px`;
+  } catch {hide();}};
+  svg.addEventListener('pointermove',event=>{
+    const px=(event.clientX-svg.getBoundingClientRect().left)/scale();
+    if(px<left-12||px>left+w+12) {hide();return;}
+    let best=0;anchors.forEach((p,i)=>{if(Math.abs(p.px-px)<Math.abs(anchors[best].px-px)) best=i;});
+    if(best!==index||tip.hidden) show(best);});
+  svg.addEventListener('pointerleave',()=>{hide();index=-1;});svg.addEventListener('blur',hide);
+  svg.addEventListener('focus',()=>show(index<0?anchors.length-1:index));
+  svg.addEventListener('keydown',event=>{
+    const step={ArrowLeft:-1,ArrowRight:1}[event.key];
+    if(event.key==='Escape') {hide();return;}
+    if(event.key==='Home'||event.key==='End') {event.preventDefault();show(event.key==='Home'?0:anchors.length-1);return;}
+    if(step) {event.preventDefault();show(index+step);}});
 }
 function renderAml() {
   if(!snapshot?.exploration) {
