@@ -139,48 +139,6 @@ test('the run line says live only while a stream is running and fresh',async()=>
   assert.doesNotMatch(stale.el('incoming-run').innerHTML,/Live/);
 });
 
-test('the queue explorer draws real queued payments by tier and lights only ring-linked ones',async()=>{
-  const h=await harness();
-  h.context.rows=Array.from({length:100},(_,i)=>({rank:i+1,transaction_id:`HI-Small:${i}`,from_bank:'1',from_account:`S${i}`,to_bank:'2',to_account:`R${i}`}));
-  h.context.ring=row=>row.rank%4===0?{rank:3,ring_id:'r3'}:null;
-  const view=name=>JSON.parse(h.run(`JSON.stringify(queueExplorerHTML({view:'${name}',rows,k:'100',hits:{model:91,rules:0},positives:956,total:862792,ring,width:900}))`));
-  const queue=view('queue');
-  assert.equal((queue.html.match(/class="qx-cell/g)||[]).length,100);
-  assert.equal((queue.html.match(/qx-urgent/g)||[]).length,25);assert.equal((queue.html.match(/qx-high/g)||[]).length,75);
-  assert.doesNotMatch(queue.html,/qx-ring|qx-dim/);assert.equal(queue.cols,20);
-  const rings=view('rings');
-  assert.equal((rings.html.match(/qx-ring/g)||[]).length,25);assert.equal((rings.html.match(/qx-dim/g)||[]).length,75);
-  assert.match(rings.caption,/^25 of the top 100 touch an account in a drawn BQ2 ring/);
-  const duel=view('duel');
-  assert.equal((duel.html.match(/class="qx-dot-hit"/g)||[]).length,91);
-  assert.match(duel.html,/<tspan class="qx-count">0<\/tspan> \/ 100/);assert.match(duel.html,/<tspan class="qx-count">91<\/tspan> \/ 100/);
-  assert.match(duel.caption,/tally of each queue's published count of labelled laundering, not particular payments\. 100 payments picked at random would hold about 0\.11\./);
-});
-
-test('the case replay runs in event order, ends at the queued payment and keeps dataset times',async()=>{
-  const h=await harness();
-  h.context.events=[{timestamp:'2022-09-10T13:18:00.000',to_bank:'020',to_account:'B',payment_format:'ACH',amount_usd_asof:13290},
-    {timestamp:'2022-09-09T15:08:00.000',to_bank:'024840',to_account:'A',payment_format:'ACH',amount_usd_asof:12300}];
-  h.context.row={timestamp:'2022-09-10T16:50:00.000',to_bank:'008771',to_account:'C',payment_format:'ACH',amount_usd_asof:18530};
-  const svg=h.run('caseReplayHTML(events,row,760)');
-  const titles=[...svg.matchAll(/<title>([^<]*)<\/title>/g)].map(match=>match[1]);
-  assert.deepEqual(titles.map(title=>title.split(' · ')[1]),['2022-09-09 15:08','2022-09-10 13:18','2022-09-10 16:50']);
-  assert.match(titles.at(-1),/^This payment/);assert.equal((svg.match(/cr-current/g)||[]).length,1);
-  assert.match(svg,/>2022-09-09 15:08</);assert.match(svg,/>2022-09-10 16:50 · this payment</);
-  assert.equal(h.run('caseReplayHTML([],row)'),'');
-});
-
-test('queue squares carry their rank, the opened one stays marked and evidence names its rank',async()=>{
-  const h=await harness();
-  h.context.rows=Array.from({length:100},(_,i)=>({rank:i+1,transaction_id:`HI-Small:${i}`,from_bank:'1',from_account:`S${i}`,to_bank:'2',to_account:`R${i}`}));
-  const html=h.run(`queueExplorerHTML({view:'queue',rows,k:'100',hits:{model:91,rules:0},positives:956,total:862792,ring:()=>null,width:900,selected:4}).html`);
-  assert.match(html,/<text class="qx-rank"[^>]*>1<\/text>/);assert.match(html,/<text class="qx-rank"[^>]*>100<\/text>/);
-  assert.equal((html.match(/qx-selected/g)||[]).length,1);assert.match(html,/qx-urgent qx-selected" data-index="3"/);
-  assert.equal(h.run(`rankChip({rank:4})`),'<span class="priority priority-urgent rank-chip">#4 · Urgent</span>');
-  assert.equal(h.run(`rankChip({rank:26})`),'<span class="priority priority-high rank-chip">#26 · High</span>');
-  assert.equal(h.run(`rankChip({})`),'');
-});
-
 test('the stream replay lays out the ranked queue and counts from the commit history',async()=>{
   const h=await harness();
   h.context.progress=[{at:'2026-10-06T12:11:14Z',processed:1},{at:'2026-10-06T12:20:00Z',processed:400},{at:'2026-10-06T12:28:20Z',processed:884}];
@@ -192,4 +150,47 @@ test('the stream replay lays out the ranked queue and counts from the commit his
   assert.equal((view.html.match(/class="qx-cell sr-slot/g)||[]).length,100);assert.equal(view.cols,20);
   assert.match(view.html,/qx-urgent" data-index="0"/);assert.match(view.html,/qx-high" data-index="99"/);
   assert.equal(JSON.parse(h.run('JSON.stringify(streamReplayHTML(data,390))')).cols,10);
+});
+
+const TRAIL_EVENTS=[{timestamp:'2022-09-10T13:18:00.000',to_bank:'0023',to_account:'SELF',payment_format:'ACH',amount_usd_asof:13290},
+  {timestamp:'2022-09-01T15:08:00.000',to_bank:'024840',to_account:'A',payment_format:'ACH',amount_usd_asof:12300},
+  {timestamp:'2022-09-01T16:00:00.000',to_bank:'008771',to_account:'C',payment_format:'Reinvestment',amount_usd_asof:1000}];
+const TRAIL_ROW={rank:4,transaction_id:'HI-Small:9',timestamp:'2022-09-10T16:50:00.000',from_bank:'23',from_account:'SELF',to_bank:'008771',to_account:'C',
+  payment_format:'ACH',payment_currency:'US Dollar',amount_usd_asof:18530,model_score:.9959,distinct_counterparties_24h:4,txn_count_1h:0,
+  model_evidence:'payment_format=ACH: +3.0703 margin; Prior-week distinct senders (log): +3.0434 margin; Hour (UTC): -0.4000 margin'};
+
+test('the case trail says what the sender did, in time order, and names payments back to itself',async()=>{
+  const h=await harness();
+  h.context.events=TRAIL_EVENTS;h.context.row=TRAIL_ROW;
+  const trail=JSON.parse(h.run('JSON.stringify(caseTrail(events,row))'));
+  assert.equal(trail.summary,"Before this payment, the sender made 3 payments to 3 receivers, $26.59K in total. This payment goes to a receiver it paid 1 time before. 1 of them went back to the sender's own account.");
+  assert.deepEqual(trail.payments.map(payment=>payment.timestamp.slice(0,16)),['2022-09-01T15:08','2022-09-01T16:00','2022-09-10T13:18','2022-09-10T16:50']);
+  assert.equal(trail.payments.at(-1).current,true);
+  assert.deepEqual(trail.receivers.map(item=>[item.key,item.count,item.current,item.self]),[['24840:A',1,false,false],['8771:C',2,true,false],['23:SELF',1,false,true]]);
+  assert.equal(JSON.parse(h.run('JSON.stringify(caseTrail([],row))')).summary,'No earlier outgoing payments from this sender are in the exported history.');
+});
+
+test('the case graph draws the sender, its receivers and a loop for payments to itself',async()=>{
+  const h=await harness();
+  h.context.events=TRAIL_EVENTS;h.context.row=TRAIL_ROW;
+  const svg=h.run('caseGraphHTML(caseTrail(events,row),row,900,430)');
+  assert.equal((svg.match(/class="case-node/g)||[]).length,2);
+  assert.equal((svg.match(/class="case-node case-node-current"/g)||[]).length,1);
+  assert.match(svg,/PAYS ITSELF · 1 payment/);assert.match(svg,/SENDER 23:SELF/);
+  assert.equal((svg.match(/class="case-edge[ "]/g)||[]).length,3);
+  // Every link starts at the sender.
+  const layout=JSON.parse(h.run('JSON.stringify((({sender,nodes})=>({sender,paths:[...nodes.values()].map(node=>node.path)}))(caseLayout(caseTrail(events,row).receivers,900,430)))'));
+  assert.ok(layout.paths.every(path=>path.startsWith(`M${layout.sender.x.toFixed(1)} ${layout.sender.y.toFixed(1)}`)));
+});
+
+test('the case readout shows rank, facts and why it ranked high, with no laundering label',async()=>{
+  const h=await harness();
+  h.context.row=TRAIL_ROW;h.context.rows=[TRAIL_ROW,{...TRAIL_ROW,rank:1,amount_usd_asof:20000}];
+  const html=h.run(`caseReadoutHTML(row,rows,true,{ring_id:'r6',rank:6})`);
+  assert.match(html,/<span class="priority priority-urgent rank-chip">#4 · Urgent<\/span>/);
+  assert.match(html,/#2 largest amount/);assert.match(html,/data-ring="r6">In BQ2 ring #6 →/);
+  assert.match(html,/<small>Ranking score<\/small>0\.9959/);
+  assert.equal((html.match(/<div class="(neg)?"><span>/g)||[]).length,3);assert.match(html,/class="neg"><span>Hour \(UTC\)<\/span><b>-0\.40<\/b>/);
+  assert.doesNotMatch(html,/is_laundering|laundering label|labelled/i);
+  assert.equal(h.run(`rankChip({rank:26})`),'<span class="priority priority-high rank-chip">#26 · High</span>');
 });
