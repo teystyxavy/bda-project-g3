@@ -311,6 +311,34 @@ async function start(snapshotSource=null) {
 }
 start();
 
+// ---- Pipeline map: money-coloured dots flow along each link into a running stage; finished links stay lit ----
+// The deployed status API may still name the BQ2 stage by its old id.
+const PIPELINE_ALIAS={corridors:'network'};
+const pipelineStage = id => PIPELINE_ALIAS[id]||id;
+// The SVG's links in document order, as [from stage, to stage]; null is the Kaggle + FX source.
+const PIPELINE_LINKS=[[null,'acquire'],['acquire','curate'],['curate','score'],['curate','network'],['curate','baseline'],
+  ['score','export'],['network','export'],['baseline','export'],['baseline','train'],['train','export'],['export','publish']];
+function pipelineLinkState(from,to,states) {
+  const done=stage=>['complete','reused'].includes(states[stage]);
+  if(states[to]==='running' && (from===null || done(from))) return 'running';
+  if((from===null || done(from)) && (done(to) || states[to]==='running')) return 'done';
+  if(['failed','stopped'].includes(states[to])) return 'failed';
+  return 'idle';
+}
+function paintPipelineFlow(states) {
+  const svg=element('ingestion-flow'), paths=svg?.querySelectorAll?.('.map-links path');
+  if(!paths?.length) return;
+  svg.querySelector('.map-flow')?.remove();
+  const layer=document.createElementNS('http://www.w3.org/2000/svg','g');layer.setAttribute('class','map-flow');
+  paths.forEach((path,index)=>{
+    const [from,to]=PIPELINE_LINKS[index]||[], state=from===undefined?'idle':pipelineLinkState(from,to,states);
+    path.id=`pipeline-link-${index}`;path.dataset.flow=state;
+    if(state!=='running' || reducedMotion()) return;
+    for(let dot=0;dot<3;dot++) layer.insertAdjacentHTML('beforeend',`<circle class="flow-dot" r="3.5"><animateMotion dur="1.8s" begin="${(-dot*0.6).toFixed(1)}s" repeatCount="indefinite" rotate="auto"><mpath href="#pipeline-link-${index}"/></animateMotion></circle>`);
+  });
+  svg.querySelector('.map-links').after(layer);
+}
+
 // Ingestion is independent of snapshot loading: controls work before the first release.
 (function ingestionControls() {
   const KEY='is459-ingestion-';
@@ -435,10 +463,11 @@ start();
       run.status==='RUNNING'?'AWS Step Functions — coordinating the next workflow stage.':
       run.status==='SUCCEEDED'?'Run complete. The verified release is available through Amazon CloudFront.':'No active workflow phase reported. The last recorded progress is shown below.';
     element('ingestion-flow').querySelectorAll('[data-stage]').forEach(node=>{
-      const stage=run.stages.find(item=>item.id===node.dataset.stage);
+      const stage=run.stages.find(item=>pipelineStage(item.id)===node.dataset.stage);
       node.dataset.state=stage?.status||'pending';
       node.querySelector('.map-status').textContent=stageLabels[stage?.status]||'Waiting';
     });
+    paintPipelineFlow(Object.fromEntries(run.stages.map(stage=>[pipelineStage(stage.id),stage.status])));
     element('ingestion-run-state').textContent=run.status.replaceAll('_',' ');
     element('ingestion-run-state').dataset.state=run.status==='RUNNING'?'running':run.status==='SUCCEEDED'?'':'failed';
     element('ingestion-elapsed').textContent=elapsed(run.elapsed_seconds);
