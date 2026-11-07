@@ -31,7 +31,7 @@ import json
 from pathlib import Path
 
 from bda_pipeline.model import digest
-from bda_pipeline.streaming import canonical
+from bda_pipeline.streaming import canonical, empty_scan
 
 
 def load(package):
@@ -45,8 +45,10 @@ def load(package):
     for line in path.read_text(encoding='utf-8').splitlines():
         row = json.loads(line)
         state = row['state']
-        if (not row['pk'].startswith(run_id + ':receiver:') or row['pk'] in seeds or state['version'] != 0
-                or state['last_time'] != -1 or not isinstance(state['history'], list)):
+        # A preloaded receiver is a fresh scan (version 0) holding only pending payments in scan order.
+        if (not row['pk'].startswith(run_id + ':receiver:') or row['pk'] in seeds
+                or {key: value for key, value in state.items() if key != 'pending'} != {'version': 0, **empty_scan()}
+                or not isinstance(state.get('pending'), list) or state['pending'] != sorted(state['pending'], key=lambda entry: entry[:2])):
             raise ValueError('Unexpected receiver preload row')
         seeds[row['pk']] = state
     if len(seeds) != manifest['receivers']:
