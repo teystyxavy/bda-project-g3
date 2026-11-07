@@ -352,3 +352,4 @@ footer{color:var(--faint)}
 @media(prefers-reduced-motion:reduce){.map-node[data-state=running] rect{animation:none}}
 .pipeline-map{background:radial-gradient(ellipse at 50% 55%,rgba(24,48,74,.55),rgba(13,27,41,0) 70%),var(--glass),var(--surface)}
 html{scroll-padding-top:64px}#detail,#incoming-detail,#ring-explorer{scroll-margin-top:64px}
+@media(max-width:760px){.stream-run{display:grid;gap:3px}.stream-run span+span::before{content:none}.stream-run .stream-dot{display:none}.stream-published{margin-left:0}}
