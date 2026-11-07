@@ -3,10 +3,18 @@
 **Audience:** whoever runs the next `infra/ingestion` update (Windows machine,
 Docker Desktop, `is459-g3-tools` AWS profile).
 
+**Deployed and verified on 7 November 2026.** Full HI-Small run
+`20261107-012335-fa192bd1` succeeded without training, including Network,
+export and dashboard publication. The explorer shows 50 rings and 1,919
+payments. See [deployment evidence](../evidence/bq2-deployment-20261107.json).
+The acquisition image was also updated to resolve the manifest compatibility
+issue documented below. Incoming AML code is unchanged; its live feed was
+not configured in AWS before this deployment.
+
 PRs #5 and #6 merged the Glue-based mule-network job (replacing the Athena
-treasury-corridor analysis) into `main`. As of this runbook, **none of it is
-deployed** — the live stack's `pipeline/deployment.json` still has
-`stage_versions: {curated, scored}` (no `network` key) and there is no
+treasury-corridor analysis) into `main`. Before this deployment, the live
+stack's `pipeline/deployment.json` still had
+`stage_versions: {curated, scored}` (no `network` key) and there was no
 `is459-g3-ingest-network` Glue job in the account. This is a normal
 `update-ingestion.ps1` update, not a fresh `deploy-ingestion.ps1`.
 
@@ -32,6 +40,11 @@ Only these resources should appear as planned changes:
 | `aws_glue_job.job["network"]` | create |
 | `aws_cloudwatch_log_group.glue["network/error"]` | create |
 | `aws_cloudwatch_log_group.glue["network/output"]` | create |
+| `aws_glue_job.job["curate"]` | update (script path uses the new artifact prefix) |
+| `aws_glue_job.job["score"]` | update (script, package, model and wheels paths use the new artifact prefix) |
+| `aws_glue_job.job["baseline"]` | update (script, package, dashboard and wheels paths use the new artifact prefix) |
+| `aws_glue_job.job["export"]` | update (script, package, dashboard and wheels paths use the new artifact prefix; package includes PR #6) |
+| `aws_iam_role.glue` | update (trust policy adds the network job ARN) |
 | `aws_iam_role_policy.glue` | update (new `pipeline/runs/*/network/*` S3 grants) |
 | `aws_iam_role_policy.workflow` | update (Athena query grants removed) |
 | `aws_iam_role_policy.control` | update (Athena grants removed; network cache-copy PutObject added) |
@@ -47,8 +60,8 @@ to make it pass.
 ## Steps
 
 1. **Merge PR #7** (allowlist fix) into `main` first.
-2. On the Windows machine, pull `main` and confirm `git log -1` shows PR #7's
-   merge commit.
+2. On the Windows machine, pull `main` and confirm its history includes PRs
+   #5, #6 and #7 (later documentation commits may be at the tip).
 3. Build fresh artifacts (reuses the currently-deployed model/wheels/image —
    this is an infra-only change, not a retrain):
    ```powershell
@@ -92,6 +105,17 @@ that first run.
 
 ## Post-deploy verification (cheap test run)
 
+The default cloud-acquisition route must use a current acquisition image too.
+The old image omits `export_dates: null` from the processing identity, while
+the current batch contract includes it. This causes `Begin` to fail with
+`Processing identity mismatch` before any Glue work starts. Rebuild the
+allowlisted image with `prepare-cloud-ingestion.py` and review an update plan
+against the existing `cloud-ingestion` shared state, preserving its configured
+Kaggle secret ARN. The expected functional change is only
+`aws_lambda_function.acquisition.image_uri`; a whitespace-only wrapper
+definition update is harmless. `deploy-cloud-ingestion.ps1 -Execute` is an
+initial-deployment helper and rejects updates to an existing stack.
+
 1. Trigger a small run (HI-Small, no training) rather than HI-Large:
    ```powershell
    .\scripts\ingestion\ingest.ps1 -Subset HI-Small
@@ -129,3 +153,7 @@ that first run.
   Rebuild and redeploy `bda_pipeline.zip` (steps 3-6 again), and confirm the
   export job points at that artifact. The fix is not in the Lambda's
   `control.zip`.
+- If `Begin` fails with `Processing identity mismatch`, check the acquisition
+  image compatibility described above. Preserve the failed run's evidence;
+  after updating acquisition, submit a new run ID rather than editing its
+  manifest in place.

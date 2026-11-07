@@ -1,0 +1,305 @@
+{
+  "date": "2026-11-07",
+  "timezone": "Asia/Singapore",
+  "status": "deployed-and-verified",
+  "source_commit": "8d793fd",
+  "run_id": "20261107-012335-fa192bd1",
+  "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+  "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/20261107-012335-fa192bd1/index.html",
+  "deployment_sha256": "3d585e9322416426c3f9d2ac4cde9f592074f1a8599598565dea1462a7faf910",
+  "artifact_prefix": "pipeline/deployments/add4632394220180a92d620957388ef41377d9ec33698e0f9205e2eb432a2359",
+  "ingestion_apply": {
+    "added": 19,
+    "changed": 11,
+    "destroyed": 0,
+    "post_apply_plan": "no changes"
+  },
+  "acquisition_update": {
+    "image_digest": "sha256:3a1d41dde299132fb2b16f722f635f48faf0618b9564452198bd1ff4c5cdcb4f",
+    "added": 0,
+    "changed": 2,
+    "destroyed": 0,
+    "workflow_change": "JSON whitespace only",
+    "post_apply_plan": "no changes",
+    "reason": "Old acquisition image omitted export_dates:null from the processing identity; existing main code includes it.",
+    "failed_pre_glue_run": "20261107-011751-9d305649",
+    "failed_pre_glue_error": "Processing identity mismatch"
+  },
+  "subset": "HI-Small",
+  "rows": 5078345,
+  "training_requested": false,
+  "states_entered": [
+    "Begin",
+    "ReuseCurated",
+    "Curate",
+    "PrepareBaseline",
+    "ScoreAndAnalyze",
+    "Baseline",
+    "ReuseScores",
+    "ReuseNetwork",
+    "Score",
+    "Network",
+    "PrepareBranches",
+    "TrainRequested",
+    "ReuseFrozen",
+    "PrepareExport",
+    "Export",
+    "Publish",
+    "Complete"
+  ],
+  "network_replaced_corridors": true,
+  "glue": [
+    {
+      "JobName": "is459-g3-ingest-curate",
+      "Id": "jr_ed1ffaabdc3526b2e4c6917258ad8668296cbdbf346f28aef4cf6ec24d73e450",
+      "JobRunState": "SUCCEEDED",
+      "ExecutionTime": 525,
+      "StartedOn": "2026-11-07 09:24:44.608000+08:00",
+      "CompletedOn": "2026-11-07 09:33:38.168000+08:00"
+    },
+    {
+      "JobName": "is459-g3-ingest-score",
+      "Id": "jr_2eb65f6e66a478eb462f5fe51f3572285674067d9bf45c5425dcfed01cfc19df",
+      "JobRunState": "SUCCEEDED",
+      "ExecutionTime": 245,
+      "StartedOn": "2026-11-07 09:34:03.530000+08:00",
+      "CompletedOn": "2026-11-07 09:38:19.314000+08:00"
+    },
+    {
+      "JobName": "is459-g3-ingest-baseline",
+      "Id": "jr_a48876ce5a1c3815ccc9ebf431de70d0854fc6df30ecef94267fb05c0691e621",
+      "JobRunState": "SUCCEEDED",
+      "ExecutionTime": 330,
+      "StartedOn": "2026-11-07 09:34:03.531000+08:00",
+      "CompletedOn": "2026-11-07 09:39:41.034000+08:00"
+    },
+    {
+      "JobName": "is459-g3-ingest-export",
+      "Id": "jr_4ce11ac39933ea6404e56f59e88087caefa11b859a4db8ed2737573ea47e99fa",
+      "JobRunState": "SUCCEEDED",
+      "ExecutionTime": 361,
+      "StartedOn": "2026-11-07 09:40:03.732000+08:00",
+      "CompletedOn": "2026-11-07 09:46:08.386000+08:00"
+    },
+    {
+      "JobName": "is459-g3-ingest-network",
+      "Id": "jr_fe6b5818f92b46f6b0d136946f92c8b1d64cd181606e051230dae00f6d4bc478",
+      "JobRunState": "SUCCEEDED",
+      "ExecutionTime": 147,
+      "StartedOn": "2026-11-07 09:34:03.522000+08:00",
+      "CompletedOn": "2026-11-07 09:36:35.176000+08:00"
+    }
+  ],
+  "verification": {
+    "scores": {
+      "status": "passed",
+      "rows": 5078345,
+      "max_absolute_score_difference": 0.0,
+      "labels_excluded": true,
+      "model_sha256": "3defe725063b1e9ebfe62264f3440bce7c75c8f293554ce73571592d65c11fc6"
+    },
+    "network": {
+      "status": "passed",
+      "reference_rows": 5078345,
+      "table_rows": {
+        "totals": 1,
+        "candidates": 581,
+        "pairs": 3398,
+        "loops": 232,
+        "ring_members": 1110,
+        "ring_edges": 1166
+      },
+      "max_absolute_usd_differences": {
+        "totals": 0.0,
+        "candidates": 3.814697265625e-05,
+        "pairs": 0.0,
+        "loops": 0.0,
+        "ring_members": 2.384185791015625e-07,
+        "ring_edges": 1.1920928955078125e-07
+      },
+      "usd_rtol": 1e-09,
+      "usd_atol": 0.01,
+      "labels_used_for": "aggregate evaluation only",
+      "shape": {
+        "status": "passed",
+        "accounts": 422734,
+        "rings": 202,
+        "ring_accounts": 1110,
+        "largest_ring": 33,
+        "ring_limit": 4228,
+        "loops": 232,
+        "pairs": 3398
+      }
+    }
+  },
+  "displayed_rings": 50,
+  "displayed_payments": 1919,
+  "public_release": {
+    "status": "passed",
+    "run_id": "20261107-012335-fa192bd1",
+    "selected_release": true,
+    "root_shell_verified": true,
+    "public_files": [
+      {
+        "file": "index.html",
+        "bytes": 29591,
+        "sha256": "b483ecfa9bf2166f77509e5dbf0211b52c09a6090af0425cf1c0e02e4e9331b6",
+        "public_private_match": true
+      },
+      {
+        "file": "dashboard.css",
+        "bytes": 28762,
+        "sha256": "8db3955094f8ae44678c4b1dab11bdf4f480f6a197b1ec7a6cca900d5741bf6c",
+        "public_private_match": true
+      },
+      {
+        "file": "dashboard.js",
+        "bytes": 139703,
+        "sha256": "352b29b60a32fa803eb96f8fbc97611c670a1617ff275f081a45cb6688ee19d4",
+        "public_private_match": true
+      },
+      {
+        "file": "dashboard.json",
+        "bytes": 7873046,
+        "sha256": "6bc475cc2f0f978ec91ce97e970c4df184b718c12574a69534b8e9ebb073c28c",
+        "public_private_match": true
+      }
+    ],
+    "successful_manifest_cached": true,
+    "global_lock_exists": false,
+    "verification": {
+      "scores": {
+        "status": "passed",
+        "rows": 5078345,
+        "max_absolute_score_difference": 0.0,
+        "labels_excluded": true,
+        "model_sha256": "3defe725063b1e9ebfe62264f3440bce7c75c8f293554ce73571592d65c11fc6"
+      },
+      "network": {
+        "status": "passed",
+        "reference_rows": 5078345,
+        "table_rows": {
+          "totals": 1,
+          "candidates": 581,
+          "pairs": 3398,
+          "loops": 232,
+          "ring_members": 1110,
+          "ring_edges": 1166
+        },
+        "max_absolute_usd_differences": {
+          "totals": 0.0,
+          "candidates": 3.814697265625e-05,
+          "pairs": 0.0,
+          "loops": 0.0,
+          "ring_members": 2.384185791015625e-07,
+          "ring_edges": 1.1920928955078125e-07
+        },
+        "usd_rtol": 1e-09,
+        "usd_atol": 0.01,
+        "labels_used_for": "aggregate evaluation only",
+        "shape": {
+          "status": "passed",
+          "accounts": 422734,
+          "rings": 202,
+          "ring_accounts": 1110,
+          "largest_ring": 33,
+          "ring_limit": 4228,
+          "loops": 232,
+          "pairs": 3398
+        }
+      }
+    }
+  },
+  "incoming_aml": {
+    "incoming_aml_code_unchanged": true,
+    "sha256": "d90a89d354fc629ede4461f0c5450b71333efb507f6190f4d98da165635b873c",
+    "live_feed_configured_before_publication": false
+  },
+  "tests": {
+    "targeted_python_passed": 44,
+    "acquisition_python_passed": 8,
+    "dashboard_node_passed": 29
+  },
+  "usage": {
+    "status": "measured",
+    "glue": [
+      {
+        "stage": "curated",
+        "reused": false,
+        "state": "SUCCEEDED",
+        "seconds": 525,
+        "worker_type": "G.1X",
+        "workers": 2,
+        "auto_scaled": false,
+        "cost_basis": "glue_reported_dpu_seconds",
+        "dpu_hours": 0.2919,
+        "estimated_usd": 0.1285
+      },
+      {
+        "stage": "scored",
+        "reused": false,
+        "state": "SUCCEEDED",
+        "seconds": 245,
+        "worker_type": "G.1X",
+        "workers": 2,
+        "auto_scaled": false,
+        "cost_basis": "glue_reported_dpu_seconds",
+        "dpu_hours": 0.1364,
+        "estimated_usd": 0.06
+      },
+      {
+        "stage": "baseline",
+        "reused": false,
+        "state": "SUCCEEDED",
+        "seconds": 330,
+        "worker_type": "G.2X",
+        "workers": 2,
+        "auto_scaled": false,
+        "cost_basis": "glue_reported_dpu_seconds",
+        "dpu_hours": 0.3672,
+        "estimated_usd": 0.1616
+      },
+      {
+        "stage": "export",
+        "reused": false,
+        "state": "SUCCEEDED",
+        "seconds": 361,
+        "worker_type": "G.2X",
+        "workers": 2,
+        "auto_scaled": false,
+        "cost_basis": "glue_reported_dpu_seconds",
+        "dpu_hours": 0.4011,
+        "estimated_usd": 0.1765
+      },
+      {
+        "stage": "network",
+        "reused": false,
+        "state": "SUCCEEDED",
+        "seconds": 147,
+        "worker_type": "G.1X",
+        "workers": 2,
+        "auto_scaled": true,
+        "cost_basis": "glue_reported_dpu_seconds",
+        "dpu_hours": 0.0697,
+        "estimated_usd": 0.0307
+      }
+    ],
+    "sagemaker": [],
+    "estimated_usd": 0.5573,
+    "estimated_usd_is_upper_bound": false,
+    "rates": {
+      "glue_usd_per_dpu_hour": 0.44,
+      "sagemaker_usd_per_hour": {
+        "ml.m5.2xlarge": 0.576,
+        "ml.m5.4xlarge": 1.152
+      }
+    },
+    "scope": "List-price estimate of Glue and SageMaker compute only; not an invoice."
+  },
+  "browser_check": {
+    "mule_networks_tab": true,
+    "verified_network_badge": true,
+    "ring_explorer_rendered": true,
+    "incoming_live_feed": "not configured before deployment; tab remains hidden"
+  }
+}
