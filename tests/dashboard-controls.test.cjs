@@ -495,3 +495,16 @@ test('refresh shows when the last successful check happened, even with nothing n
   assert.equal(h.el('incoming-checked').textContent,checked);
   assert.match(h.el('incoming-message').textContent,/request failed \(503\)/);
 });
+
+test('queue priority follows rank and signal bars deepen with strength',async()=>{
+  const h=await harness();
+  const text=expression=>vm.runInContext(expression,h.context);
+  assert.deepEqual([1,25,26,100,101,2000].map(rank=>text(`tierFor(${rank}).id`)),['urgent','urgent','high','high','review','review']);
+  assert.equal(text(`heatFill(0)`),'rgba(196,52,38,0.22)');assert.equal(text(`heatFill(1)`),'rgba(196,52,38,1.00)');assert.equal(text(`heatFill(7)`),'rgba(196,52,38,1.00)');
+  vm.runInContext(`bars('scores',[{label:'low',transactions:859856},{label:'high',transactions:37}],row=>row.label,'transactions',integer,{scale:'log',color:(row,index)=>heatFill(index)})`,h.context);
+  const scores=h.el('scores').innerHTML;
+  assert.match(scores,/width:100%;background:rgba\(196,52,38,0\.22\)/);
+  assert.match(scores,/width:26\.\d+%;background:rgba\(196,52,38,1\.00\)/);
+  vm.runInContext(`cards('network-kpis',[['Plain','1','a'],['Answer','2','b',true]])`,h.context);
+  assert.match(h.el('network-kpis').innerHTML,/<div class="kpi"><span>Plain<\/span>.*<div class="kpi kpi-answer"><span>Answer<\/span>/);
+});

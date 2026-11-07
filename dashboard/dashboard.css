@@ -85,3 +85,14 @@ nav{flex-wrap:wrap}.ingestion-layout{display:grid;grid-template-columns:minmax(2
   .pres-vrow{grid-template-columns:1fr 54px}.pres-vtrack{grid-column:1/-1;grid-row:2}.pres-verdict{left:12px;right:12px;bottom:12px;padding:14px}
   .pres-clock{min-width:0}.pres-toast{bottom:150px;white-space:normal;text-align:center;width:max-content;max-width:calc(100% - 24px)}}
 @media(prefers-reduced-motion:reduce){.pres-fade{animation:none}.pres-vfill{transition:none}}
+/* Queue priority by rank: the more urgent, the deeper the colour. */
+.priority{display:inline-block;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:700;white-space:nowrap}
+.priority-urgent{background:#c43426;color:#fff}.priority-high{background:#f0a074;color:#4a1d0c}.priority-review{background:#fbe6c8;color:#6b4710}
+#queue tr.tier-row-urgent td:first-child{box-shadow:inset 4px 0 #c43426}#queue tr.tier-row-high td:first-child{box-shadow:inset 4px 0 #f0a074}
+#queue tr.tier-row-review td:first-child{box-shadow:inset 4px 0 #f3d29f}
+#queue td:last-child{white-space:normal;min-width:300px;max-width:440px;line-height:1.45}
+/* The card that answers the tab's question. */
+.kpi-answer{border-color:#14786f;box-shadow:inset 0 4px 0 #14786f}.kpi-answer strong{color:#10675f}
+/* Queue rows open their evidence. */
+#queue tbody tr{cursor:pointer}#queue tbody tr:hover td{background:#eef7f5}
+#queue td button{color:#10675f;border-color:#9fcfc7;font-weight:600}#queue td button::after{content:' ›'}
