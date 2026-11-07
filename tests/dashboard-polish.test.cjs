@@ -138,3 +138,34 @@ test('the run line says live only while a stream is running and fresh',async()=>
   assert.match(stale.el('incoming-run').innerHTML,/no recent update/);
   assert.doesNotMatch(stale.el('incoming-run').innerHTML,/Live/);
 });
+
+test('the queue explorer draws real queued payments by tier and lights only ring-linked ones',async()=>{
+  const h=await harness();
+  h.context.rows=Array.from({length:100},(_,i)=>({rank:i+1,transaction_id:`HI-Small:${i}`,from_bank:'1',from_account:`S${i}`,to_bank:'2',to_account:`R${i}`}));
+  h.context.ring=row=>row.rank%4===0?{rank:3,ring_id:'r3'}:null;
+  const view=name=>JSON.parse(h.run(`JSON.stringify(queueExplorerHTML({view:'${name}',rows,k:'100',hits:{model:91,rules:0},positives:956,total:862792,ring,width:900}))`));
+  const queue=view('queue');
+  assert.equal((queue.html.match(/class="qx-cell/g)||[]).length,100);
+  assert.equal((queue.html.match(/qx-urgent/g)||[]).length,25);assert.equal((queue.html.match(/qx-high/g)||[]).length,75);
+  assert.doesNotMatch(queue.html,/qx-ring|qx-dim/);assert.equal(queue.cols,20);
+  const rings=view('rings');
+  assert.equal((rings.html.match(/qx-ring/g)||[]).length,25);assert.equal((rings.html.match(/qx-dim/g)||[]).length,75);
+  assert.match(rings.caption,/^25 of the top 100 touch an account in a drawn BQ2 ring/);
+  const duel=view('duel');
+  assert.equal((duel.html.match(/class="qx-dot-hit"/g)||[]).length,91);
+  assert.match(duel.html,/<tspan class="qx-count">0<\/tspan> \/ 100/);assert.match(duel.html,/<tspan class="qx-count">91<\/tspan> \/ 100/);
+  assert.match(duel.caption,/tally of each queue's published count of labelled laundering, not particular payments\. 100 payments picked at random would hold about 0\.11\./);
+});
+
+test('the case replay runs in event order, ends at the queued payment and keeps dataset times',async()=>{
+  const h=await harness();
+  h.context.events=[{timestamp:'2022-09-10T13:18:00.000',to_bank:'020',to_account:'B',payment_format:'ACH',amount_usd_asof:13290},
+    {timestamp:'2022-09-09T15:08:00.000',to_bank:'024840',to_account:'A',payment_format:'ACH',amount_usd_asof:12300}];
+  h.context.row={timestamp:'2022-09-10T16:50:00.000',to_bank:'008771',to_account:'C',payment_format:'ACH',amount_usd_asof:18530};
+  const svg=h.run('caseReplayHTML(events,row,760)');
+  const titles=[...svg.matchAll(/<title>([^<]*)<\/title>/g)].map(match=>match[1]);
+  assert.deepEqual(titles.map(title=>title.split(' · ')[1]),['2022-09-09 15:08','2022-09-10 13:18','2022-09-10 16:50']);
+  assert.match(titles.at(-1),/^This payment/);assert.equal((svg.match(/cr-current/g)||[]).length,1);
+  assert.match(svg,/>2022-09-09 15:08</);assert.match(svg,/>2022-09-10 16:50 · this payment</);
+  assert.equal(h.run('caseReplayHTML([],row)'),'');
+});
