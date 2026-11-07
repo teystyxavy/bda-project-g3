@@ -22,7 +22,7 @@ image to ECR is a separate, manually approved step.
 Usage::
 
     python scripts/streaming/prepare-streaming-container.py \\
-        --artifacts <model release dir> --output output/streaming-build
+        --artifacts <model release dir> [--manifest-sha256 <sha>] --output output/streaming-build
 """
 import argparse,json,shutil
 from pathlib import Path
@@ -40,12 +40,14 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifacts',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
+    # The frozen model the image serves (default: the first reviewed release).
+    parser.add_argument('--manifest-sha256',default=MANIFEST)
     args=parser.parse_args()
     # A fresh folder guarantees no stale files end up inside the image.
     if args.output.exists():raise ValueError('Use a fresh build directory')
     # Checks model-manifest.json against the trusted SHA-256 and then every
     # allow-listed file (model .ubj, features/selection/comparison JSON).
-    verify_artifacts(args.artifacts,MANIFEST)
+    verify_artifacts(args.artifacts,args.manifest_sha256)
     # Repository root (this file is in <root>/scripts/streaming/).
     root=Path(__file__).resolve().parents[2]
     args.output.mkdir(parents=True)
@@ -56,7 +58,7 @@ def main():
     shutil.copytree(root/'src/bda_pipeline',args.output/'bda_pipeline',ignore=shutil.ignore_patterns('__pycache__'))
     shutil.copytree(args.artifacts,args.output/'artifacts')
     # Record a SHA-256 for every file in the context (sorted for a stable report).
-    report={'status':'local-context-not-uploaded','manifest_sha256':MANIFEST,
+    report={'status':'local-context-not-uploaded','manifest_sha256':args.manifest_sha256,
             'files':{str(p.relative_to(args.output)):digest(p) for p in sorted(args.output.rglob('*')) if p.is_file()}}
     (args.output/'build-context.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print(json.dumps({'status':report['status'],'files':len(report['files'])}))

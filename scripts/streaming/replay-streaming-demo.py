@@ -19,7 +19,10 @@ Safety design
 * The rate is capped at 1-20 events/second (well under a single shard's
   1,000 records/s write limit) and the cohort at 2,000 events.
 * It checks the AWS account and that the stream is ACTIVE with exactly one
-  open shard before sending.
+  open shard before sending, and, for a package with receiver features, that
+  every preloaded receiver exists in the run's table.
+* Events are sent in event-time order (the package order). With one shard and
+  one concurrent consumer batch, every receiver sees its payments in order.
 * A *receipt* file (created exclusively, flushed after every record) logs
   each transaction's Kinesis sequence number and shard. If the producer is
   interrupted, the receipt shows exactly what was sent, so the run can be
@@ -94,6 +97,16 @@ def main():
     # Refuse to send unless the reviewed one-shard stream is active.
     summary=client.describe_stream_summary(StreamName=stream)['StreamDescriptionSummary']
     if summary['StreamStatus']!='ACTIVE' or summary['OpenShardCount']!=1:raise ValueError('Require the reviewed active one-shard stream')
+    # A package with receiver features needs every receiver preloaded (seed-streaming-receivers.py) before any send;
+    # otherwise the consumer stops at the first payment to a missing receiver.
+    seeds=args.package/'receivers.jsonl'
+    if seeds.exists():
+        if digest(seeds)!=manifest.get('receivers_sha256'):raise ValueError('Modified receiver preload')
+        ddb=session.client('dynamodb',config=config)
+        for line in seeds.read_text(encoding='utf-8').splitlines():
+            key=json.loads(line)['pk']
+            item=ddb.get_item(TableName=stream,Key={'pk':{'S':key}},ConsistentRead=True,ProjectionExpression='pk').get('Item')
+            if item is None:raise ValueError('Receivers are not preloaded; run seed-streaming-receivers.py first')
     args.receipt.parent.mkdir(parents=True,exist_ok=True)
     # Open exclusively before first send; an interrupted producer must be reconciled before any resumed send.
     with args.receipt.open('x',encoding='utf-8') as receipt:

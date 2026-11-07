@@ -414,6 +414,21 @@ test('a completed stream is never stale and is checked less often',async()=>{
   assert.ok([...h.timers.values()].some(timer=>timer.ms===60000));
 });
 
+test('a receiver-feature run shows receiver histories and incoming activity columns',async()=>{
+  const row={...streamRow(1,'HI-Small:7',.42),in_txn_count_1h:1,in_txn_count_24h:6,in_txn_count_7d:19,distinct_senders_24h:4,distinct_senders_7d:11};
+  const done=streamSnapshot({state:'completed',reconciled:true,processed:884,senders:{expected:32,started:32,complete:32},
+    receivers:{expected:113,preloaded:113,complete:113},queue:[row],generated_at:new Date(Date.now()-86400000).toISOString()});
+  const h=await harness({configured:false,authenticated:false,fetchHook:streamHook(done)});
+  h.el('incoming-tab').onclick();await settle();
+  assert.match(h.el('incoming-message').textContent,/All 884 incoming transactions, 32 sender histories and 113 receiver histories reconcile/);
+  assert.match(h.el('incoming-kpis').innerHTML,/Complete receiver histories<\/span><strong>113 \/ 113<\/strong>/);
+  // A sender-only snapshot has no receiver card or columns.
+  const old=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot({}))});
+  old.el('incoming-tab').onclick();await settle();
+  assert.doesNotMatch(old.el('incoming-queue').innerHTML,/Receiver payments/);
+  assert.doesNotMatch(old.el('incoming-kpis').innerHTML,/receiver histories/);
+});
+
 const REVIEW={cutoff:.9937289953,capacity:100,period:'2022-09-07 to 2022-09-08',source_run:'opt-full-20261006-aws1'};
 const VERIFIED={transactions:884,features_exact:true,max_absolute_score_difference:2.9103830456733704e-11,verified_on:'2026-10-06',
   evidence:'planning/evidence/streaming-deployment-result-20261006.json'};

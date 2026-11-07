@@ -1,5 +1,85 @@
 # Bounded streaming demo
 
+## delta1 model with all 15 behaviour features (`stream-delta1-20261107`)
+
+Status, 7 November 2026: **code and local parity done; not deployed.** The 6 October
+run below is unchanged and still serves the live Incoming tab.
+
+The batch pipeline now serves delta1 (model `0170bef6…`, manifest `0b9ba30d…`, trained
+on an HI-Large date subset). Release `medium-delta1-20261107-183216-ui1` scores HI-Medium
+Sep 15–28: 99 laundering cases in the top 100, AP 0.691. On the HI-Small test days it
+reaches 99 of the top 100 and AP 0.461, against 91 and 0.277 for the previous model.
+delta1 reads every batch behaviour feature, so the consumer now computes all 15:
+
+- **Exact batch scan.** `scan_step` repeats `curate_transactions._windowed_counts` one
+  row at a time, in (event time, source row) order:
+  - When time moves forward, entries older than each window are evicted, with each
+    USD sum decremented and floored at 0, and a snapshot is taken.
+  - Rows sharing a timestamp reuse that snapshot, so they exclude each other.
+  - The row is added after its values are taken.
+
+  The queues and running sums live in state, so the floating-point USD sums match batch
+  bit for bit. `corridor_prior_count` is the all-time count of earlier payments from the
+  sender to the same receiver (`_prior_pair_counts`). Unlike the window features, it
+  counts earlier rows that share the timestamp.
+- **Sender state** holds the sender's scan and per-receiver pair counts. The replay
+  contains each selected sender's whole history.
+- **Receiver state** is keyed `<run>:receiver:<hash>`. A receiver is also paid by senders
+  outside the replay. Those payments come from the same batch data and are preloaded
+  once at version 0 as `pending` rows (`receivers.jsonl`, `seed-streaming-receivers.py`).
+  Each replayed payment first applies the pending rows before it, so the receiver's scan
+  reaches exactly where batch was. The consumer refuses:
+  - a payment to a receiver that was not preloaded;
+  - any event at or before the last position already applied.
+
+  The stream has one shard, one concurrent batch and is sent in (event time, source row)
+  order. A stream with more shards would need a different design.
+- **Commits:** sender state, receiver state and the result commit in one DynamoDB
+  transaction. A preloaded receiver is conditioned on its version, not on not existing.
+- **Event checks:** they accept `HI-Small`, `HI-Medium` and `HI-Large` identities whose
+  number matches the source row, dated 1 September 2022 to 31 January 2023.
+
+Local evidence (`output/streaming-demo-delta1-20261107/verification.json`, no AWS calls):
+
+- **Reference:** the release is a date subset, so its features were computed over the
+  full-source curated run `20261107-072313-79997f49` (HI-Medium Sep 1–28, 31,898,238
+  rows). The check uses that folder; its digest of per-file SHA-256 values is `d1b88d99…`.
+  On 200,000 sampled rows its features equal the release's `bq1_scored.parquet`
+  (`f914ecb9…`).
+- **Cohort:** 32 senders with 20–40 payments each, 984 transactions from Sep 1 to 16
+  (158 of them inside the release's Sep 15–28 window), paying 88 receivers. The receiver
+  preload holds 1,957 payments, and the largest state is 11 KB.
+- **Parity:** all 15 features are exact, USD sums included. The maximum score difference
+  is 0.0.
+- **Scores:** none of the 984 is labelled laundering, and none reaches delta1's batch
+  top-100 cutoff (0.9954, HI-Medium Sep 15–28). The highest is 0.712.
+
+Deployment uses its own Terraform state, so the 6 October stack is never planned
+against. It also uses its own ECR repository, because a repository policy names one
+function. It reuses the isolated failure bucket, where each mapping writes under its
+own UUID. Every step needs explicit approval:
+
+1. Initialise `infra/streaming` with `infra/shared.s3.tfbackend`, key
+   `streaming-delta1-20261107/terraform.tfstate`, and a separate `TF_DATA_DIR`. Use the
+   variables in `%LOCALAPPDATA%/IS459-G3/streaming-delta1-20261107.tfvars.json`:
+   `run_id=stream-delta1-20261107`, `repository_name=is459-g3-streaming-delta1`,
+   `use_existing_failure_bucket=true`, `provision_streaming=true` and
+   `model_manifest_sha256=0b9ba30d77237c9f71a1799235316d9f6dfba042dc70c1c31546513da0ea4b6a`.
+   The first apply creates the repository, table, roles, logs and alarm.
+2. Build `output/streaming-container-delta1-20261107`
+   (`prepare-streaming-container.py --artifacts output/model-delta1-deployed --manifest-sha256 0b9ba30d…`).
+   Push it to the new repository and review its scan.
+3. Apply with `image_uri=<repository>@sha256:<digest>` and `provision_stream=true`.
+   This creates the function and a disabled mapping.
+4. Preload the receivers: `seed-streaming-receivers.py --package output/streaming-demo-delta1-20261107 --execute-approved`.
+   Upload `events.jsonl` to `streaming/stream-delta1-20261107/input/events.jsonl`, then
+   run the preflight (`collect-streaming-evidence.py --run-id stream-delta1-20261107 --image <digest> --package …`).
+5. Apply `enable_consumer=true replay_approved=true`. Add the publisher
+   (`provision_publisher`, `enable_publisher`, `publisher_end_time`) as in the steps below.
+   Replay at 10 events/s (about 100 s), then disable the consumer and reconcile.
+6. Record the cloud acceptance in `dashboard_streaming.VERIFIED`. Publish
+   `streaming-config.json` for the new run, then park the stream.
+
 ## Parked
 
 Status, 6 October 2026: **parked to stop shard charges** (about USD 13.69/month).
@@ -32,12 +112,14 @@ Park it again by applying without `-var provision_stream=true`.
 
 ## Incoming AML dashboard view
 
-Status, 1 November 2026: **publisher deployed; dashboard tab not yet published.**
-Steps 1–3 and 5 below are done: 9 resources added, 0 changed, 0 destroyed; schedule
-disabled. One publication returned `completed`, 884/884, all 32 sender histories
-reconciled. CloudFront serves the snapshot with `Cache-Control: no-store` (edge miss).
-Steps 4 and 6 (public tab, live window) are pending team approval; plan them for
-4–5 November with the processing-image rebuild.
+Status, 7 November 2026: **publisher deployed and tab published.** Steps 1–5 below are
+done for `stream-smoke-20261006`. The publisher stack added 9 resources, changed 0 and
+destroyed 0, with the schedule disabled. One publication returned `completed`: 884/884,
+with all 32 sender histories reconciled. `dashboard/streaming-config.json` was published
+on 7 November, so CloudFront shows the Incoming tab. It serves the snapshot with
+`Cache-Control: no-store` (edge miss). Step 6 (a live window) has not been run. The
+deployed publisher predates the review-cutoff and parity fields, so the live snapshot
+does not show them yet.
 
 The input `events.jsonl` (SHA-256 `8f5e2aee…e296f`) was rebuilt from the verified
 6 October curated data, because the original package was not in AWS. All 884 events

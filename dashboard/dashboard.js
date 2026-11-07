@@ -806,6 +806,8 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
   // Optional snapshot fields: older snapshots lack them, so each card or column appears only when well formed.
   const review=data=>{const value=data.review;
     return value && Number.isFinite(value.cutoff) && Number.isSafeInteger(value.capacity) && Number.isSafeInteger(value.flagged)?value:null;};
+  const receivers=data=>{const value=data.receivers;
+    return value && Number.isSafeInteger(value.expected) && Number.isSafeInteger(value.complete)?value:null;};
   const parity=data=>{const value=data.verification;
     return value && value.features_exact===true && Number.isSafeInteger(value.transactions) &&
       Number.isFinite(value.max_absolute_score_difference) && typeof value.verified_on==='string'?value:null;};
@@ -854,7 +856,7 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
       waiting:'Waiting for the first incoming transaction to be scored.',
       running:`Updated ${ago(age(data))}. Committed scores appear here within about 15 seconds; this page checks every 10 seconds.`,
       paused:'The Kinesis consumer is disabled, so nothing new is arriving. Scores committed so far are shown.',
-      completed:`All ${integer(data.expected)} incoming transactions and ${integer(data.senders.expected)} sender histories reconcile with the reviewed input.`,
+      completed:`All ${integer(data.expected)} incoming transactions${receivers(data)?`, ${integer(data.senders.expected)} sender histories and ${integer(data.receivers.expected)} receiver histories`:` and ${integer(data.senders.expected)} sender histories`} reconcile with the reviewed input.`,
       failed:'The streaming consumer reported record failures. Committed scores are shown; later events may be held back until the failure is resolved.'}[data.state];
     const cutoff=review(data), verified=parity(data);
     const answer=cutoff?'review':verified?'parity':'scored';
@@ -863,6 +865,7 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
     cards('incoming-kpis',[['Transactions scored',`${integer(data.processed)} / ${integer(data.expected)}`,`${(share*100).toFixed(1)}% of expected transactions`,answer==='scored',
       points.length>1?{values:points.map(point=>point.processed),color:'#3fd0b8',label:'Running total of scored transactions',caption:`${clock(points[0].at)} → ${clock(points.at(-1).at)}`}:null],
       ['Complete sender histories',`${integer(data.senders.complete)} / ${integer(data.senders.expected)}`,'Rolling features need each sender’s full history'],
+      ...(receivers(data)?[['Complete receiver histories',`${integer(data.receivers.complete)} / ${integer(data.receivers.expected)}`,'Payments from other senders preloaded; replayed ones added as scored']]:[]),
       ['Highest ranking score',data.max_score==null?'—':Number(data.max_score).toFixed(4),'Uncalibrated · not a probability'],
       ['Latest event time',eventTime(data.replay_position),'Historical event time · September 2022'],
       ...(cutoff?[['Review now',`${integer(cutoff.flagged)} / ${integer(data.processed)}`,`Score ≥ ${cutoff.cutoff.toFixed(4)} · batch top-${integer(cutoff.capacity)} cutoff`,true]]:[]),

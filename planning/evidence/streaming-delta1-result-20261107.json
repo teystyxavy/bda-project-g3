@@ -1,0 +1,47 @@
+{
+  "run_id": "stream-delta1-20261107",
+  "recorded_on": "2026-11-07",
+  "model": {
+    "manifest_sha256": "0b9ba30d77237c9f71a1799235316d9f6dfba042dc70c1c31546513da0ea4b6a",
+    "model_sha256": "0170bef63f4cd257cbcda8c4748cea0dcf90f202134105fb8226d6dde6a0646f",
+    "batch_release": "medium-delta1-20261107-183216-ui1"
+  },
+  "image": {
+    "uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-streaming-delta1@sha256:63d29f35ca8ec7ba4b7730b05d1c01ac530bb59e1558bb06a10024208944ee86",
+    "scan_severity_counts": {
+      "HIGH": 19,
+      "MEDIUM": 25,
+      "LOW": 9,
+      "UNDEFINED": 1
+    }
+  },
+  "package": {
+    "rows": 984,
+    "senders": 32,
+    "receivers": 88,
+    "preloaded_receiver_payments": 1957,
+    "source_sha256": "d1b88d996b850a4e2a28b4b1935c36280f0049239edc68e4273c09eb6cc50397",
+    "events_sha256": "133c8a380be91bcc48f4e5ad494c2c3c93849b66d7bc4fecf9f033c27e003d08",
+    "receivers_sha256": "74476073ed6b13a7f6b23b938c4bfe2acd97695bab6628f29317c99e8ef2f174",
+    "results_sha256": "533ea79c481d2a31eb7b4768d93acd35817c8f4da5c98a983180ac04238cf2b7",
+    "replay_sha256": "5860eb61775a4b16f0d93aff4acabc2cc720dae37148dea17c302f9e596221d6"
+  },
+  "preflight": {
+    "items": 88,
+    "audit_objects": 0,
+    "failure_objects": 0,
+    "mapping_state": "Disabled"
+  },
+  "reconciliation": {
+    "transactions": 984,
+    "features_exact": true,
+    "max_absolute_score_difference": 9.313225746154785e-10,
+    "dynamodb_items": 1104,
+    "audit_objects": 984,
+    "failure_objects": 0,
+    "sender_versions_exact": true,
+    "receiver_versions_exact": true,
+    "dynamodb_s3_results_exact": true,
+    "receipt_sha256": "61920929d908ed0e36e4aad776e3b2bc1c9c7cae0352efdb26a5c6ebe9d6eee9"
+  }
+}

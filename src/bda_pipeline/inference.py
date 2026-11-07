@@ -157,7 +157,17 @@ def worker_ranker(directory, manifest_sha256, threads=1):
     return ranker
 
 
-def score_frame(frame, ranker):
+def model_features(ranker):
+    """The behaviour features (names from ``FEATURES``) that a frozen model's saved schema reads.
+    A ranker without a saved schema is treated as reading all of them."""
+    names = getattr(ranker, 'feature_names', None)
+    if names is None:
+        return list(FEATURES)
+    used = {name.removeprefix('log1p_') for name in names if name.startswith('log1p_')}
+    return [name for name in FEATURES if name in used]
+
+
+def score_frame(frame, ranker, features=None):
     """Validate one batch of transactions and add a ``model_score`` column.
 
     This is what runs inside Spark's ``mapInPandas`` and inside the streaming
@@ -174,19 +184,28 @@ def score_frame(frame, ranker):
     Args:
         frame: pandas DataFrame with at least ``SCORING_COLUMNS``.
         ranker: A ``SavedRanker`` (usually from ``worker_ranker``).
+        features: Behaviour features the caller supplies, in ``FEATURES``
+            order. Default: all of ``FEATURES`` (the batch contract). The
+            streaming Lambda passes only those it computes, which must
+            include every feature the frozen model reads.
 
     Returns:
-        A new DataFrame with exactly ``SCORING_COLUMNS`` plus
-        ``model_score`` (float64). Extra input columns are dropped.
+        A new DataFrame with exactly the scoring columns (``SCORING_COLUMNS``
+        by default) plus ``model_score`` (float64). Extra input columns are
+        dropped.
 
     Raises:
         ValueError: describing the first failed check.
     """
-    missing = set(SCORING_COLUMNS) - set(frame.columns)
+    features = FEATURES if features is None else list(features)
+    if set(model_features(ranker)) - set(features) or set(features) - set(FEATURES):
+        raise ValueError('Supplied behaviour features do not cover the frozen model')
+    columns = [column for column in SCORING_COLUMNS if column not in FEATURES or column in features]
+    missing = set(columns) - set(frame.columns)
     if missing:
         raise ValueError(f'Missing scoring columns: {sorted(missing)}')
     # Keep only the contract columns (also guarantees no label is passed on).
-    result = frame[SCORING_COLUMNS].copy()
+    result = frame[columns].copy()
     if result.isna().any().any():
         raise ValueError('Null scoring input')
     for column in IDENTIFIERS + CATEGORICAL:
@@ -201,7 +220,7 @@ def score_frame(frame, ranker):
             or result.transaction_id.duplicated().any()
             or result.source_row_index.duplicated().any()):
         raise ValueError('Invalid or duplicate source identity')
-    for column in ['amount_usd', 'amount_usd_asof', *FEATURES]:
+    for column in ['amount_usd', 'amount_usd_asof', *features]:
         values = result[column].to_numpy(dtype=float)
         if not np.isfinite(values).all() or (values < 0).any():
             raise ValueError(f'Invalid nonnegative numeric feature: {column}')

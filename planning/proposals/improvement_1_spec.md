@@ -27,6 +27,11 @@ implementation spec for item #1 of the
   outgoing features (`SENDER_FEATURES`, explicit list, not derived from the
   now-10-item `FEATURES`) — see Step 0. Module docstring updated to state
   this explicitly rather than leave it as a latent gap.
+  **Follow-up, 7 November 2026:** streaming now computes every batch behaviour
+  feature (all 15, for the delta1 model) for the bounded one-shard demo, from
+  receiver state preloaded with batch activity from senders outside the replay.
+  Step 0's multi-shard concern still applies to any larger stream. See
+  `streaming/README.md`, run `stream-delta1-20261107`.
 - `src/bda_pipeline/model.py`: `SavedRanker.queue()`'s alias dict extended
   with 5 more human-readable labels for the dashboard explanation strings.
 - `infra/terraform/catalog.tf`: the `full_transactions` table's behavioural
