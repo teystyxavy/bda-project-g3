@@ -29,27 +29,28 @@ def test_label_free_scoring_and_fail_closed_inputs():
 
 
 
-def test_streaming_feature_subset_must_cover_the_frozen_model():
+def test_feature_subset_must_cover_the_frozen_model():
     import pandas as pd
     from bda_pipeline.batch import FEATURES
     from bda_pipeline.model import CATEGORICAL
-    from bda_pipeline.streaming import STREAM_FEATURES
+    subset = [name for name in FEATURES if 'amount_sum' not in name and name != 'corridor_prior_count']
     frame = pd.DataFrame(dict(transaction_id=['HI-Small:0'], source_row_index=[0],
         timestamp=pd.to_datetime(['2022-09-01']), from_bank=['001'], from_account=['000A'],
         to_bank=['1'], to_account=['000B'], amount_usd_asof=[1.], amount_usd=[2.],
-        **{name: [0] for name in STREAM_FEATURES}, **{name: ['test'] for name in CATEGORICAL}))
+        **{name: [0] for name in subset}, **{name: ['test'] for name in CATEGORICAL}))
     class Ranker:
-        feature_names = ['log1p_amount_usd_asof', *('log1p_' + name for name in STREAM_FEATURES), 'is_self_txn']
+        feature_names = ['log1p_amount_usd_asof', *('log1p_' + name for name in subset), 'is_self_txn']
         def predict(self, batch):
             return np.array([.4]*len(batch))
-    result = score_frame(frame, Ranker(), STREAM_FEATURES)
-    assert result.columns.tolist() == [c for c in SCORING_COLUMNS if c not in FEATURES or c in STREAM_FEATURES] + ['model_score']
+    result = score_frame(frame, Ranker(), subset)
+    assert result.columns.tolist() == [c for c in SCORING_COLUMNS if c not in FEATURES or c in subset] + ['model_score']
     # The batch default still requires every batch feature.
     with pytest.raises(ValueError, match='Missing scoring columns'):
         score_frame(frame, Ranker())
     # A subset that misses a feature the model reads is refused.
     with pytest.raises(ValueError, match='do not cover'):
-        score_frame(frame, Ranker(), STREAM_FEATURES[:5])
+        score_frame(frame, Ranker(), subset[:5])
+
 
 def test_manifest_external_anchor(tmp_path):
     (tmp_path / 'model-manifest.json').write_text('{}')

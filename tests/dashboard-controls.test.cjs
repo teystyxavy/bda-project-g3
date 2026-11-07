@@ -447,6 +447,10 @@ test('review cutoff and batch parity show as cards and a review column',async()=
   assert.match(h.el('incoming-queue').innerHTML,/HI-Small:8<\/td>.*<td>Below cutoff<\/td>/);
   assert.match(h.el('incoming-latest').innerHTML,/<th scope="col">Review<\/th>/);
   assert.match(h.el('incoming-queue-note').textContent,/1 reach the batch top-100 review cutoff \(score ≥ 0\.9937, set on 2022-09-07 to 2022-09-08 validation days\)/);
+  // A cutoff from another model's batch days names them.
+  const medium=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot({review:{...REVIEW,cutoff:.9953691363,period:'2022-09-15 to 2022-09-28',days:'HI-Medium batch',flagged:0}}))});
+  medium.el('incoming-tab').onclick();await settle();
+  assert.match(medium.el('incoming-queue-note').textContent,/score ≥ 0\.9954, set on 2022-09-15 to 2022-09-28 HI-Medium batch days/);
   // Nothing at the cutoff is stated plainly rather than hidden.
   const none=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot({review:{...REVIEW,flagged:0}}))});
   none.el('incoming-tab').onclick();await settle();

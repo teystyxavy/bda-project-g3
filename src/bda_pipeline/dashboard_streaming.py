@@ -60,21 +60,26 @@ SENDER_FEATURES = ['txn_count_1h', 'txn_count_24h', 'txn_count_7d',
                    'distinct_counterparties_24h', 'distinct_counterparties_7d']
 RECEIVER_FEATURES = ['in_txn_count_1h', 'in_txn_count_24h', 'in_txn_count_7d',
                      'distinct_senders_24h', 'distinct_senders_7d']
+# The delta1 model reads every batch behaviour feature (batch.FEATURES order); the USD sums are decimals.
+SUM_FEATURES = ['amount_sum_24h', 'amount_sum_7d', 'in_amount_sum_24h', 'in_amount_sum_7d']
+ALL_FEATURES = (SENDER_FEATURES + SUM_FEATURES[:2] + RECEIVER_FEATURES + SUM_FEATURES[2:] + ['corridor_prior_count'])
 SCORE_MEANING = 'ranking-score-not-calibrated-probability'
 # Frozen model manifests a streaming run may serve.
 OCTOBER_MODEL = '323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f'  # 5 sender features
-NOVEMBER_MODEL = 'fbf014c5f5f0c69c6a72c046a2416e550d6b26bd50531c669961c26455da9469'  # + 5 receiver features
+DELTA1_MODEL = '0b9ba30d77237c9f71a1799235316d9f6dfba042dc70c1c31546513da0ea4b6a'  # all 15 behaviour features
 # Behaviour features every committed result of a run serving that model carries.
-MODEL_FEATURES = {OCTOBER_MODEL: SENDER_FEATURES, NOVEMBER_MODEL: SENDER_FEATURES + RECEIVER_FEATURES}
+MODEL_FEATURES = {OCTOBER_MODEL: SENDER_FEATURES, DELTA1_MODEL: ALL_FEATURES}
 # Batch reviewer capacity for the same frozen model: the lowest score in the
-# HI-Small validation top-100 queue of that model's batch release. It was set
-# on validation days, so it is a capacity, not an invented threshold; labels
-# are never used here. A run serving a model without a record publishes none.
+# top-100 queue of that model's batch release (``days`` says which days set it).
+# It is a capacity, not an invented threshold; labels are never used here. A
+# run serving a model without a record publishes none.
 REVIEWS = {
     OCTOBER_MODEL: {'cutoff': 0.9937289953, 'capacity': 100, 'period': '2022-09-07 to 2022-09-08',
-                    'source_run': 'opt-full-20261006-aws1', 'model_manifest_sha256': OCTOBER_MODEL},
-    NOVEMBER_MODEL: {'cutoff': 0.8383951783, 'capacity': 100, 'period': '2022-09-07 to 2022-09-08',
-                     'source_run': '20261107-012335-fa192bd1', 'model_manifest_sha256': NOVEMBER_MODEL}}
+                    'days': 'HI-Small validation', 'source_run': 'opt-full-20261006-aws1',
+                    'model_manifest_sha256': OCTOBER_MODEL},
+    DELTA1_MODEL: {'cutoff': 0.9953691363, 'capacity': 100, 'period': '2022-09-15 to 2022-09-28',
+                   'days': 'HI-Medium batch', 'source_run': 'medium-delta1-20261107-183216',
+                   'model_manifest_sha256': DELTA1_MODEL}}
 # Recorded cloud acceptance per replay run and model: every committed score was
 # compared with the frozen batch reference for the same transaction.
 VERIFIED = {'stream-smoke-20261006': {
@@ -211,7 +216,8 @@ def collect(items, run_id, events, senders, expected_features=SENDER_FEATURES, r
         if (event is None or key != result_prefix + fingerprint(result['transaction_id'])
                 or result.get('input_sha256') != fingerprint(event) or result.get('run_id') != run_id
                 or result.get('score_meaning') != SCORE_MEANING or set(features) != set(expected_features)
-                or any(type(value) is not int or value < 0 for value in features.values())
+                or any(type(value) not in ((int, float) if name in SUM_FEATURES else (int,)) or value < 0
+                       for name, value in features.items())
                 or type(score) not in (int, float) or not 0 <= score <= 1):
             raise ValueError('Committed result does not match the reviewed replay')
         # Result keys are unique per transaction, so a redelivered event cannot add a row.

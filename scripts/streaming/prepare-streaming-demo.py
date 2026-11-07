@@ -20,18 +20,20 @@ Why complete sender histories?
     never on laundering labels, so it does not bias the demo towards fraud.
 
 Why preloaded receivers?
-    Incoming features such as ``in_txn_count_7d`` depend on every payment into
-    the receiver, including payments from senders outside the replay. Those
-    are taken from the same verified batch data and written to DynamoDB once,
-    before the replay (``receivers.jsonl``, seeded by
-    ``seed-streaming-receivers.py``). Replayed payments then arrive through
-    Kinesis and are added as they are scored.
+    Incoming features such as ``in_txn_count_7d`` and ``in_amount_sum_7d``
+    depend on every payment into the receiver, including payments from
+    senders outside the replay. Those are taken from the same verified batch
+    data and written to DynamoDB once, before the replay (``receivers.jsonl``,
+    seeded by ``seed-streaming-receivers.py``). Replayed payments then arrive
+    through Kinesis; each first applies the preloaded payments before it, in
+    batch scan order, so counts and USD sums match batch exactly.
 
 Inputs
-    ``--reference``: the curated, scored batch Parquet (full dataset). Its
-    SHA-256 must equal the frozen model's training source, or the reviewed
-    ``--reference-sha256`` when the reference is a later verified batch run
-    of the same dataset.
+    ``--reference``: the curated batch features of the full dataset, either one
+    scored Parquet file or a run's hive-partitioned ``curated/`` folder (a
+    date-subset run computes features over its full-source curated run). Its
+    SHA-256 (for a folder: of the sorted per-file SHA-256 listing) must equal
+    the frozen model's training source, or the reviewed ``--reference-sha256``.
     ``--artifacts``/``--manifest-sha256``: the frozen model release, verified
     against its manifest hash (default: the pinned ``MANIFEST``).
 
@@ -51,12 +53,14 @@ Usage::
         --run-id stream-v2-20261107 --output output/streaming-demo-v2-20261107
 """
 import argparse
+import hashlib
 import json
 from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
 # worker_ranker loads + verifies the frozen XGBoost model; score_frame scores a DataFrame.
@@ -73,7 +77,23 @@ from bda_pipeline.streaming import (INPUT_COLUMNS,STREAM_FEATURES,MemoryStore,ac
 # All behaviour feature names computed by the batch pipeline.
 from bda_pipeline.batch import FEATURES
 
-PARTIES=['transaction_id','timestamp','from_bank','from_account','to_bank','to_account']
+PARTIES=['transaction_id','timestamp','source_row_index','from_bank','from_account','to_bank','to_account','amount_usd_asof']
+
+
+def batches(reference, columns):
+    """100,000-row batches of ``columns`` from one Parquet file or a hive-partitioned curated folder."""
+    if reference.is_dir():
+        yield from ds.dataset(reference,format='parquet',partitioning='hive').to_batches(columns=columns,batch_size=100000)
+    else:
+        yield from pq.ParquetFile(reference).iter_batches(batch_size=100000,columns=columns)
+
+
+def reference_digest(reference):
+    """SHA-256 of a Parquet file, or of the sorted {relative path: SHA-256} listing of every file in a folder."""
+    if not reference.is_dir():
+        return digest(reference)
+    files={path.relative_to(reference).as_posix():digest(path) for path in sorted(reference.rglob('*')) if path.is_file()}
+    return hashlib.sha256(canonical(files).encode()).hexdigest()
 
 
 def main():
@@ -100,20 +120,20 @@ def main():
     if set(model_features(ranker))-set(STREAM_FEATURES):
         raise ValueError('The frozen model reads behaviour features that streaming does not compute')
     # The reference is pinned: the model's training source, or an explicitly reviewed later batch output.
-    source_sha256=digest(args.reference)
+    source_sha256=reference_digest(args.reference)
     if source_sha256!=(args.reference_sha256 or ranker.selection['source_sha256']): raise ValueError('Reference source mismatch')
     key=lru_cache(maxsize=None)(account_key)
     # Pass 1: count transactions per hashed sender, streaming the Parquet in
     # 100,000-row batches (only two columns) to keep memory small.
     counts={}
-    for batch in pq.ParquetFile(args.reference).iter_batches(batch_size=100000,columns=['from_bank','from_account']):
+    for batch in batches(args.reference,['from_bank','from_account']):
         for bank,account in batch.to_pandas().itertuples(index=False,name=None):
             sender=key(bank,account);counts[sender]=counts.get(sender,0)+1
     # Label-independent deterministic selection; full history, never first-N rows from busy accounts.
     senders=set(sorted(sender for sender,count in counts.items() if 20<=count<=40)[:32])
     chunks=[]
     # Pass 2: keep only rows from the selected senders, with input + feature columns.
-    for batch in pq.ParquetFile(args.reference).iter_batches(batch_size=100000,columns=[*INPUT_COLUMNS,*FEATURES]):
+    for batch in batches(args.reference,[*INPUT_COLUMNS,*FEATURES]):
         frame=batch.to_pandas()
         chunks.append(frame.loc[[key(bank,account) in senders for bank,account in zip(frame.from_bank,frame.from_account)]])
     # Replay order = event time, ties broken by original source row order.
@@ -123,7 +143,7 @@ def main():
     # Pass 3: every payment into a receiver the cohort pays, from the full dataset.
     receivers={key(bank,account) for bank,account in zip(source.to_bank,source.to_account)}
     chunks=[]
-    for batch in pq.ParquetFile(args.reference).iter_batches(batch_size=100000,columns=PARTIES):
+    for batch in batches(args.reference,PARTIES):
         frame=batch.to_pandas()
         chunks.append(frame.loc[[key(bank,account) in receivers for bank,account in zip(frame.to_bank,frame.to_account)]])
     inbound=pd.concat(chunks,ignore_index=True)
@@ -149,7 +169,9 @@ def main():
         # Features are integer counts, so they must match exactly; scores are
         # floats and may differ by tiny rounding (rtol 1e-6, atol 1e-7).
         expected=baseline.loc[txn['transaction_id']]
-        if any(result['features'][name]!=expected[name] for name in STREAM_FEATURES): raise ValueError('Streaming/batch behaviour feature mismatch')
+        # Counts and the USD sums must match bit for bit: the scan repeats batch's own additions and evictions.
+        wrong={name:(result['features'][name],expected[name]) for name in STREAM_FEATURES if result['features'][name]!=expected[name]}
+        if wrong: raise ValueError(f"Streaming/batch behaviour feature mismatch at {txn['transaction_id']}: {wrong}")
         if not np.isclose(result['model_score'],expected.model_score,rtol=1e-6,atol=1e-7): raise ValueError('Streaming/batch score mismatch')
         events.append(event);results.append(result)
     # Every receiver must have applied exactly the replayed payments it was sent.
@@ -173,7 +195,7 @@ def main():
     # The status string is checked by replay-streaming-demo.py before any send;
     # the SHA-256 values let later steps detect any modification of the files.
     report={'status':'local-parity-passed-not-deployed','run_id':args.run_id,'rows':len(source),'senders':len(senders),
-            'receivers':len(seeds),'preloaded_receiver_payments':sum(len(state['history']) for state in seeds.values()),
+            'receivers':len(seeds),'preloaded_receiver_payments':sum(len(state['pending']) for state in seeds.values()),
             'features':STREAM_FEATURES,'model_features':model_features(ranker),
             'complete_sender_history':True,'complete_receiver_history':True,'all_features_exact':True,
             'scores_within_tolerance':True,'max_absolute_score_difference':float(difference),'duplicate_replay_passed':True,

@@ -2,17 +2,22 @@
 and per-receiver state in DynamoDB.
 
 Events are ``{"run_id", "ordinal" (per sender), "transaction": {INPUT_COLUMNS only}}``; labels and precomputed features
-are rejected. Each event yields the five outgoing features of its sender and the five incoming features of its receiver
-(``STREAM_FEATURES``), the ten behaviour inputs of the frozen 7 November model.
+are rejected. Each event yields every batch behaviour feature (``STREAM_FEATURES`` = ``batch.FEATURES``): the seven
+outgoing window features of its sender, the seven incoming ones of its receiver and the sender->receiver prior-pair count.
 
-Receiver state. A receiver is paid by senders outside the replay too, so its state must already hold that activity
-before the first replayed payment arrives: ``receiver_seeds`` builds it from the verified batch data and the replay
-setup writes it once (version 0). Scoring a payment to a receiver without that preloaded state fails closed, as does a
-receiver event older than one already applied. The demo stream has one shard and the consumer one concurrent batch, so
-events are applied in send order; the producer sends in event-time order.
+Exact batch parity. ``scan_step`` repeats the per-account scan of ``curate_transactions._windowed_counts`` one row at a
+time: rows are applied in (event time, source row) order; when time moves forward, entries older than each window are
+evicted (USD sums decremented and clamped at 0) and a snapshot is taken; rows sharing a timestamp reuse that snapshot,
+so they exclude each other; the row is then added. Keeping the queues and running sums in state reproduces the batch
+values bit for bit, floating-point sums included. The prior-pair count is the all-time number of earlier rows from the
+sender to the same receiver in that order (``_prior_pair_counts``); same-timestamp rows earlier in source order count.
 
-The amount sums and the sender/receiver prior-pair count that batch also computes are not used by the frozen model and
-are not computed here."""
+Receiver state. A receiver is paid by senders outside the replay too. ``receiver_seeds`` takes those payments from the
+verified batch data and the replay setup stores them once (version 0) as the receiver's ``pending`` rows. When a
+replayed payment arrives, pending rows before it are applied first, so the receiver's scan reaches exactly the point
+batch had reached. Scoring a payment to a receiver without that preloaded state fails closed, as does any event at or
+before the last position already applied. The demo stream has one shard and the consumer one concurrent batch, so
+events are applied in send order; the producer sends in (event time, source row) order."""
 import copy
 import hashlib
 import json
@@ -24,17 +29,26 @@ from .inference import SCORING_COLUMNS
 
 # Raw fields an event must carry: the scoring columns minus every behaviour feature.
 INPUT_COLUMNS = [column for column in SCORING_COLUMNS if column not in FEATURES]
-# Outgoing (sender) and incoming (receiver) window features computed here, named as in batch.FEATURES.
+# Window feature names in scan order: counts 1h/24h/7d, distinct 24h/7d, USD sums 24h/7d.
 SENDER_FEATURES = ['txn_count_1h', 'txn_count_24h', 'txn_count_7d',
-                   'distinct_counterparties_24h', 'distinct_counterparties_7d']
+                   'distinct_counterparties_24h', 'distinct_counterparties_7d',
+                   'amount_sum_24h', 'amount_sum_7d']
 RECEIVER_FEATURES = ['in_txn_count_1h', 'in_txn_count_24h', 'in_txn_count_7d',
-                     'distinct_senders_24h', 'distinct_senders_7d']
-STREAM_FEATURES = SENDER_FEATURES + RECEIVER_FEATURES
+                     'distinct_senders_24h', 'distinct_senders_7d',
+                     'in_amount_sum_24h', 'in_amount_sum_7d']
+PAIR_FEATURE = 'corridor_prior_count'
+# Every batch behaviour feature, in batch order.
+STREAM_FEATURES = [name for name in FEATURES if name in {*SENDER_FEATURES, *RECEIVER_FEATURES, PAIR_FEATURE}]
+assert STREAM_FEATURES == list(FEATURES), 'Streaming must compute every batch behaviour feature'
 # Window lengths in seconds: 1 hour, 24 hours, 7 days.
 WINDOWS = [3600, 86400, 604800]
 # Bounds keep each state item well under DynamoDB's 400 KB item limit.
-MAX_HISTORY = 1000
-MAX_STATE_BYTES = 128*1024
+MAX_HISTORY = 2000
+MAX_STATE_BYTES = 300*1024
+# Replay sources: the curated identities '<subset>:<source row>' and the datasets' calendar.
+SOURCE_ID = re.compile(r'HI-(Small|Medium|Large):([0-9]+)')
+FIRST_DAY, END_DAY = datetime(2022, 9, 1), datetime(2023, 2, 1)
+EPOCH = datetime(1970, 1, 1)
 
 
 def canonical(value):
@@ -66,7 +80,8 @@ def validate_event(event, run_id):
     for name in ['transaction_id','from_bank','from_account','to_bank','to_account','payment_format','payment_currency','receiving_currency']:
         if not isinstance(txn[name],str) or not txn[name]:
             raise ValueError('Invalid identifier/category')
-    if type(txn['source_row_index']) is not int or txn['source_row_index'] < 0 or txn['transaction_id'] != 'HI-Small:' + str(txn['source_row_index']):
+    identity = SOURCE_ID.fullmatch(txn['transaction_id'])
+    if type(txn['source_row_index']) is not int or txn['source_row_index'] < 0 or identity is None or identity.group(2) != str(txn['source_row_index']):
         raise ValueError('Invalid source identity')
     for name in ['amount_usd','amount_usd_asof']:
         value=txn[name]
@@ -74,75 +89,110 @@ def validate_event(event, run_id):
             raise ValueError('Invalid FX-normalized amount')
     canonical(event)  # Reject NaN, infinity and non-JSON values.
     now=datetime.fromisoformat(txn['timestamp'])
-    if now.tzinfo is not None or not datetime(2022,9,1) <= now < datetime(2022,9,19):
+    if now.tzinfo is not None or not FIRST_DAY <= now < END_DAY:
         raise ValueError('Timestamp must use the dataset calendar convention')
-    return int((now-datetime(1970,1,1)).total_seconds())
+    return int((now-EPOCH).total_seconds())
 
 
-def window_features(history, now, names):
-    """Counts in the 1h/24h/7d windows, then distinct counterparties in the 24h and 7d windows, keyed by ``names``.
-    Windows are half-open [now-w, now): same-second transactions are excluded, as in batch."""
-    windows=[[entry for entry in history if now-seconds <= entry[0] < now] for seconds in WINDOWS]
-    return dict(zip(names,[len(window) for window in windows]+[len({entry[1] for entry in windows[1]}),len({entry[1] for entry in windows[2]})]))
+def empty_scan():
+    """A fresh per-account scan: three window queues of [epoch, party, USD], their running USD sums, the current time
+    and the snapshot taken at it, and the last applied (epoch, source row) position."""
+    return {'queues':[[],[],[]],'sums':[0.0,0.0,0.0],'now':None,'snapshot':None,'last':None}
+
+
+def scan_step(scan, epoch, row, party, amount):
+    """Applies one row to a per-account scan in place, exactly as ``curate_transactions._windowed_counts``, and returns
+    its seven window values (counts 1h/24h/7d, distinct 24h/7d, sums 24h/7d) from before the row was added.
+    Raises ValueError unless (epoch, row) is after the last applied position."""
+    if scan['last'] is not None and [epoch,row] <= scan['last']:
+        raise ValueError('Out-of-order event; stop rather than score incomplete history')
+    queues,sums=scan['queues'],scan['sums']
+    if epoch != scan['now']:
+        # Time moved forward: evict entries older than now - window (the cutoff itself stays), then snapshot.
+        scan['now']=epoch
+        for window,seconds in enumerate(WINDOWS):
+            while queues[window] and queues[window][0][0] < epoch-seconds:
+                _,_,value=queues[window].pop(0)
+                # Clamp at the eviction point, as batch does, so float drift never compounds.
+                sums[window]=max(0.0,sums[window]-value)
+        scan['snapshot']=[len(queues[0]),len(queues[1]),len(queues[2]),
+                          len({entry[1] for entry in queues[1]}),len({entry[1] for entry in queues[2]}),sums[1],sums[2]]
+    values=list(scan['snapshot'])
+    # Add the row AFTER taking its values (it must not count itself).
+    for window in range(3):
+        queues[window].append([epoch,party,amount])
+        sums[window]+=amount
+    scan['last']=[epoch,row]
+    return values
 
 
 def bounded(state):
     """Return ``state`` unless it exceeds the demo bounds; fail loudly rather than drop history."""
-    if len(state['history'])>MAX_HISTORY or len(canonical(state).encode())>MAX_STATE_BYTES:
+    if (len(state['queues'][2])+len(state.get('pending',[]))>MAX_HISTORY
+            or len(canonical(state).encode())>MAX_STATE_BYTES):
         raise ValueError('Bounded demo state capacity exceeded; no silent truncation')
     return state
 
 
 def transition(state, event, run_id):
     """Advances one sender's state by one event and returns (updated_state, features).
-    Raises ValueError if the event is missing or out of order (ordinal != version + 1) or the state exceeds its size bounds."""
+    Features are the seven outgoing window values plus the prior-pair count to this receiver.
+    Raises ValueError if the event is missing or out of order (ordinal != version + 1, or not after the last applied
+    position) or the state exceeds its size bounds."""
     now=validate_event(event,run_id)
-    state=state or {'version':0,'last_time':-1,'history':[]}
-    if event['ordinal'] != state['version']+1 or now < state['last_time']:
+    state=copy.deepcopy(state) if state else {'version':0,**empty_scan(),'pairs':{}}
+    if event['ordinal'] != state['version']+1:
         raise ValueError('Missing or out-of-order sender event; stop rather than score incomplete history')
-    # Keep only the last 7 days; older entries can never fall in a window again.
-    history=[entry for entry in state['history'] if entry[0] >= now-WINDOWS[-1]]
-    features=window_features(history,now,SENDER_FEATURES)
     txn=event['transaction']
-    # Add this transaction AFTER computing features (it must not count itself).
-    history.append([now,account_key(txn['to_bank'],txn['to_account'])])
-    return bounded({'version':event['ordinal'],'last_time':now,'history':history}),features
+    receiver=account_key(txn['to_bank'],txn['to_account'])
+    values=scan_step(state,now,txn['source_row_index'],receiver,txn['amount_usd_asof'])
+    features=dict(zip(SENDER_FEATURES,values))
+    # All-time earlier payments from this sender to this receiver, counted before this one is added.
+    features[PAIR_FEATURE]=state['pairs'].get(receiver,0)
+    state['pairs'][receiver]=features[PAIR_FEATURE]+1
+    state['version']=event['ordinal']
+    return bounded(state),features
 
 
 def receive(state, event, run_id):
-    """Advances one receiver's preloaded state by one replayed payment and returns (updated_state, features).
+    """Advances one receiver's preloaded state to one replayed payment and returns (updated_state, features).
 
-    ``history`` holds [epoch seconds, sender key] for every payment into the receiver: preloaded activity from senders
-    outside the replay plus replayed payments applied so far. Only entries strictly before the event fall in a window.
-    Raises ValueError if the receiver was not preloaded, the event is older than one already applied, or the state
-    exceeds its size bounds."""
+    Pending preloaded payments (from senders outside the replay) that come before the event are applied first, then
+    the event itself. Raises ValueError if the receiver was not preloaded, the event is not after the last applied
+    position, or the state exceeds its size bounds."""
     now=validate_event(event,run_id)
     if state is None:
         raise ValueError('Receiver history was not preloaded; stop rather than undercount incoming activity')
-    if now < state['last_time']:
-        raise ValueError('Out-of-order receiver event; stop rather than score incomplete history')
-    # Entries older than 7 days can never fall in a window again (events arrive in time order).
-    history=[entry for entry in state['history'] if entry[0] >= now-WINDOWS[-1]]
-    features=window_features(history,now,RECEIVER_FEATURES)
+    state=copy.deepcopy(state)
     txn=event['transaction']
-    history.append([now,account_key(txn['from_bank'],txn['from_account'])])
-    return bounded({'version':state['version']+1,'last_time':now,'history':sorted(history)}),features
+    position=[now,txn['source_row_index']]
+    pending=state['pending']
+    while pending and pending[0][:2] < position:
+        epoch,row,sender,amount=pending.pop(0)
+        scan_step(state,epoch,row,sender,amount)
+    values=scan_step(state,now,txn['source_row_index'],account_key(txn['from_bank'],txn['from_account']),txn['amount_usd_asof'])
+    state['version']+=1
+    return bounded(state),dict(zip(RECEIVER_FEATURES,values))
 
 
 def receiver_seeds(frame, replayed):
-    """Preloaded receiver states for one replay, from verified batch rows with ``timestamp`` and bank/account columns.
+    """Preloaded receiver states for one replay, from verified batch rows with ``transaction_id``, ``timestamp``,
+    ``source_row_index``, bank/account columns and ``amount_usd_asof``.
 
     ``replayed`` is the set of ``transaction_id`` values in the replay. Returns {receiver key: state} for every receiver
-    the replay pays, holding that receiver's other incoming payments (the replayed ones arrive through the stream).
-    ``frame`` must contain every transaction into those receivers, which the full batch dataset does."""
-    epoch=datetime(1970,1,1)
+    the replay pays; each holds, as ``pending`` [epoch, source row, sender key, USD] rows in scan order, that receiver's
+    other incoming payments (the replayed ones arrive through the stream). ``frame`` must contain every transaction
+    into those receivers, which the full batch dataset does."""
     targets={account_key(row.to_bank,row.to_account) for row in frame.itertuples(index=False) if row.transaction_id in replayed}
-    seeds={key:{'version':0,'last_time':-1,'history':[]} for key in targets}
+    seeds={key:{'version':0,**empty_scan(),'pending':[]} for key in targets}
     for row in frame.itertuples(index=False):
         key=account_key(row.to_bank,row.to_account)
         if key in seeds and row.transaction_id not in replayed:
-            seeds[key]['history'].append([int((row.timestamp.to_pydatetime()-epoch).total_seconds()),account_key(row.from_bank,row.from_account)])
-    return {key:bounded({**state,'history':sorted(state['history'])}) for key,state in seeds.items()}
+            seeds[key]['pending'].append([int((row.timestamp.to_pydatetime()-EPOCH).total_seconds()),int(row.source_row_index),
+                                          account_key(row.from_bank,row.from_account),float(row.amount_usd_asof)])
+    for state in seeds.values():
+        state['pending'].sort(key=lambda entry:entry[:2])
+    return {key:bounded(state) for key,state in seeds.items()}
 
 
 class MemoryStore:

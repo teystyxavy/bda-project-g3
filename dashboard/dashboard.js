@@ -620,7 +620,7 @@ start();
     table('incoming-latest',['Event time','Scored at','Transaction','Sender → receiver','Ranking score',...(cutoff?['Review']:[]),'Payment','Prior-day USD'],
       data.latest.map(row=>[eventTime(row.timestamp),row.scored_at?clock(row.scored_at):'—',row.transaction_id,parties(row),Number(row.model_score).toFixed(4),...flag(row),row.payment_format,dollars(row.amount_usd_asof)]));
     if(!data.latest.length) element('incoming-latest').textContent='No transactions scored yet.';
-    const reviewNote=cutoff?` ${cutoff.flagged?`${integer(cutoff.flagged)} reach`:'None reach'} the batch top-${integer(cutoff.capacity)} review cutoff (score ≥ ${cutoff.cutoff.toFixed(4)}, set on ${cutoff.period} validation days).`:'';
+    const reviewNote=cutoff?` ${cutoff.flagged?`${integer(cutoff.flagged)} reach`:'None reach'} the batch top-${integer(cutoff.capacity)} review cutoff (score ≥ ${cutoff.cutoff.toFixed(4)}, set on ${cutoff.period} ${typeof cutoff.days==='string'?cutoff.days:'validation'} days).`:'';
     element('incoming-queue-note').textContent=`Top ${integer(data.queue.length)} of ${integer(data.processed)} transactions scored so far; ties use event time then source row. Scores rank review priority and are not probabilities.${reviewNote}`;
     // Receiver columns only for a model that reads incoming activity (the snapshot then carries receiver histories).
     const incoming=receivers(data);

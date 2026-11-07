@@ -30,10 +30,10 @@ ENV = {'RUN_ID': RUN, 'STATE_TABLE': 'is459-g3-' + RUN, 'INPUT_BUCKET': 'pipelin
 SCORES = {'HI-Small:1': .2, 'HI-Small:2': .9, 'HI-Small:3': .9, 'HI-Small:4': .05, 'HI-Small:5': .6}
 PUBLIC_FIELDS = {'rank', 'transaction_id', 'timestamp', 'scored_at', 'model_score', 'review_now', 'amount_usd_asof', 'payment_format',
                  'payment_currency', 'receiving_currency', 'from_bank', 'from_account', 'to_bank', 'to_account',
-                 *streaming.SENDER_FEATURES}
-# The 7 November model's replay: receiver features too, receivers preloaded.
-V2 = 'stream-v2-20261107'
-V2_FIELDS = PUBLIC_FIELDS | set(streaming.RECEIVER_FEATURES)
+                 *publisher.SENDER_FEATURES}
+# The delta1 model's replay: all 15 behaviour features, receivers preloaded.
+V2 = 'stream-delta1-20261107'
+V2_FIELDS = PUBLIC_FIELDS | set(publisher.ALL_FEATURES)
 RECEIVER = account_key('030', '80012ABCD')
 # Wall-clock time of the first audit write; each later commit is 5 s apart.
 COMMIT_START = datetime(2026, 11, 5, 10, 0, tzinfo=timezone.utc)
@@ -119,7 +119,7 @@ def environment(monkeypatch, run, manifest):
     monkeypatch.setattr(publisher, 'clients', lambda: fake)
     publisher.reviewed_events.cache_clear()
     # The replay setup preloads the receiver before any payment arrives (no other incoming payments here).
-    store = MemoryStore({f'{run}:receiver:{RECEIVER}': {'version': 0, 'last_time': -1, 'history': []}})
+    store = MemoryStore({f'{run}:receiver:{RECEIVER}': {'version': 0, **streaming.empty_scan(), 'pending': []}})
     env = {**ENV, 'RUN_ID': run, 'STATE_TABLE': 'is459-g3-' + run, 'INPUT_KEY': key, 'MANIFEST_SHA256': manifest,
            'ALARM_NAME': f'is459-g3-{run}-record-failures', 'INPUT_SHA256': hashlib.sha256(raw).hexdigest()}
     return SimpleNamespace(run=run, events=events, store=store, env=env, **fake)
@@ -134,7 +134,7 @@ def aws(monkeypatch):
 
 @pytest.fixture
 def aws2(monkeypatch):
-    yield environment(monkeypatch, V2, publisher.NOVEMBER_MODEL)
+    yield environment(monkeypatch, V2, publisher.DELTA1_MODEL)
     publisher.reviewed_events.cache_clear()
 
 
@@ -155,7 +155,7 @@ def october(item):
     if ':result:' not in item['pk']:
         return item
     result = json.loads(item['payload'])
-    result['features'] = {name: result['features'][name] for name in streaming.SENDER_FEATURES}
+    result['features'] = {name: result['features'][name] for name in publisher.SENDER_FEATURES}
     return {**item, 'payload': canonical(result)}
 
 
@@ -217,7 +217,7 @@ def test_batch_parity_is_reported_only_for_a_run_with_recorded_acceptance(aws):
 def test_a_model_without_records_gets_neither_the_cutoff_nor_the_parity_record(aws, monkeypatch):
     consume(aws, aws.events)
     monkeypatch.delitem(publisher.REVIEWS, publisher.OCTOBER_MODEL)
-    monkeypatch.setitem(publisher.VERIFIED[RUN], 'model_manifest_sha256', publisher.NOVEMBER_MODEL)
+    monkeypatch.setitem(publisher.VERIFIED[RUN], 'model_manifest_sha256', publisher.DELTA1_MODEL)
     data = published(aws)[1]
     assert data['review'] is None and data['verification'] is None
     assert all(row['review_now'] is None for row in data['queue'] + data['latest'])
@@ -228,9 +228,9 @@ def test_unknown_model_or_mismatched_features_publish_nothing(aws):
     consume(aws, aws.events)
     with pytest.raises(ValueError, match='Unsupported'):
         publisher.publish({**aws.env, 'MANIFEST_SHA256': 'e' * 64})
-    # Sender-only results cannot be served as the 7 November model.
+    # Sender-only results cannot be served as the delta1 model.
     with pytest.raises(ValueError, match='does not match'):
-        publisher.publish({**aws.env, 'MANIFEST_SHA256': publisher.NOVEMBER_MODEL})
+        publisher.publish({**aws.env, 'MANIFEST_SHA256': publisher.DELTA1_MODEL})
     assert aws.s3.puts == []
 
 
@@ -242,7 +242,9 @@ def test_november_run_carries_receiver_features_and_reconciles_receivers(aws2):
     # Two earlier payments into the shared receiver, from two distinct senders, inside 24 hours.
     assert data['latest'][0]['in_txn_count_24h'] == 2 and data['latest'][0]['distinct_senders_24h'] == 2
     assert data['receivers'] == {'expected': 1, 'preloaded': 1, 'complete': 0}
-    assert data['review'] == {**publisher.REVIEWS[publisher.NOVEMBER_MODEL], 'flagged': 2}
+    # Fixture scores top out at 0.9, below delta1's batch top-100 cutoff (0.9954).
+    assert data['review'] == {**publisher.REVIEWS[publisher.DELTA1_MODEL], 'flagged': 0}
+    assert isinstance(data['latest'][0]['amount_sum_7d'], float) and data['latest'][0]['corridor_prior_count'] == 1
     assert data['verification'] is None and 'preloaded' in data['cohort']
     consume(aws2, aws2.events)
     summary, data = published(aws2)
