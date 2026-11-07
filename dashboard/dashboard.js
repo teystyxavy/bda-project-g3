@@ -18,6 +18,7 @@ function selectDashboardView(view) {
   const live=['ingestion','incoming'].includes(view);
   element('status').hidden=live;element('methods').hidden=live;
   if(view==='network' && snapshot) renderNetwork();
+  if(view==='ingestion') startJourney();else stopJourney();
   replaySection(view);
 }
 for(const view of ['aml','incoming','network','ingestion']) element(`${view}-tab`).onclick=()=>selectDashboardView(view);
@@ -327,6 +328,55 @@ function paintPipelineFlow(states) {
   });
   svg.querySelector('.map-links').after(layer);
 }
+
+// ---- Pipeline map: a packet of data travels the whole journey, Kaggle to CloudFront, on a loop ----
+// Fractions of one cycle: each link carries the packet in its window (same order as PIPELINE_LINKS), and each stage
+// lights up as the packet reaches it. Box colours keep showing the selected run; the packets show how data moves.
+const JOURNEY_MS=9000;
+const JOURNEY_LINKS=[[0,.1],[.13,.24],[.28,.42],[.28,.42],[.28,.42],[.47,.6],[.47,.58],[.47,.58],[.45,.51],[.53,.62],[.67,.79]];
+const JOURNEY_STAGES={acquire:[.1,.17],curate:[.24,.31],score:[.42,.5],network:[.42,.5],baseline:[.42,.48],train:[.51,.56],export:[.6,.69],publish:[.79,.97]};
+let journey=null;
+function startJourney() {
+  if(journey || !animating()) return;
+  const svg=element('ingestion-flow'), paths=svg?.querySelectorAll?.('.map-links path');
+  if(!paths?.length || typeof paths[0].getTotalLength!=='function') return;
+  const layer=document.createElementNS('http://www.w3.org/2000/svg','g');layer.setAttribute('class','map-journey');layer.setAttribute('aria-hidden','true');
+  const links=[...paths].map((path,index)=>{
+    const dots=[0,1,2,3].map(trail=>{const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      dot.setAttribute('class','journey-dot');dot.setAttribute('r',String(5.5-trail*1.1));dot.setAttribute('opacity','0');layer.appendChild(dot);return dot;});
+    return {path,length:path.getTotalLength(),dots,window:JOURNEY_LINKS[index]||[0,0],optional:path.getAttribute('stroke-dasharray')!=null};
+  });
+  svg.querySelector('.map-links').after(layer);
+  const legend=document.querySelector('.map-legend');
+  if(legend && !legend.querySelector('.journey-key')) legend.insertAdjacentHTML('beforeend','<span class="journey-key">Moving dots: how data travels through the pipeline</span>');
+  const nodes=new Map([...svg.querySelectorAll('[data-stage]')].map(node=>[node.dataset.stage,node]));
+  const start=performance.now();
+  const frame=now=>{
+    if(!journey) return;
+    try {
+      const u=((now-start)%JOURNEY_MS)/JOURNEY_MS;
+      for(const link of links) {
+        const [from,to]=link.window;
+        link.dots.forEach((dot,trail)=>{
+          const v=(u-from-trail*.011)/(to-from);
+          if(v<0||v>1) {dot.setAttribute('opacity','0');return;}
+          const point=link.path.getPointAtLength(v*link.length);
+          dot.setAttribute('cx',point.x.toFixed(1));dot.setAttribute('cy',point.y.toFixed(1));
+          dot.setAttribute('opacity',String((1-trail*.24)*(link.optional?.55:1)));
+        });
+      }
+      for(const [stage,[from,to]] of Object.entries(JOURNEY_STAGES)) nodes.get(stage)?.classList.toggle('journey-hit',u>=from&&u<=to);
+    } catch {}
+    journey.raf=requestAnimationFrame(frame);
+  };
+  journey={layer,nodes,raf:requestAnimationFrame(frame)};
+}
+function stopJourney() {
+  if(!journey) return;
+  cancelAnimationFrame(journey.raf);journey.layer.remove();
+  journey.nodes.forEach(node=>node.classList.remove('journey-hit'));journey=null;
+}
+document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJourney();else if(activeView==='ingestion') startJourney();});
 
 // Ingestion is independent of snapshot loading: controls work before the first release.
 (function ingestionControls() {
