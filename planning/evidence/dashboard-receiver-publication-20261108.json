@@ -1,0 +1,36 @@
+{
+  "release_id": "medium-delta1-20261107-183216-ui2",
+  "files": [
+    {
+      "file": "index.html",
+      "sha256": "caa20daa3423fc6596db3f2a33b0fc27299f58e253670b6ea6f4d2401247079c"
+    },
+    {
+      "file": "dashboard.css",
+      "sha256": "8db3955094f8ae44678c4b1dab11bdf4f480f6a197b1ec7a6cca900d5741bf6c"
+    },
+    {
+      "file": "dashboard.json",
+      "sha256": "08742df7ebf5e4eb07141c24fcd506f7db1c4d381ec253196ca586b04c909172"
+    },
+    {
+      "file": "dashboard.js",
+      "sha256": "43314f4ef3fe9ab8bd1cfa4a48087ecafb99663beff8c170cf81bfbea9a77994"
+    }
+  ],
+  "main_pointer_changed": false,
+  "batch_data_changed": false,
+  "previous_root_etag": "\"36ffe930c50ae3ace387c176e9528870\"",
+  "root_js_sha256": "7c7b8789ca0507fa1aaf1c65bed5822a739203d45ef97f62592de9e6f12b22e6",
+  "invalidation_id": "I1H1C923VDMYRH18VHMR0VAZ7B",
+  "release_url": "https://d1n61tlw9pcrog.cloudfront.net/releases/medium-delta1-20261107-183216-ui2/index.html",
+  "public_verification": {
+    "index.html": true,
+    "dashboard.css": true,
+    "dashboard.json": true,
+    "dashboard.js": true,
+    "root_js": true,
+    "main_pointer_unchanged": true,
+    "previous_medium_release_unchanged": true
+  }
+}

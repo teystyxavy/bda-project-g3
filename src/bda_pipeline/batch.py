@@ -41,7 +41,9 @@ COLUMNS = ['source_row_index', 'transaction_id', 'timestamp', 'txn_date',
 QUEUE_COLUMNS = ['transaction_id', 'timestamp', 'from_bank', 'from_account',
                  'to_bank', 'to_account', 'payment_format', 'payment_currency',
                  'amount_usd_asof', 'risk_score', 'risk_reasons', 'txn_count_1h',
-                 'distinct_counterparties_24h', 'amount_sum_7d', 'corridor_prior_count']
+                 'distinct_counterparties_24h', 'amount_sum_7d', 'corridor_prior_count',
+                 'in_txn_count_1h', 'in_txn_count_24h', 'in_txn_count_7d',
+                 'distinct_senders_24h', 'distinct_senders_7d']
 def evaluation_periods(splits, end_date):
     """Every non-train window of ``splits`` (half-open), with the last one stretched to include the run's last day."""
     end = (datetime.fromisoformat(end_date) + timedelta(days=1)).date().isoformat()
