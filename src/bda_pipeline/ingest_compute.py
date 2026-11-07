@@ -509,7 +509,8 @@ def export_stage(inputs, output, assets):
     enrich_snapshot(snapshot, dataset, scores, ranker, treasury=False)
     site = output / 'dashboard'
     site.mkdir()
-    (site / 'dashboard.json').write_text(json.dumps(snapshot, allow_nan=False))
+    (site / 'dashboard.json').write_text(
+        json.dumps(snapshot, separators=(',', ':'), allow_nan=False), encoding='utf-8')
     for name in ['index.html', 'dashboard.js', 'dashboard.css']: shutil.copyfile(Path(assets) / name, site / name)
     # prepare_release copies the four runtime files and screens them for
     # secrets / row-level labels; the manifest records each file's hash.
