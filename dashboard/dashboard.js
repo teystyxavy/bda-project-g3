@@ -751,7 +751,7 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
   // One incoming transaction's evidence: who paid whom, its score and the sender's rolling history.
   function incomingDetail(row,cutoff) {
     const panel=element('incoming-detail');panel.hidden=false;
-    panel.innerHTML=`<div class="heading"><h3>Transaction ${escapeText(row.transaction_id)}</h3><button id="incoming-close" type="button">Close evidence</button></div><div class="transfer-path"><span>Sender<br><strong>${escapeText(row.from_bank)} / ${escapeText(row.from_account)}</strong></span><span aria-hidden="true">→</span><span>Receiver<br><strong>${escapeText(row.to_bank)} / ${escapeText(row.to_account)}</strong></span></div><div class="evidence-facts"><span><small>Event time</small>${escapeText(eventTime(row.timestamp))}</span><span><small>Scored at</small>${row.scored_at?escapeText(clock(row.scored_at)):'—'}</span><span><small>Ranking score</small>${Number(row.model_score).toFixed(4)}${cutoff?` · ${row.review_now===true?'Review now':'below the batch cutoff'}`:''}</span><span><small>Payment</small>${escapeText(row.payment_format)} / ${escapeText(row.payment_currency)}</span><span><small>Prior-day USD valuation</small>${dollars(row.amount_usd_asof)}</span><span><small>Sender payments, past 1h / 24h / 7d</small>${integer(row.txn_count_1h)} / ${integer(row.txn_count_24h)} / ${integer(row.txn_count_7d)}</span><span><small>Sender counterparties, past 24h / 7d</small>${integer(row.distinct_counterparties_24h)} / ${integer(row.distinct_counterparties_7d)}</span></div><p class="field-help">The rolling history counts only the sender’s payments before this one. Scores rank review priority; they are not probabilities.</p>`;
+    panel.innerHTML=`<div class="heading"><h3>${rankChip(row)}Transaction ${escapeText(row.transaction_id)}</h3><button id="incoming-close" type="button">Close evidence</button></div><div class="transfer-path"><span>Sender<br><strong>${escapeText(row.from_bank)} / ${escapeText(row.from_account)}</strong></span><span aria-hidden="true">→</span><span>Receiver<br><strong>${escapeText(row.to_bank)} / ${escapeText(row.to_account)}</strong></span></div><div class="evidence-facts"><span><small>Event time</small>${escapeText(eventTime(row.timestamp))}</span><span><small>Scored at</small>${row.scored_at?escapeText(clock(row.scored_at)):'—'}</span><span><small>Ranking score</small>${Number(row.model_score).toFixed(4)}${cutoff?` · ${row.review_now===true?'Review now':'below the batch cutoff'}`:''}</span><span><small>Payment</small>${escapeText(row.payment_format)} / ${escapeText(row.payment_currency)}</span><span><small>Prior-day USD valuation</small>${dollars(row.amount_usd_asof)}</span><span><small>Sender payments, past 1h / 24h / 7d</small>${integer(row.txn_count_1h)} / ${integer(row.txn_count_24h)} / ${integer(row.txn_count_7d)}</span><span><small>Sender counterparties, past 24h / 7d</small>${integer(row.distinct_counterparties_24h)} / ${integer(row.distinct_counterparties_7d)}</span></div><p class="field-help">The rolling history counts only the sender’s payments before this one. Scores rank review priority; they are not probabilities.</p>`;
     element('incoming-close').onclick=()=>{panel.hidden=true;};
     panel.scrollIntoView?.({behavior:'smooth',block:'start'});
   }
@@ -802,6 +802,7 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
     const bar=element('incoming-progressbar');
     bar.setAttribute('aria-valuenow',String(data.processed));bar.setAttribute('aria-valuemax',String(data.expected));
     bar.innerHTML=`<i style="width:${(share*100).toFixed(1)}%"></i>`;bar.hidden=data.state==='completed';
+    if(data.queue.length) streamReplay(data,row=>incomingDetail(row,cutoff));
     // Up to ~24 points (thinned above) keeps the shared chart's axis labels readable; first and last are always kept.
     chartLines('incoming-progress',[{name:'Transactions scored',color:'#3fd0b8',rows:points.map(point=>({x:Date.parse(point.at),y:point.processed,
       label:clock(point.at)}))}],Math.max(1,data.expected),null,`Time scored · ${new Date(points[0].at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}`,integer);
@@ -890,6 +891,19 @@ function tierHits(metrics,capacity) {
 function bucketFor(histogram,score) {
   const index=histogram.findIndex(row=>{const [low,high]=row.label.split('–').map(Number);return score>=low&&score<high;});
   return index>=0?index:histogram.length-1;
+}
+// "#4 · Urgent" before an evidence title; empty for rows without a rank.
+function rankChip(row) {
+  if(!Number.isFinite(row?.rank)) return '';
+  const tier=tierFor(row.rank);
+  return `<span class="priority priority-${tier.id} rank-chip">#${integer(row.rank)} · ${escapeText(tier.label)}</span>`;
+}
+// The opened row stays marked in the explorer and in the queue table.
+let qxSelected=null;
+function markSelectedRank(rank) {
+  qxSelected=Number.isFinite(rank)?rank:null;
+  element('queue')?.querySelectorAll?.('tbody tr')?.forEach(tr=>tr.classList?.toggle('row-selected',Number(tr.dataset?.rank)===qxSelected));
+  element('qx-stage')?.querySelectorAll?.('[data-index]')?.forEach(cell=>cell.classList.toggle('qx-selected',qxRows[+cell.dataset.index]?.rank===qxSelected));
 }
 function priorityChip(rank) {
   const tier=tierFor(rank), chip=document.createElement('span');
@@ -1086,6 +1100,7 @@ function renderQueue() {
   element('queue').querySelectorAll('tbody tr').forEach((row,index)=>{const button=document.createElement('button');button.textContent=rows[index].transaction_id;button.title='Show evidence';
     // The whole row opens the evidence; the button keeps it reachable by keyboard.
     button.onclick=event=>{event?.stopPropagation?.();showDetail(rows[index]);};row.onclick=()=>showDetail(rows[index]);
+    row.dataset.rank=String(rows[index].rank);row.classList.toggle('row-selected',rows[index].rank===qxSelected);
     row.classList.add(`tier-row-${tierFor(rows[index].rank).id}`);row.children[1].replaceChildren(priorityChip(rows[index].rank));row.children[2].replaceChildren(button);
     const evidence=model&&rows[index].model_evidence, split=evidence?evidence.indexOf('; '):-1;
     if(split>0) row.children[8].innerHTML=`<b>${escapeText(evidence.slice(0,split))}</b>${escapeText(evidence.slice(split))}`;});
@@ -1097,7 +1112,8 @@ function showDetail(row) {
   const parts=(row.model_evidence||'').split('; ').filter(Boolean).map(part=>{const colon=part.lastIndexOf(':');return {label:part.slice(0,colon),value:Number(part.slice(colon+1).replace('margin','').trim())};}).filter(part=>Number.isFinite(part.value));
   const maximum=Math.max(.01,...parts.map(part=>Math.abs(part.value)));
   element('detail').hidden=false;
-  element('detail').innerHTML=`<div class="heading"><h3>Transaction ${escapeText(row.transaction_id)}</h3><button id="close-detail">Close evidence</button></div><div class="transfer-path"><span>Sender<br><strong>${escapeText(row.from_bank)} / ${escapeText(row.from_account)}</strong></span><span aria-hidden="true">→</span><span>Receiver<br><strong>${escapeText(row.to_bank)} / ${escapeText(row.to_account)}</strong></span></div>${ringLinks(row)}<div class="evidence-facts"><span><small>Event time</small>${escapeText(row.timestamp.replace('T',' '))}</span><span><small>Original payment</small>${row.amount_paid==null?'Amount not retained in this export':escapeText(integer(row.amount_paid))} ${escapeText(row.payment_currency)}</span><span><small>Prior-day USD valuation</small>${dollars(row.amount_usd_asof)}</span><span><small>Payment format</small>${escapeText(row.payment_format)}</span><span><small>Prior hour</small>${integer(row.txn_count_1h)} outgoing transactions</span><span><small>Prior 24 hours</small>${integer(row.distinct_counterparties_24h)} counterparties</span></div><h3>${model?'Signed model contributions':'Rule evidence'}</h3>${model?(parts.length?`<div class="contribution-list">${parts.map(part=>`<div><span>${escapeText(part.label)}</span><div class="signed-track"><i style="${part.value>=0?'left:50%':'right:50%'};width:${Math.abs(part.value)/maximum*48}%;background:${part.value>=0?'#3fd0b8':'#ffb648'}"></i></div><strong>${part.value>=0?'+':''}${part.value.toFixed(4)}</strong></div>`).join('')}</div><p class="field-help">Displayed contributions sum to ${parts.reduce((sum,p)=>sum+p.value,0).toFixed(4)}; bias ${Number(row.explanation_bias_margin).toFixed(4)}; remaining features ${(Number(row.explanation_total_margin)-Number(row.explanation_bias_margin)-parts.reduce((sum,p)=>sum+p.value,0)).toFixed(4)}; full margin ${Number(row.explanation_total_margin).toFixed(4)}. Positive contributions push the ranking score up. These are model explanations, not causal proof or probabilities.</p>`:'<p>Signed explanations are exported for the whole-period top 250. This filtered-population record shows observed behaviour signals; an exact model contribution is unavailable.</p>'):`<p>${escapeText(row.risk_reasons||'No rule triggered')}</p>`}<h3>Account activity preceding this transaction</h3>${history?`<p>${integer(history.observed_prior_transactions)} preceding outgoing transactions observed since the dataset began. Latest ${history.events.length} shown; no later activity is included.</p><div id="case-replay" class="case-replay"></div><div id="account-timeline" class="table-wrap"></div>`:'<p>Account history is exported for the whole-period model/rule top 250. This record is outside that bounded history projection.</p>'}`;
+  markSelectedRank(row.rank);
+  element('detail').innerHTML=`<div class="heading"><h3>${rankChip(row)}Transaction ${escapeText(row.transaction_id)}</h3><button id="close-detail">Close evidence</button></div><div class="transfer-path"><span>Sender<br><strong>${escapeText(row.from_bank)} / ${escapeText(row.from_account)}</strong></span><span aria-hidden="true">→</span><span>Receiver<br><strong>${escapeText(row.to_bank)} / ${escapeText(row.to_account)}</strong></span></div>${ringLinks(row)}<div class="evidence-facts"><span><small>Event time</small>${escapeText(row.timestamp.replace('T',' '))}</span><span><small>Original payment</small>${row.amount_paid==null?'Amount not retained in this export':escapeText(integer(row.amount_paid))} ${escapeText(row.payment_currency)}</span><span><small>Prior-day USD valuation</small>${dollars(row.amount_usd_asof)}</span><span><small>Payment format</small>${escapeText(row.payment_format)}</span><span><small>Prior hour</small>${integer(row.txn_count_1h)} outgoing transactions</span><span><small>Prior 24 hours</small>${integer(row.distinct_counterparties_24h)} counterparties</span></div><h3>${model?'Signed model contributions':'Rule evidence'}</h3>${model?(parts.length?`<div class="contribution-list">${parts.map(part=>`<div><span>${escapeText(part.label)}</span><div class="signed-track"><i style="${part.value>=0?'left:50%':'right:50%'};width:${Math.abs(part.value)/maximum*48}%;background:${part.value>=0?'#3fd0b8':'#ffb648'}"></i></div><strong>${part.value>=0?'+':''}${part.value.toFixed(4)}</strong></div>`).join('')}</div><p class="field-help">Displayed contributions sum to ${parts.reduce((sum,p)=>sum+p.value,0).toFixed(4)}; bias ${Number(row.explanation_bias_margin).toFixed(4)}; remaining features ${(Number(row.explanation_total_margin)-Number(row.explanation_bias_margin)-parts.reduce((sum,p)=>sum+p.value,0)).toFixed(4)}; full margin ${Number(row.explanation_total_margin).toFixed(4)}. Positive contributions push the ranking score up. These are model explanations, not causal proof or probabilities.</p>`:'<p>Signed explanations are exported for the whole-period top 250. This filtered-population record shows observed behaviour signals; an exact model contribution is unavailable.</p>'):`<p>${escapeText(row.risk_reasons||'No rule triggered')}</p>`}<h3>Account activity preceding this transaction</h3>${history?`<p>${integer(history.observed_prior_transactions)} preceding outgoing transactions observed since the dataset began. Latest ${history.events.length} shown; no later activity is included.</p><div id="case-replay" class="case-replay"></div><div id="account-timeline" class="table-wrap"></div>`:'<p>Account history is exported for the whole-period model/rule top 250. This record is outside that bounded history projection.</p>'}`;
   element('detail').scrollIntoView?.({behavior:'smooth',block:'start'});
   element('detail').querySelectorAll?.('.ring-link').forEach(button=>{button.onclick=()=>openRing(button.dataset.ring,button.dataset.account);});
   if(history) caseReplay('case-replay',history.events,row);
@@ -1117,7 +1133,7 @@ function qxGrid(n,width,columns) {
 }
 // Markup for one view; everything it shows comes from the arguments, so it can be checked without a browser.
 // rows: the top-k queue records with rank; hits: {model, rules} published hit counts at k; ring(row): the BQ2 ring row or null.
-function queueExplorerHTML({view,rows,k,hits,positives,total,ring,width=900}) {
+function queueExplorerHTML({view,rows,k,hits,positives,total,ring,width=900,selected=null}) {
   const n=Number(k);
   if(view==='duel') {
     const side=Math.floor((width-60)/2), grid=qxGrid(n,side,n<=100?10:25), random=n*positives/Math.max(total,1);
@@ -1134,10 +1150,10 @@ function queueExplorerHTML({view,rows,k,hits,positives,total,ring,width=900}) {
   const cells=rows.map((row,i)=>{
     const x=left+(i%grid.cols)*grid.cell, y=24+Math.floor(i/grid.cols)*grid.cell, size=grid.cell-6, tier=tierFor(row.rank), inRing=Boolean(ring(row));
     const lit=view!=='rings'||inRing;
-    return `<g class="qx-cell qx-${tier.id}${inRing&&view==='rings'?' qx-ring':''}${lit?'':' qx-dim'}" data-index="${i}" style="--i:${i}"><rect x="${x+3}" y="${y+3}" width="${size}" height="${size}" rx="${Math.max(2,size*.18).toFixed(1)}"/>${inRing&&view==='rings'?`<circle cx="${x+grid.cell-7}" cy="${y+7}" r="3.2"/>`:''}</g>`;}).join('');
+    return `<g class="qx-cell qx-${tier.id}${inRing&&view==='rings'?' qx-ring':''}${lit?'':' qx-dim'}${row.rank===selected?' qx-selected':''}" data-index="${i}" style="--i:${i}"><rect x="${x+3}" y="${y+3}" width="${size}" height="${size}" rx="${Math.max(2,size*.18).toFixed(1)}"/>${grid.cell>=26?`<text class="qx-rank" x="${x+grid.cell/2}" y="${y+grid.cell/2+4}" text-anchor="middle">${row.rank}</text>`:''}${inRing&&view==='rings'?`<circle cx="${x+grid.cell-7}" cy="${y+7}" r="3.2"/>`:''}</g>`;}).join('');
   return {height:grid.height+40,html:cells,cols:grid.cols,
     caption:view==='rings'?`${integer(linked)} of the top ${integer(rows.length)} touch an account in a drawn BQ2 ring. Click a violet square to open its ring.`
-      :`Each square is one queued payment, in rank order: ${TIERS.map(tier=>tier.label.toLowerCase()).join(', ')} by rank. Hover for details; click to open its evidence.`};
+      :`Each square is one queued payment; the number is its rank, matching the table below (coral ranks 1–25 are urgent, amber 26–100 high). Hover for details; click to open its evidence.`};
 }
 function renderQueueExplorer() {
   const host=element('qx-stage');
@@ -1148,7 +1164,7 @@ function renderQueueExplorer() {
   const m=population.model.metrics_by_k[k], r=population.rules.metrics_by_k[k];
   const ring=row=>ringOf(row.from_bank,row.from_account)||ringOf(row.to_bank,row.to_account);
   const width=chartWidth(host);
-  const view=queueExplorerHTML({view:qxView,rows:qxRows,k,hits:{model:m.hits,rules:r.hits},positives:m.positives,total:m.rows,ring,width});
+  const view=queueExplorerHTML({view:qxView,rows:qxRows,k,hits:{model:m.hits,rules:r.hits},positives:m.positives,total:m.rows,ring,width,selected:qxSelected});
   element('qx-tabs').querySelectorAll?.('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.view===qxView)));
   qxCols=view.cols||1;element('qx-note').textContent=view.caption;
   element('qx-title').textContent=`${model?'Frozen-model':'Rule-baseline'} queue · top ${integer(Number(k))}`;
@@ -1214,6 +1230,96 @@ function caseReplay(target,events,row) {
     host.innerHTML=svg?`<div class="cr-head-row"><span>Replay of the sender's earlier payments · dot size and height follow prior-day USD</span><button type="button" class="cr-replay">↻ Replay</button></div>${svg}`:'';
     host.querySelector?.('.cr-replay')?.addEventListener?.('click',draw);};
   draw();
+}
+
+// ---- BQ1 incoming: replay the stream and watch the final ranked queue fill in as each payment is scored ----
+// Each slot is a payment in the snapshot's ranked queue, at its final rank; it lights when its score was committed.
+// The counter follows the published commit history. No labels are involved.
+const SR_MS=12000;
+let streamView=null;
+// The scored count at time t, from the commit history (the last commit at or before t).
+function streamCountAt(progress,t) {
+  let count=0;
+  for(const point of progress) {if(Date.parse(point.at)<=t) count=point.processed;else break;}
+  return count;
+}
+function streamReplayHTML(data,width=900) {
+  const rows=data.queue, cols=width<520?10:rows.length<=50?10:20, cell=Math.min(36,Math.floor(Math.min(width*.66,760)/cols));
+  const slots=rows.map((row,i)=>{const x=(i%cols)*cell, y=Math.floor(i/cols)*cell, size=cell-6, tier=tierFor(row.rank);
+    return `<g class="qx-cell sr-slot qx-${tier.id}" data-index="${i}" style="--i:0"><rect x="${x+3}" y="${y+3}" width="${size}" height="${size}" rx="${Math.max(2,size*.18).toFixed(1)}"/>${cell>=26?`<text class="qx-rank" x="${x+cell/2}" y="${y+cell/2+4}" text-anchor="middle">${row.rank}</text>`:''}</g>`;}).join('');
+  const gridWidth=cols*cell, gridHeight=Math.ceil(rows.length/cols)*cell;
+  return {cols,html:`<svg class="qx-svg sr-grid" viewBox="0 0 ${gridWidth} ${gridHeight}" style="max-width:${gridWidth}px" tabindex="0" role="img" aria-label="The ranked incoming queue, lit as each payment was scored. Use the arrow keys to move and Enter to open evidence.">${slots}</svg>`};
+}
+function streamReplay(data,open) {
+  const anchor=element('incoming-progressbar');
+  if(!element('stream-replay')) {
+    if(typeof anchor?.insertAdjacentHTML!=='function') return;
+    anchor.insertAdjacentHTML('afterend',`<article id="stream-replay" class="queue-explorer" aria-labelledby="sr-title"><div class="heading"><div><h3 id="sr-title">Stream replay</h3><p class="qx-note">Press play to replay the stream: each square is a payment in the ranked queue, at its final rank, and it lights up when its score was committed. Hover for details; click to open its evidence.</p></div></div><div class="ring-stage qx-stage-frame"><div class="sr-controls"><button type="button" id="sr-play" class="sr-play" aria-label="Play the stream replay">▶</button><input id="sr-scrub" type="range" min="0" max="1000" value="1000" aria-label="Stream time"><span id="sr-clock" class="sr-clock"></span></div><div class="sr-body"><div class="sr-side"><small>Scored so far</small><strong id="sr-count">0</strong><small id="sr-of"></small><small class="sr-placed-label">Ranked queue placed</small><strong id="sr-placed" class="sr-placed">0</strong><svg id="sr-spark" class="sr-spark" viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true"></svg></div><div id="sr-stage" class="qx-stage sr-stage"></div></div></div></article>`);
+  }
+  const host=element('sr-stage');
+  if(!host) return;
+  const key=`${data.generated_at}|${data.processed}|${data.queue.length}`;
+  if(streamView?.key===key) return;
+  const first=!streamView;
+  if(streamView?.raf) cancelAnimationFrame(streamView.raf);
+  const start=Date.parse(data.progress[0].at), end=Date.parse(data.progress.at(-1).at), times=data.queue.map(row=>Date.parse(row.scored_at||end));
+  const view=streamReplayHTML(data,chartWidth(element('stream-replay')));
+  host.innerHTML=`${view.html}<div id="sr-tip" class="ring-tip qx-tip" role="tooltip" hidden></div>`;
+  const svg=host.querySelector('svg'), slots=[...svg.querySelectorAll('.sr-slot')], tip=element('sr-tip');
+  // The commit history as a small area chart with a playhead.
+  const xs=t=>(t-start)/Math.max(end-start,1)*200, ys=count=>58-count/Math.max(data.expected,1)*54;
+  const line=data.progress.map((point,i)=>`${i?'L':'M'}${xs(Date.parse(point.at)).toFixed(1)} ${ys(point.processed).toFixed(1)}`).join(' ');
+  element('sr-spark').innerHTML=`<path d="${line} L200 60 L0 60 Z" fill="rgba(63,208,184,.14)"/><path d="${line}" fill="none" stroke="#3fd0b8" stroke-width="1.6" vector-effect="non-scaling-stroke"/><line id="sr-head" x1="0" x2="0" y1="0" y2="60" stroke="#dff4ff" stroke-width="1.4" vector-effect="non-scaling-stroke"/>`;
+  element('sr-of').textContent=`of ${integer(data.expected)} payments`;
+  const state={key,t:end,playing:false,raf:null};streamView=state;
+  const set=t=>{
+    state.t=Math.max(start,Math.min(end,t));
+    let placed=0;slots.forEach((slot,i)=>{const on=times[i]<=state.t;slot.classList.toggle('sr-on',on);if(on) placed++;});
+    element('sr-count').textContent=integer(streamCountAt(data.progress,state.t));
+    element('sr-placed').textContent=`${integer(placed)} / ${integer(slots.length)}`;
+    element('sr-clock').textContent=new Date(state.t).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    element('sr-scrub').value=String(Math.round((state.t-start)/Math.max(end-start,1)*1000));
+    const head=element('sr-head');head?.setAttribute('x1',xs(state.t));head?.setAttribute('x2',xs(state.t));
+  };
+  const pause=()=>{state.playing=false;if(state.raf) cancelAnimationFrame(state.raf);state.raf=null;element('sr-play').textContent='▶';element('sr-play').setAttribute('aria-label','Play the stream replay');};
+  const play=()=>{
+    if(!animating()) {set(end);return;}
+    if(state.t>=end) set(start);
+    state.playing=true;element('sr-play').textContent='❚❚';element('sr-play').setAttribute('aria-label','Pause the stream replay');
+    let last=performance.now();
+    const frame=now=>{try {
+      if(!state.playing || streamView!==state) return;
+      set(state.t+(now-last)/SR_MS*(end-start));last=now;
+      if(state.t>=end) {pause();return;}
+      state.raf=requestAnimationFrame(frame);
+    } catch {pause();}};
+    state.raf=requestAnimationFrame(frame);
+  };
+  element('sr-play').onclick=()=>state.playing?pause():play();
+  element('sr-scrub').oninput=event=>{pause();set(start+Number(event.target.value)/1000*(end-start));};
+  // Hover, keyboard and click, as in the review-queue explorer.
+  let current=-1;
+  const show=index=>{try {
+    current=Math.max(0,Math.min(slots.length-1,index));const row=data.queue[current], slot=slots[current], tier=tierFor(row.rank);
+    slots.forEach(item=>item.classList.toggle('qx-focus',item===slot));
+    tip.innerHTML=`<span class="tip-role" style="--role:${tier.color}">#${integer(row.rank)} · ${escapeText(tier.label)}</span><span class="tip-title">${escapeText(row.transaction_id)}</span><span class="tip-grid"><span><small>Ranking score</small>${Number(row.model_score).toFixed(4)}</span><span><small>Prior-day USD</small>${escapeText(dollars(row.amount_usd_asof))}</span></span><span class="tip-foot">Scored ${row.scored_at?escapeText(new Date(row.scored_at).toLocaleTimeString('en-GB')):'—'} · ${escapeText(row.payment_format)} · ${escapeText(row.payment_currency)}</span>`;
+    tip.hidden=false;
+    const box=slot.getBoundingClientRect(), frame=host.getBoundingClientRect();
+    tip.style.left=`${Math.max(4,Math.min(frame.width-tip.offsetWidth-4,box.left-frame.left+box.width/2-tip.offsetWidth/2))}px`;
+    tip.style.top=`${Math.max(4,box.top-frame.top-tip.offsetHeight-8)}px`;
+  } catch {tip.hidden=true;}};
+  const hide=()=>{tip.hidden=true;slots.forEach(item=>item.classList.remove('qx-focus'));};
+  svg.addEventListener('pointermove',event=>{const slot=event.target.closest?.('[data-index]');if(slot) {if(+slot.dataset.index!==current||tip.hidden) show(+slot.dataset.index);} else hide();});
+  svg.addEventListener('pointerleave',()=>{hide();current=-1;});
+  svg.addEventListener('click',event=>{const slot=event.target.closest?.('[data-index]');if(slot) {slots.forEach(item=>item.classList.toggle('qx-selected',item===slot));open(data.queue[+slot.dataset.index]);}});
+  svg.addEventListener('focus',()=>show(current<0?0:current));svg.addEventListener('blur',hide);
+  svg.addEventListener('keydown',event=>{const step={ArrowLeft:-1,ArrowRight:1,ArrowUp:-view.cols,ArrowDown:view.cols}[event.key];
+    if(step) {event.preventDefault();show(current+step);}
+    else if(event.key==='Enter'&&current>=0) {event.preventDefault();slots.forEach(item=>item.classList.toggle('qx-selected',item===slots[current]));open(data.queue[current]);}
+    else if(event.key==='Escape') hide();});
+  // First show: replay from the start once; afterwards keep the end state as new data arrives.
+  set(end);
+  if(first && animating()) {set(start);play();}
 }
 
 // ---- BQ2: mule networks (hubs, loops, rings) and the ring node graph ----
