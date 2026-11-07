@@ -69,6 +69,32 @@ nav{flex-wrap:wrap}.ingestion-layout{display:grid;grid-template-columns:minmax(2
 .pres-toast{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:3;background:rgba(23,12,38,.92);border:1px solid #b794ff;color:#e6dcff;border-radius:999px;padding:8px 16px;font-size:13px;white-space:nowrap;box-shadow:0 0 22px rgba(183,148,255,.35)}
 .pres-toast b{font-family:ui-monospace,Menlo,monospace;font-weight:500}
 .pres-foot{display:grid;gap:10px}
+/* BQ1 presenter (built by dashboard.js) and the glowing present buttons. */
+#qp-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#qp-tl{width:100%;height:38px;display:block;cursor:pointer;touch-action:none;min-width:0}
+.qp-rules{color:#ffb648}.pres-story h2 em.qp-ring{color:#c3a6ff}
+.qp-capacity{position:absolute;right:16px;top:16px;z-index:2;display:flex;align-items:center;gap:4px;background:rgba(9,18,28,.82);border:1px solid #1f3346;border-radius:999px;padding:4px 4px 4px 14px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#8aa1b4;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.qp-capacity #qp-ks{display:flex;gap:2px;margin-left:6px}.qp-capacity button{background:transparent;border:1px solid transparent;border-radius:999px;padding:5px 11px;font:500 12px ui-monospace,Menlo,monospace;color:#c4d3df}
+.qp-capacity button:hover{border-color:#1f3346;background:transparent;color:#e4edf4}.qp-capacity button[aria-pressed=true]{background:rgba(63,208,184,.16);border-color:#3fd0b8;color:#e4edf4}
+.qp-readout{width:310px;max-height:calc(100% - 32px);overflow:auto}
+.qp-evidence{display:grid;gap:8px;border-top:1px solid #1f3346;padding-top:10px}.qp-evidence>small{font-size:11px;color:#8aa1b4;letter-spacing:.06em;text-transform:uppercase}
+.qp-ev{display:grid;grid-template-columns:1fr 52px;gap:4px 8px;font-size:12px;color:#c4d3df}.qp-ev b{font:500 12px ui-monospace,Menlo,monospace;text-align:right;color:#e4edf4}
+.qp-ev i{grid-column:1/-1;height:6px;border-radius:3px;background:#0b1622;overflow:hidden}.qp-ev i::before{content:"";display:block;height:100%;width:var(--w);border-radius:3px;background:linear-gradient(90deg,#1c8f7f,#3fd0b8);box-shadow:0 0 10px rgba(63,208,184,.5);animation:qp-grow .9s cubic-bezier(.2,.8,.2,1) both}
+.qp-ev.neg i::before{background:#3d5468;box-shadow:none}@keyframes qp-grow{from{width:0}}
+.qp-badge{border:1px solid #6d55a8;background:rgba(183,148,255,.1);color:#d9c9ff;border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.4;box-shadow:0 0 18px rgba(183,148,255,.18)}
+.qp-tip{max-width:300px;line-height:1.45}.qp-tip small{color:#8aa1b4}
+.qp-toast{background:rgba(38,22,6,.92);border-color:#ffb648;color:#ffe3b8;box-shadow:0 0 22px rgba(255,182,72,.35)}
+@media(max-width:820px){.qp-capacity{left:12px;right:auto;top:auto;bottom:12px}.qp-capacity>span:first-child{display:none}.qp-readout{width:auto}}
+/* Present buttons: a slowly turning gradient rim, a breathing glow and a shimmer. */
+.present-button.present-cta{position:relative;isolation:isolate;overflow:hidden;border:0;border-radius:999px;padding:11px 20px 11px 18px;font-weight:650;letter-spacing:.01em;color:#f2fbff;background:transparent;box-shadow:0 0 0 1px rgba(63,208,184,.25),0 0 18px rgba(63,208,184,.35),0 0 42px rgba(183,148,255,.18);animation:cta-breathe 2.8s ease-in-out infinite;transition:transform .18s ease}
+.present-button.present-cta::before{content:"";position:absolute;inset:-150%;z-index:-2;background:conic-gradient(from 0deg,#3fd0b8,#4fa8ff,#b794ff,#ff6f5e,#ffb648,#3fd0b8);animation:cta-spin 4s linear infinite}
+.present-button.present-cta::after{content:"";position:absolute;inset:2px;z-index:-1;border-radius:inherit;background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.16) 50%,transparent 65%) -150% 0/250% 100% no-repeat,linear-gradient(180deg,#132a3e,#0a1521);animation:cta-shimmer 3.6s ease-in-out infinite}
+.present-button.present-cta:hover{transform:translateY(-1px) scale(1.03);background:transparent;color:white;box-shadow:0 0 0 1px rgba(63,208,184,.5),0 0 26px rgba(63,208,184,.55),0 0 60px rgba(183,148,255,.3)}
+.present-button.present-cta:focus-visible{outline:3px solid #e7a934;outline-offset:3px}
+@keyframes cta-spin{to{transform:rotate(1turn)}}
+@keyframes cta-breathe{50%{box-shadow:0 0 0 1px rgba(63,208,184,.4),0 0 28px rgba(63,208,184,.55),0 0 64px rgba(183,148,255,.3)}}
+@keyframes cta-shimmer{0%,55%{background-position:-150% 0,0 0}100%{background-position:250% 0,0 0}}
+@media(prefers-reduced-motion:reduce){.present-button.present-cta,.present-button.present-cta::before,.present-button.present-cta::after,.qp-ev i::before{animation:none}.present-button.present-cta:hover{transform:none}}
 .pres-timeline{display:grid;grid-template-columns:auto auto 1fr auto;gap:12px;align-items:center}
 .pres-play{background:#3fd0b8!important;color:#04211c!important;border:0;border-radius:999px;width:38px;height:38px;padding:0;font-size:15px;font-weight:600;display:grid;place-items:center}
 .pres-clock{font:13px ui-monospace,Menlo,monospace;min-width:9.5em;font-variant-numeric:tabular-nums}.pres-clock small{display:block;color:#8aa1b4;font-size:11px}
