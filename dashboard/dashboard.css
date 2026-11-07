@@ -361,3 +361,8 @@ td,.bar-value,.signal-row strong,.run-id,.checked-at{font-variant-numeric:tabula
 /* ---- Table headers: bold, brighter and set apart from the rows ---- */
 th{font-weight:700;color:var(--text-strong);background:#15293c;font-size:12.5px;letter-spacing:.01em;border-bottom:1px solid var(--line-strong)!important;padding-top:11px;padding-bottom:11px}
 
+/* Pipeline journey: blue-white packets travel end to end; each stage flashes as the packet arrives. */
+.journey-dot{fill:#dff4ff;filter:drop-shadow(0 0 4px #6fc3ff) drop-shadow(0 0 9px rgba(79,168,255,.8));pointer-events:none}
+.map-node.journey-hit rect{stroke:#9fdcff;stroke-width:2.5;filter:drop-shadow(0 0 16px rgba(79,168,255,.7))}
+.map-node.journey-hit .map-service{fill:white}
+.journey-key{display:inline-flex;align-items:center;gap:6px}.journey-key::before{content:"";width:8px;height:8px;border-radius:50%;background:#dff4ff;box-shadow:0 0 8px #6fc3ff}
