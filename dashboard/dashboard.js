@@ -562,7 +562,7 @@ start();
 // Incoming AML: committed streaming scores published by infra/streaming's publisher.
 // The tab appears only when streaming-config.json is published; batch views never depend on it.
 (function incomingScores() {
-  const states={waiting:'Waiting for events',running:'Live · scoring',paused:'Paused',completed:'Replay complete',failed:'Consumer failure'};
+  const states={waiting:'Waiting for events',running:'Live · scoring',paused:'Paused',completed:'All scored',failed:'Consumer failure'};
   let config=null, latest=null, timer=null, busy=false, failures=0;
   const visible=()=>Boolean(config) && !document.hidden && !element('incoming').hidden;
   const stop=()=>{clearTimeout(timer);timer=null;};
@@ -592,16 +592,16 @@ start();
     element('incoming-state').textContent=old?'Stale':states[data.state];
     element('incoming-state').dataset.state=old||data.state==='failed'?'failed':data.state==='running'?'running':'';
     element('incoming-message').textContent=old?`No successful update for ${Math.round(age(data)/60)} min. The last published scores are shown.`:{
-      waiting:'Waiting for the first replayed transaction to be scored.',
+      waiting:'Waiting for the first incoming transaction to be scored.',
       running:`Updated ${ago(age(data))}. Committed scores appear here within about 15 seconds; this page checks every 10 seconds.`,
       paused:'The Kinesis consumer is disabled, so nothing new is arriving. Scores committed so far are shown.',
-      completed:`All ${integer(data.expected)} replayed transactions and ${integer(data.senders.expected)} sender histories reconcile with the reviewed replay input.`,
+      completed:`All ${integer(data.expected)} incoming transactions and ${integer(data.senders.expected)} sender histories reconcile with the reviewed input.`,
       failed:'The streaming consumer reported record failures. Committed scores are shown; later events may be held back until the failure is resolved.'}[data.state];
     const cutoff=review(data), verified=parity(data);
-    cards('incoming-kpis',[['Transactions scored',`${integer(data.processed)} / ${integer(data.expected)}`,`${(share*100).toFixed(1)}% of the replay cohort`],
+    cards('incoming-kpis',[['Transactions scored',`${integer(data.processed)} / ${integer(data.expected)}`,`${(share*100).toFixed(1)}% of expected transactions`],
       ['Complete sender histories',`${integer(data.senders.complete)} / ${integer(data.senders.expected)}`,'Rolling features need each sender’s full history'],
       ['Highest ranking score',data.max_score==null?'—':Number(data.max_score).toFixed(4),'Uncalibrated · not a probability'],
-      ['Replay position',eventTime(data.replay_position),'Historical event time · September 2022'],
+      ['Latest event time',eventTime(data.replay_position),'Historical event time · September 2022'],
       ...(cutoff?[['Review now',`${integer(cutoff.flagged)} / ${integer(data.processed)}`,`Score ≥ ${cutoff.cutoff.toFixed(4)} · batch top-${integer(cutoff.capacity)} cutoff`]]:[]),
       ...(verified?[['Matches batch model',`${integer(verified.transactions)} / ${integer(verified.transactions)}`,
         `Max score difference ${verified.max_absolute_score_difference.toExponential(1)} · recorded ${verified.verified_on}`]]:[])]);
