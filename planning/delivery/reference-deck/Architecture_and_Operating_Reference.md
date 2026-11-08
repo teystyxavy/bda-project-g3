@@ -99,7 +99,7 @@ Source: planning/runbooks/pipeline-optimisation-implementation.md; planning/runb
 - **Workflow and Lambda:** Step Functions controls dependencies. Lambda acquires sources, manages contracts/locks and publishes.
 - **Delivery and operations:** CloudFront serves the dashboard. SNS notifies failures. CloudWatch provides logs. Terraform defines resources.
 
-ECR stores digest-pinned worker images. IAM separates component permissions. Kinesis and DynamoDB belong to the optional streaming path. No permanent model endpoint is needed for batch inference.
+ECR stores digest-pinned worker images. IAM separates component permissions. Kinesis and DynamoDB belong to the separate streaming path. No permanent model endpoint is needed for batch inference.
 
 Source: README.md; planning/runbooks/pipeline-optimisation-implementation.md
 
@@ -452,7 +452,7 @@ Do not promise proposal-only payment-format filters, Sankey charts or every unde
 
 Source: dashboard/index.html; dashboard/dashboard.js
 
-## 37. Optional streaming architecture
+## 37. Separate streaming architecture
 
 - **Producer and Kinesis:** Replay approved CSV with original timestamps. Hash bank/account composite keys to preserve sender order.
 - **Lambda and DynamoDB:** Recompute causal features and frozen scores. Conditional transactions commit state and unique results.

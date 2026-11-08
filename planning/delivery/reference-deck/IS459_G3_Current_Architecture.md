@@ -22,7 +22,7 @@ Curated records feed three parallel branches:
 
 SageMaker export independently reconciles the scored population and corridor totals before publication. Optional candidate training follows the verified baseline, retains private artifacts and never promotes automatically. Stage reuse preserves full verification for each new release.
 
-## Page 3: Optional streaming demonstration
+## Page 3: Separate streaming demonstration
 
 A bounded CSV replay sends ordered sender events into Kinesis. Lambda recomputes the features and frozen-model score, reads and atomically updates history/results in DynamoDB, and writes audit evidence to S3. DynamoDB and S3 are separate Lambda outputs. State commits before audit; duplicate delivery can repair missing audit evidence.
 
@@ -35,4 +35,4 @@ The retained acceptance includes 884 results and 32 sender histories. The consum
 - [Current optimized implementation](../../runbooks/pipeline-optimisation-implementation.md)
 - [Streaming demo guide](../../../streaming/README.md)
 
-No recurring batch schedule is active. Both business questions are answered by the batch backbone. The separate streaming demonstration is optional.
+No recurring batch schedule is active. Both business questions are answered by the batch backbone. The streaming demonstration is a separate, additional component.

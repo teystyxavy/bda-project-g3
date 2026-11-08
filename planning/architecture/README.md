@@ -13,7 +13,7 @@
   The guide links to the later optimisation changes.
 - [Core business views](aml-pipeline-architecture.md) and
   [editable diagram](aml-pipeline-architecture.drawio): earlier verified BQ1/BQ2 milestone.
-- [Optional enhancements](aml-pipeline-aws-icons.md) and
+- [Additional enhancements](aml-pipeline-aws-icons.md) and
   [editable diagram](aml-pipeline-aws-icons.drawio): orchestration and streaming milestones.
 - `exports/`: retained reviewed PNG exports.
 - [Original proposal diagrams](../archive/architecture-proposal/README.md): historical designs.

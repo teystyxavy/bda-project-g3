@@ -15,7 +15,7 @@ It is documentation tooling only. It does not read data, touch S3, Glue,
 Athena, SageMaker or any other AWS service. It sits *beside* the pipeline:
 Kaggle + FX -> S3 raw -> Glue curate/score -> curated Parquet -> Athena SQL
 and XGBoost scoring -> static S3/CloudFront dashboard, plus the Step Functions
-orchestration and the optional Kinesis -> Lambda -> DynamoDB streaming demo.
+orchestration and the separate Kinesis -> Lambda -> DynamoDB streaming demo.
 Those stages are drawn here; the numbers in the notes (for example
 5,078,345 reconciled rows) were copied from the verification reports.
 

@@ -7,7 +7,7 @@ Status: AWS console footage captured on 30–31 October 2026. The finished video
 
 Record an inspection of the completed execution, with that description visible at the start. Do not imply that opening the pages reruns the pipeline. Show the real AWS pages and drill into each relevant run, input, output and log. Hold each view while its narration is read. Leave two seconds before and three seconds after each spoken passage. Remove loading screens and label cuts between processing stages. Do not record sign-in.
 
-This is the HI-Medium local-acquisition route. It does not use the HI-Small acquisition Lambda or dashboard Start ingestion control. Do not demonstrate those as the Medium entry point. Candidate training was not requested. Optional streaming is separate and is not part of this batch execution.
+This is the HI-Medium local-acquisition route. It does not use the HI-Small acquisition Lambda or dashboard Start ingestion control. Do not demonstrate those as the Medium entry point. Candidate training was not requested. Streaming is a separate component and is not part of this batch execution.
 
 The instructor's brief, slide 7, requires coverage of both setup and running the pipeline, with narration or annotations, and YouTube links in the slides appendix. The recording can be divided at the setup/run boundary. The 15-minute final presentation/demo allowance is separate; use selected excerpts there if the full recording runs longer.
 

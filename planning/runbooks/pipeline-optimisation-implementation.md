@@ -4,7 +4,7 @@ The existing AWS batch is now updated with parallel branches, bounded SageMaker
 completion checks, verified stage reuse and streamlined export. AWS smoke/full
 acceptance and observed timings are recorded in the accompanying deployment result.
 This implements the full-rebuild improvements from phases A/B of the proposal.
-Incremental transaction ingestion and the optional streaming reconciliation design
+Incremental transaction ingestion and the proposed streaming reconciliation design
 remain separate future work; routine runs retain the complete existing audit.
 
 The cache-bypassed 5,078,345-row rebuild `opt-full-20261006-aws1` completed in

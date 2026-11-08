@@ -1,5 +1,5 @@
 # =============================================================================
-# infra/streaming/main.tf -- OPTIONAL real-time streaming demo
+# infra/streaming/main.tf -- real-time streaming demo
 # =============================================================================
 # What it is: a small, separately-gated demonstration that the frozen AML
 # model can score transactions one at a time as they arrive, instead of only

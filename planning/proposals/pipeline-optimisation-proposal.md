@@ -43,7 +43,7 @@ Source manifest → immutable S3 raw → validation / deduplication
                                       ↓
                      reconciliation → dashboard release
 
-Optional operational AML path
+Proposed operational AML path
 Transaction events → existing Kinesis / Lambda / DynamoDB
                     → provisional queue + S3 audit
                     → event-time reconciliation with batch
@@ -66,7 +66,7 @@ Kaggle is a static historical dataset, not a live banking feed. For the course d
 | 2 | Read only the inputs each worker needs | Export currently stages raw, curated, baseline, scored and model inputs; reducing its input list can avoid redundant downloads | Document and test each stage's contract before removing any input. Full audit keeps sources needed for independent comparisons. |
 | 2 | Profile and tune Glue | Reduce expensive scans, sorting and shuffle work, then measure whether more workers help | Keep chronological windows and composite bank/account keys intact; compare output parity. Retain `txn_date` partitions, prune dates and select required columns. Compact only when measurements show small-file overhead. |
 | 3 | Add incremental transaction processing and serving aggregates | Normal refreshes process a delta and its necessary history instead of the whole archive | Stable IDs, deduplication, event-time checkpoints, affected-range recomputation and complete reconciliation. |
-| 4 | Align the optional stream with the batch model and serving data | AML users can see new events without waiting for a full batch dashboard rebuild | Shared feature/FX/model contracts; provisional/final status; bounded state; duplicate-safe effects; batch reconciliation. Existing consumer stays disabled until an approved demonstration. |
+| 4 | Align the proposed stream with the batch model and serving data | AML users can see new events without waiting for a full batch dashboard rebuild | Shared feature/FX/model contracts; provisional/final status; bounded state; duplicate-safe effects; batch reconciliation. Existing consumer stays disabled until an approved demonstration. |
 
 AWS documents completion delays for synchronous integrations and partition pushdown to reduce data scans: [Step Functions troubleshooting](https://docs.aws.amazon.com/step-functions/latest/dg/troubleshooting.html), [Glue pushdown](https://docs.aws.amazon.com/glue/latest/dg/aws-glue-programming-pushdown.html). SageMaker Pipelines also supports successful-step caching, but our orchestration is Step Functions; implement compatible cache receipts in the existing control plane rather than claiming that feature is already enabled or adding a second orchestrator solely for caching. [SageMaker caching](https://docs.aws.amazon.com/sagemaker/latest/dg/pipelines-caching.html)
 
@@ -105,7 +105,7 @@ Full audits run for the initial load, model/feature/runtime changes, material ba
 | A | Parallel branches and prompt completion detection; current full checks preserved | Full rebuild around 18–20 minutes | Existing services; additional status calls/transitions; avoid increasing compute first |
 | B | Stage cache, persisted score reuse, smaller serving outputs and streamlined worker inputs | Full rebuild target 12–16 minutes, subject to profiling | Reduce scans and job overhead; keep full audit available; benchmark before increasing workers |
 | C | Chronological delta ingestion, state/checkpoint and repair logic | Representative daily batch around 3–8 minutes | Keep worker startup floors visible; define batch row count, history volume and concurrency for each measurement |
-| D | Optional aligned AML stream and batch reconciliation | Provisional scores within 30 seconds under defined demo load | Time-bounded demonstration; account for provisioned Kinesis shard and DynamoDB requests; final scores follow watermark/reconciliation |
+| D | Proposed aligned AML stream and batch reconciliation | Provisional scores within 30 seconds under defined demo load | Time-bounded demonstration; account for provisioned Kinesis shard and DynamoDB requests; final scores follow watermark/reconciliation |
 
 All figures above are proposed targets, not achieved SLAs or additive savings. They depend on data size, account-history distribution, source delays and AWS startup/completion behavior. Smaller Spark batches can be dominated by startup time; choose micro-batch frequency after benchmarking. The existing unchanged-input cache should continue bypassing paid batch work.
 

@@ -19,7 +19,7 @@
         <mxCell id="batch" parent="1" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;strokeWidth=1.5;dashed=1;dashPattern=8 4;verticalAlign=top;align=right;spacingLeft=10;spacingRight=10;spacingTop=2;fontSize=13;fontStyle=1;fontFamily=Helvetica;" value="Step Functions workflow is459-g3-ingest (verified batch, no paid-job retries)" vertex="1">
           <mxGeometry height="665" width="1370" x="900" y="445" as="geometry" />
         </mxCell>
-        <mxCell id="streaming" parent="1" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#8C8C8C;strokeWidth=1.5;dashed=1;dashPattern=8 4;verticalAlign=top;align=left;spacingLeft=10;spacingRight=10;spacingTop=2;fontSize=13;fontStyle=1;fontColor=#8C8C8C;fontFamily=Helvetica;" value="Optional streaming demo (parked)" vertex="1">
+        <mxCell id="streaming" parent="1" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#8C8C8C;strokeWidth=1.5;dashed=1;dashPattern=8 4;verticalAlign=top;align=left;spacingLeft=10;spacingRight=10;spacingTop=2;fontSize=13;fontStyle=1;fontColor=#8C8C8C;fontFamily=Helvetica;" value="Streaming demo (parked)" vertex="1">
           <mxGeometry height="235" width="610" x="250" y="870" as="geometry" />
         </mxCell>
         <mxCell id="aux" parent="1" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#8C8C8C;strokeWidth=1.5;dashed=1;dashPattern=8 4;verticalAlign=top;align=left;spacingLeft=10;spacingRight=10;spacingTop=2;fontSize=13;fontStyle=1;fontColor=#8C8C8C;fontFamily=Helvetica;" value="Auxiliary Services" vertex="1">
@@ -674,7 +674,7 @@
         <mxCell id="leg-badge-10" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#232F3E;strokeColor=#FF9900;strokeWidth=2;fontColor=#FFFFFF;fontStyle=1;fontSize=13;fontFamily=Helvetica;" value="10" vertex="1">
           <mxGeometry height="28" width="28" x="1160" y="1404" as="geometry" />
         </mxCell>
-        <mxCell id="leg-text-10" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=12;fontColor=light-dark(#232F3E,#E6E6E6);fontFamily=Helvetica;" value="&lt;b&gt;Optional streaming demo&lt;/b&gt; – CSV replay → Kinesis → Lambda rescoring → DynamoDB + S3 audit. Parked: no shard, consumer disabled." vertex="1">
+        <mxCell id="leg-text-10" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=12;fontColor=light-dark(#232F3E,#E6E6E6);fontFamily=Helvetica;" value="&lt;b&gt;Streaming demo&lt;/b&gt; – CSV replay → Kinesis → Lambda rescoring → DynamoDB + S3 audit. Parked: no shard, consumer disabled." vertex="1">
           <mxGeometry height="36" width="1060" x="1200" y="1400" as="geometry" />
         </mxCell>
         <mxCell id="key-title" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=light-dark(#232F3E,#E6E6E6);fontFamily=Helvetica;" value="Lines" vertex="1">
@@ -784,7 +784,7 @@
         <mxCell id="run-start-note" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=top;fontSize=12;fontColor=light-dark(#232F3E,#E6E6E6);fontFamily=Helvetica;fontStyle=0;" value="&lt;b&gt;Two ways to start the same run&lt;/b&gt;&lt;br&gt;• &lt;b&gt;Directly (default):&lt;/b&gt; the ingestion script starts the pipeline as soon as the upload finishes.&lt;br&gt;• &lt;b&gt;Automatically (optional):&lt;/b&gt; the script uploads a small &quot;ready&quot; file last; EventBridge notices it and the run starter kicks off the pipeline.&lt;br&gt;&lt;i&gt;(Downloading the data in the cloud instead puts the files in the same raw/ folder.)&lt;/i&gt;" vertex="1">
           <mxGeometry height="120" width="660" x="1030" y="160" as="geometry" />
         </mxCell>
-        <mxCell id="run-stream-ptr" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#8C8C8C;dashed=1;fontSize=12;fontColor=light-dark(#232F3E,#E6E6E6);fontFamily=Helvetica;align=left;spacing=10;" value="&lt;b&gt;Not part of this run: streaming demo (page 4)&lt;/b&gt;&lt;br&gt;A separate, optional path where Amazon Kinesis feeds transactions one at a time to a Lambda that scores them as they arrive. Currently parked to save cost." vertex="1">
+        <mxCell id="run-stream-ptr" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#8C8C8C;dashed=1;fontSize=12;fontColor=light-dark(#232F3E,#E6E6E6);fontFamily=Helvetica;align=left;spacing=10;" value="&lt;b&gt;Not part of this run: streaming demo (page 4)&lt;/b&gt;&lt;br&gt;A separate path where Amazon Kinesis feeds transactions one at a time to a Lambda that scores them as they arrive. Currently parked to save cost." vertex="1">
           <mxGeometry height="100" width="520" x="1740" y="160" as="geometry" />
         </mxCell>
         <mxCell id="run-sfn" parent="1" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;strokeWidth=1.5;dashed=1;dashPattern=8 4;verticalAlign=top;align=center;spacingLeft=10;spacingRight=10;spacingTop=2;fontSize=13;fontStyle=1;fontFamily=Helvetica;" value="AWS Step Functions · is459-g3-ingest – runs the steps in order  (one run at a time · failed paid jobs are not re-run)" vertex="1">
@@ -1953,7 +1953,7 @@
         <mxCell id="stream-title" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=28;fontColor=light-dark(#232F3E,#E6E6E6);fontFamily=Helvetica;fontStyle=1;" value="Streaming demo: scoring transactions one at a time as they arrive" vertex="1">
           <mxGeometry height="40" width="1600" x="40" y="18" as="geometry" />
         </mxCell>
-        <mxCell id="stream-subtitle" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=15;fontColor=light-dark(#545B64,#B8BCC2);fontFamily=Helvetica;fontStyle=0;" value="A separate, optional path from the batch run. A replay script sends past transactions into Kinesis in time order, and a Lambda scores each one with an approved XGBoost model." vertex="1">
+        <mxCell id="stream-subtitle" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=15;fontColor=light-dark(#545B64,#B8BCC2);fontFamily=Helvetica;fontStyle=0;" value="A separate path from the batch run. A replay script sends past transactions into Kinesis in time order, and a Lambda scores each one with an approved XGBoost model." vertex="1">
           <mxGeometry height="26" width="1800" x="40" y="58" as="geometry" />
         </mxCell>
         <mxCell id="stream-note" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=13;fontColor=light-dark(#545B64,#B8BCC2);fontFamily=Helvetica;fontStyle=0;" value="&lt;b&gt;Status&lt;/b&gt; parked to save cost: the Kinesis stream is deleted and the scoring Lambda is switched off. Everything else is kept and Terraform can bring it back. The batch pipeline does not depend on any of it." vertex="1">

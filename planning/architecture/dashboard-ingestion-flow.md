@@ -50,7 +50,7 @@ phases, so storage writes and publication actions are not claimed as individuall
 measured stages. Source downloads have no byte counter or overall percentage.
 
 The diagram's required branches run concurrently. The optional training dependency
-is dashed; export waits for it only when requested. Streaming is a separate optional
+is dashed; export waits for it only when requested. Streaming is a separate
 demonstration and is outside this batch-run diagram.
 
 Native diagrams use verified AWS4 service stencils. SageMaker, Glue and Athena

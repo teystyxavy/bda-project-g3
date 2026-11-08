@@ -2,7 +2,7 @@
 
 Purpose
 -------
-Evidence collector for the optional streaming demo (Kinesis -> Lambda ->
+Evidence collector for the streaming demo (Kinesis -> Lambda ->
 DynamoDB, with an S3 audit copy). It is run twice around the single
 approved replay:
 

@@ -143,7 +143,7 @@ below records the original target architecture, including future cloud training
 and broader orchestration; use §4.6 and the deployment status for actual scope.
 The current editable implementation diagrams are
 [core batch paths](architecture/aml-pipeline-architecture.drawio) and
-[optional enhancements](architecture/aml-pipeline-aws-icons.drawio), with companion guides
+[additional enhancements](architecture/aml-pipeline-aws-icons.drawio), with companion guides
 and locally reviewed PNGs in `architecture-exports/`.
 
 Two layers, not two symmetric branches: a **batch backbone** that is the entire

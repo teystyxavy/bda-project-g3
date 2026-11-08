@@ -2,7 +2,7 @@
 
 Where this sits in the pipeline
 -------------------------------
-Entry point of the optional streaming demo Lambda (container image built
+Entry point of the streaming demo Lambda (container image built
 from ``streaming/Dockerfile``; Terraform in ``infra/streaming``). Flow::
 
     replay script -> Kinesis Data Stream -> this Lambda -> DynamoDB (state +

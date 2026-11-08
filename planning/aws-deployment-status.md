@@ -343,7 +343,7 @@ No retraining, AWS calls, paid jobs, hosting deployment or production promotion.
 
 ## Local streaming preparation â€” no deployment
 
-The optional 884-event, 32-sender replay reproduces frozen batch features/scores
+The 884-event, 32-sender replay reproduces frozen batch features/scores
 in the final Linux Lambda image. Transactional state, durable-result redelivery,
 SDK serialization and acceptance guards are tested. Sixty-four targeted Python
 tests pass with one environment-dependent skip; eleven core/SDK tests pass in

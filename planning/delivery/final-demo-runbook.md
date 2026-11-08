@@ -65,7 +65,7 @@ resources through a separately approved cleanup plan.
 | Time | Segment | What to show and say |
 |---|---|---|
 | 00:00–01:00 | Business decisions | Compliance chooses transactions to investigate. Treasury monitors bank/currency volume concentration. Identify the audience and action for each. |
-| 01:00–02:00 | Data and architecture | 5,078,345 synthetic transactions; Kaggle source plus cited historical FX. Show the implemented batch backbone and separate optional streaming path. |
+| 01:00–02:00 | Data and architecture | 5,078,345 synthetic transactions; Kaggle source plus cited historical FX. Show the implemented batch backbone and the separate streaming path. |
 | 02:00–04:00 | Ingestion and curation | Narrated setup/run excerpt: existing raw inputs, positional account-header renaming, composite account joins, prior-window features and date-partitioned Parquet. Show full-row verification. |
 | 04:00–07:00 | BQ1 dashboard | Select main test period and model, show the top-100 queue, open one explanation, then compare rules. Explain 44 labelled positives per 100 model reviews versus zero for rules. |
 | 07:00–09:00 | BQ2 dashboard | Show all-period bank/currency corridors, then September 6 versus September 8. Explain the top-five volume share and daily concentration change. |
@@ -137,7 +137,7 @@ Ruble and Saudi Riyal, retaining observation dates and source metadata.
 | Required video | Capture sequence | Completion status |
 |---|---|---|
 | Setup end to end | Workspace/setup prerequisites, local login with credentials off-screen, existing dataset/FX preparation, separate Terraform stacks and plan review, scoped roles, artifact hashes, private storage, hosting configuration | Recording and YouTube link pending |
-| Run end to end | Narrated ingestion/curation evidence, scoring and treasury execution evidence, reconciliation, dashboard output and optional orchestration/streaming excerpt | Recording and YouTube link pending |
+| Run end to end | Narrated ingestion/curation evidence, scoring and treasury execution evidence, reconciliation, dashboard output and an orchestration/streaming excerpt | Recording and YouTube link pending |
 
 Use [the automated ingestion runbook](../runbooks/ingestion-runbook.md),
 [the batch runbook](../runbooks/aws-batch-runbook.md),
@@ -175,7 +175,7 @@ already-built static files locally and starts no AWS work.
 - Narrated/annotated setup video and run video, YouTube links in the appendix.
 - Source repository/ZIP and component runbooks, without datasets, credentials,
   private state/plans or generated private keys. Review the package before sharing.
-- Editable final architecture diagrams: the updated core batch and optional
+- Editable final architecture diagrams: the updated core batch and additional
   enhancement files have four locally rendered, visually reviewed pages.
   Use current `planning/*.drawio` and `planning/architecture/exports/*.drawio.png`;
   the original proposal sources are preserved in their archive.

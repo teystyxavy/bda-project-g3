@@ -140,7 +140,7 @@ scores and treasury totals reconciled, and business rankings remained unchanged.
 See the [optimisation implementation](planning/runbooks/pipeline-optimisation-implementation.md)
 and [acceptance evidence](planning/evidence/pipeline-optimisation-result-20261006.json).
 
-The optional Kinesis/Lambda/DynamoDB replay demonstration was verified once and is
+The Kinesis/Lambda/DynamoDB replay demonstration was verified once and is
 now **parked**: the Kinesis stream is deleted to stop shard charges, while the image,
 function, state table and audit are kept. See [restore steps](streaming/README.md#parked).
 Incremental ingestion and further streaming optimisation are future work. Findings describe synthetic data, and model scores
@@ -155,7 +155,7 @@ are rankings rather than calibrated laundering probabilities.
 | `infra/` | Separate Terraform stacks and workflow definitions |
 | `cloud-ingestion/` | AWS acquisition container |
 | `sagemaker/` | Training and processing container entry points |
-| `streaming/` | Optional replay consumer container |
+| `streaming/` | Replay consumer container |
 | `dashboard/` | Static HTML, CSS and JavaScript assets |
 | `scripts/` | Commands grouped by purpose; see the script guide below |
 | `notebooks/` | Exploratory analysis notebooks |

@@ -1,7 +1,7 @@
-# Implemented optional enhancements
+# Implemented additional enhancements
 
 Editable source: [aml-pipeline-aws-icons.drawio](aml-pipeline-aws-icons.drawio).
-The two pages separate optional orchestration and bounded streaming from the
+The two pages separate guarded orchestration and bounded streaming from the
 [core batch paths](aml-pipeline-architecture.drawio). The batch backbone answers
 both business questions independently. Sources reflect verified 6 October
 milestones. Original proposal sources are archived separately.
