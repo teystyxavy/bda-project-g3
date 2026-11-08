@@ -1727,8 +1727,100 @@ function findAccount(text) {
 
 // Deterministic force-directed layout (Fruchterman–Reingold). Accounts repel,
 // links attract and, in hub rings, senders drift left and receivers right so
-// the picture reads "money in → hub → money out".
-function layoutRing(graph) {
+// the picture reads "money in → hub → money out". Big rings (HI-Medium has
+// rings of 100+ accounts with a dozen hubs) need room: hubs share a central
+// band of staggered columns instead of one line, each side spreads over as many
+// columns as its accounts need, and a final pass keeps dots from overlapping.
+const RING_GAP={hub:36,side:26}, RING_BIG=40;
+// Rings up to RING_BIG accounts keep the original layout; bigger ones get room to breathe.
+function layoutRing(graph) {return graph.nodes.length>RING_BIG?layoutRingSpread(graph):layoutRingClassic(graph);}
+function layoutRingSpread(graph) {
+  const {width,height,margin}=GRAPH, n=graph.nodes.length, cx=width/2, cy=height/2, usable=height-2*margin;
+  const roles=flowRoles(graph), hasHub=graph.nodes.some(node=>node.role==='hub');
+  const side=graph.nodes.map(node=>hasHub?({sender:-1,receiver:1}[roles[node.id]]||0):0);
+  const isHub=graph.nodes.map(node=>hasHub&&node.role==='hub');
+  const index=new Map(graph.nodes.map((node,i)=>[node.id,i]));
+  // Hub band: as many staggered columns as the hubs need at RING_GAP.hub apart.
+  const hubIds=graph.nodes.map((_,i)=>i).filter(i=>isHub[i]), hubRows=Math.max(1,Math.floor(usable/RING_GAP.hub));
+  const hubCols=Math.min(3,Math.max(1,Math.ceil(hubIds.length/hubRows))), hubBand=(hubCols-1)*34/2;
+  const hubSlot=new Map(hubIds.map((i,k)=>[i,{col:k%hubCols,row:Math.floor(k/hubCols),rows:Math.ceil(hubIds.length/hubCols)}]));
+  // Side lanes: senders (left) and receivers (right) fill extra columns inwards when one column would overflow.
+  const sideIds={'-1':[],'1':[]};graph.nodes.forEach((_,i)=>{if(side[i]) sideIds[side[i]].push(i);});
+  const laneRows=Math.max(1,Math.floor(usable/RING_GAP.side)), lane=new Map();
+  for(const s of [-1,1]) {
+    const ids=sideIds[s], lanes=Math.max(1,Math.ceil(ids.length/laneRows)), outer=(width/2-margin)*.86, inner=hubBand+90;
+    const step=lanes>1?Math.min(64,(outer-inner)/(lanes-1)):0, rows=Math.ceil(ids.length/lanes);
+    ids.forEach((i,k)=>lane.set(i,{x:cx+s*(outer-(k%lanes)*step),row:Math.floor(k/lanes),rows}));
+  }
+  const counts={'0':0}, centre=graph.nodes.filter((_,i)=>!side[i]&&!isHub[i]).length;
+  const pos=graph.nodes.map((node,i)=>{
+    if(isHub[i]) {const h=hubSlot.get(i);return {x:cx+(h.col-(hubCols-1)/2)*34,y:cy+(h.row-(h.rows-1)/2)*Math.min(RING_GAP.hub*hubCols,usable*.7/Math.max(h.rows,1))};}
+    if(side[i]) {const l=lane.get(i);return {x:l.x,y:margin+(l.row+.5)/l.rows*usable};}
+    const k=counts['0']++, angle=k*2.399963, radius=(hasHub?.3:.6)*Math.sqrt((k+.5)/Math.max(centre,1));
+    return {x:cx+Math.cos(angle)*radius*(width/2-margin),y:cy+Math.sin(angle)*radius*(height/2-margin)};
+  });
+  const target=graph.nodes.map((_,i)=>isHub[i]?pos[i].x:side[i]?lane.get(i).x:cx);
+  const edges=graph.links.map(link=>[index.get(link.source),index.get(link.target)]).filter(([a,b])=>a!=null&&b!=null);
+  // Hub rings are wide fans; loop rings need more spacing between their tightly linked accounts.
+  const k=Math.sqrt((width-2*margin)*usable/Math.max(n,1))*(hasHub?.7:.92);
+  const clampX=v=>Math.min(width-margin,Math.max(margin,v)), clampY=v=>Math.min(height-margin,Math.max(margin,v));
+  let temperature=width/8;
+  for(let step=0;step<340;step++) {
+    const move=pos.map(()=>({x:0,y:0}));
+    for(let a=0;a<n;a++) for(let b=a+1;b<n;b++) {
+      let dx=pos[a].x-pos[b].x, dy=pos[a].y-pos[b].y, d=Math.hypot(dx,dy)||.01;
+      const force=k*k/d; dx/=d; dy/=d;
+      move[a].x+=dx*force;move[a].y+=dy*force;move[b].x-=dx*force;move[b].y-=dy*force;
+    }
+    for(const [a,b] of edges) {
+      let dx=pos[a].x-pos[b].x, dy=pos[a].y-pos[b].y, d=Math.hypot(dx,dy)||.01;
+      const force=d*d/k; dx/=d; dy/=d;
+      move[a].x-=dx*force;move[a].y-=dy*force;move[b].x+=dx*force;move[b].y+=dy*force;
+    }
+    for(let i=0;i<n;i++) {
+      // Hubs keep to their band column, senders and receivers to their lane; the rest float.
+      const pinned=side[i]!==0||isHub[i];
+      move[i].x+=(target[i]-pos[i].x)*(pinned?.45:.06)*k/10;move[i].y+=(cy-pos[i].y)*.03*k/10;
+      // A soft wall: accounts near the top or bottom edge are pushed back in, so they never flatten into a row on the border.
+      const pad=44, top=margin+pad-pos[i].y, bottom=pos[i].y-(height-margin-pad);
+      if(top>0) move[i].y+=top*.6*k/10;if(bottom>0) move[i].y-=bottom*.6*k/10;
+      const length=Math.hypot(move[i].x,move[i].y)||1, limited=Math.min(length,temperature);
+      pos[i].x=clampX(pos[i].x+move[i].x/length*limited);pos[i].y=clampY(pos[i].y+move[i].y/length*limited);
+      if(isHub[i]) pos[i].x=target[i];
+    }
+    temperature*=.985;
+  }
+  // Within each hub column and side lane, keep accounts in their settled order but at least a gap apart,
+  // spread over the full height if needed, so a column can't bunch up against an edge.
+  const columns=new Map();graph.nodes.forEach((_,i)=>{if(isHub[i]||side[i]) {const key=Math.round(target[i]);if(!columns.has(key)) columns.set(key,[]);columns.get(key).push(i);}});
+  for(const ids of columns.values()) {
+    if(ids.length<2) continue;
+    ids.sort((a,b)=>pos[a].y-pos[b].y);
+    const gap=Math.min(isHub[ids[0]]?RING_GAP.hub:RING_GAP.side-4,usable/(ids.length-1)), lo=margin, hi=height-margin;
+    for(let j=1;j<ids.length;j++) pos[ids[j]].y=Math.max(pos[ids[j]].y,pos[ids[j-1]].y+gap);
+    if(pos[ids.at(-1)].y>hi) {pos[ids.at(-1)].y=hi;for(let j=ids.length-2;j>=0;j--) pos[ids[j]].y=Math.min(pos[ids[j]].y,pos[ids[j+1]].y-gap);}
+    if(pos[ids[0]].y<lo) {const shift=lo-pos[ids[0]].y;ids.forEach(i=>{pos[i].y+=shift;});}
+  }
+  // Collision pass: no two dots closer than their sizes plus a gap.
+  const room=graph.nodes.map((node,i)=>isHub[i]?17:node.role==='loop'?11:9);
+  for(let pass=0;pass<80;pass++) {
+    let moved=false;
+    for(let a=0;a<n;a++) for(let b=a+1;b<n;b++) {
+      const need=room[a]+room[b]+4;let dx=pos[b].x-pos[a].x, dy=pos[b].y-pos[a].y, d=Math.hypot(dx,dy);
+      if(d>=need) continue;
+      if(d<.01) {dx=(a%2?1:-1)*.7;dy=.7;d=1;}
+      const push=(need-d)/2, ux=dx/d, uy=dy/d;moved=true;
+      // Hubs and lane accounts hold their column and slide along it; free accounts move both ways.
+      const ax=isHub[a]||side[a]?0:1, bx=isHub[b]||side[b]?0:1;
+      pos[a].x=clampX(pos[a].x-ux*push*ax);pos[a].y=clampY(pos[a].y-uy*push);
+      pos[b].x=clampX(pos[b].x+ux*push*bx);pos[b].y=clampY(pos[b].y+uy*push);
+    }
+    if(!moved) break;
+  }
+  return Object.fromEntries(graph.nodes.map((node,i)=>[node.id,pos[i]]));
+}
+
+function layoutRingClassic(graph) {
   const {width,height,margin}=GRAPH, n=graph.nodes.length, cx=width/2, cy=height/2;
   const roles=flowRoles(graph), hasHub=graph.nodes.some(node=>node.role==='hub');
   const side=graph.nodes.map(node=>hasHub?({sender:-1,receiver:1}[roles[node.id]]||0):0);
@@ -1818,7 +1910,8 @@ function renderRing() {
   const linkMarkup=graph.links.map((link,i)=>`<path data-link="${i}" class="ring-link ring-link-${tone(link)}" stroke="url(#ring-grad-${i})" stroke-width="${(1.2+3*Math.log1p(link.txns)/Math.log1p(maxTxns)).toFixed(2)}" marker-mid="url(#ring-arrow-${tone(link)})"/>`).join('');
   const hitMarkup=graph.links.map((link,i)=>`<path data-hit="${i}" class="ring-hit"/>`).join('');
   const dotMarkup=dots.map((dot,i)=>`<circle data-dot="${i}" class="ring-dot ring-dot-${tone(graph.links[dot.link])}" r="${dot.r.toFixed(1)}" fill="${RING_TONE[tone(graph.links[dot.link])]}"/>`).join('');
-  const nodeMarkup=graph.nodes.map(node=>{const role=roles[node.id], r=radius[node.id], minor=node.role==='counterparty';
+  const hubRank=new Map(graph.nodes.filter(node=>node.role==='hub').map((node,i)=>[node.id,i]));
+  const nodeMarkup=graph.nodes.map(node=>{const role=roles[node.id], r=radius[node.id], minor=node.role==='counterparty'||(hubRank.get(node.id)??0)>=3;
     return `<g class="ring-node ring-node-${role}${node.id===selectedAccount?' ring-node-selected':''}" data-node="${escapeText(node.id)}" tabindex="0" role="button" aria-label="${escapeText(ROLE[role].label)} ${escapeText(node.id)}, ${integer(node.fan_in)} senders, ${integer(node.fan_out)} receivers">${node.role==='hub'?`<circle class="ring-halo" r="${(r+3).toFixed(1)}"/>`:''}<circle class="ring-grab" r="${(r+7).toFixed(1)}"/><circle class="ring-core" r="${r.toFixed(1)}" fill="${RING_GLOW[role]}" filter="url(#ring-glow)"/><text class="ring-label${minor?' ring-label-minor':''}" y="${(node.role==='hub'?r+17:-r-7).toFixed(1)}" text-anchor="middle">${escapeText(shortAccount(node.id))}</text></g>`;}).join('');
   const lanes=hasHub?`<text class="ring-lane" x="${margin-10}" y="${height-16}">← MONEY IN</text><text class="ring-lane" x="${width-margin+10}" y="${height-16}" text-anchor="end">MONEY OUT →</text>`:'';
   const crowded=graph.nodes.filter(node=>node.role==='loop').length>8;
