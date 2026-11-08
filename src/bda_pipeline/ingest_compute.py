@@ -303,46 +303,46 @@ def verify_scores(reference, scored, model_dir, manifest, output):
     """
     # Check the model files are exactly the reviewed ones before using them.
     verify_artifacts(model_dir, manifest['model_manifest_sha256'])
-    ranker = SavedRanker(model_dir)
+    from .export_workers import ScoreWorkers
     n = manifest.get('source_index_rows', manifest['rows'])
     selected_rows = manifest['rows']
     seen = np.zeros(n, dtype=bool)
     fingerprints = np.empty(n, dtype='S32')
-    for batch in ds.dataset(reference, format='parquet').to_batches(columns=SCORING_COLUMNS, batch_size=100_000):
-        frame = batch.to_pandas()
-        indices = checked_indices(frame, seen, manifest.get('subset', 'HI-Small'))
-        # An unseen category would only hit the '_unknown' column; refuse instead.
-        for column, vocabulary in ranker.vocabulary.items():
-            if not frame[column].isin(vocabulary).all():
-                raise ValueError('Frozen model categorical compatibility failure: ' + column)
-        fingerprints[indices] = feature_fingerprints(frame)
-    if int(seen.sum()) != selected_rows: raise ValueError('Incomplete baseline score reference')
-    reference_seen = seen.copy()
-    # Reset the tracker for the second pass over the Glue output.
-    seen[:] = False
     scores = np.empty(n, dtype='float64')
     difference = 0.
-    for batch in ds.dataset(scored, format='parquet', partitioning='hive', exclude_invalid_files=True).to_batches(batch_size=100_000):
-        frame = batch.to_pandas()
-        if set(frame.columns) != set(SCORING_COLUMNS) | {'model_score', 'txn_date'}:
-            raise ValueError('Unexpected scoring columns or evaluation labels')
-        indices = checked_indices(frame, seen, manifest.get('subset', 'HI-Small'))
-        if not np.array_equal(fingerprints[indices], feature_fingerprints(frame)):
-            raise ValueError('Scored feature mismatch')
-        actual = frame.model_score.to_numpy(dtype='float64')
-        if not np.isfinite(actual).all() or ((actual < 0) | (actual > 1)).any():
-            raise ValueError('Invalid model ranking score')
-        expected = ranker.predict(frame)
-        np.testing.assert_allclose(actual, expected, rtol=1e-6, atol=1e-7)
-        difference = max(difference, float(np.abs(actual - expected).max()))
-        # Store by source row so later lookups are a simple array index.
-        scores[indices] = actual
+    with ScoreWorkers(model_dir, workers=min(8, max(1, (selected_rows + 1_999_999) // 2_000_000))) as workers:
+        batches = ds.dataset(reference, format='parquet').to_batches(columns=SCORING_COLUMNS, batch_size=100_000)
+        processed = 0
+        for frame, (values, _) in workers.batches(batches):
+            indices = checked_indices(frame, seen, manifest.get('subset', 'HI-Small'))
+            fingerprints[indices] = values
+            processed += len(frame)
+            if processed % 2_000_000 < len(frame):
+                print(f'EXPORT_REFERENCE_SCORES rows={processed}/{selected_rows}', flush=True)
+        if int(seen.sum()) != selected_rows:
+            raise ValueError('Incomplete baseline score reference')
+        reference_seen = seen.copy()
+        seen[:] = False
+        batches = ds.dataset(scored, format='parquet', partitioning='hive', exclude_invalid_files=True).to_batches(batch_size=100_000)
+        processed = 0
+        for frame, (values, delta) in workers.batches(batches, predict=True):
+            if set(frame.columns) != set(SCORING_COLUMNS) | {'model_score', 'txn_date'}:
+                raise ValueError('Unexpected scoring columns or evaluation labels')
+            indices = checked_indices(frame, seen, manifest.get('subset', 'HI-Small'))
+            if not np.array_equal(fingerprints[indices], values):
+                raise ValueError('Scored feature mismatch')
+            scores[indices] = frame.model_score.to_numpy(dtype='float64')
+            difference = max(difference, delta)
+            processed += len(frame)
+            if processed % 2_000_000 < len(frame):
+                print(f'EXPORT_CLOUD_SCORES rows={processed}/{selected_rows}', flush=True)
+
     if not np.array_equal(seen, reference_seen): raise ValueError('Incomplete cloud scores')
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     np.save(output / 'scores.npy', scores, allow_pickle=False)
     return scores, {'status': 'passed', 'rows': selected_rows, 'max_absolute_score_difference': difference,
-                    'labels_excluded': True, 'model_sha256': ranker.selection['selected']['sha256']}
+                    'labels_excluded': True, 'model_sha256': SavedRanker(model_dir).selection['selected']['sha256']}
 
 
 def export_stage(inputs, output, assets):
@@ -396,7 +396,9 @@ def export_stage(inputs, output, assets):
         (output / 'skipped.json').write_text(json.dumps(result))
         return result
     reference = inputs / 'baseline/baseline/bq1_scored.parquet'
+    print('EXPORT_PHASE reference_hash', flush=True)
     reference_hash = digest(reference)
+    print('EXPORT_PHASE verify_scores', flush=True)
     # ---- 1. BQ1: model scores ----
     scores, score_proof = verify_scores(reference, inputs / 'scored', inputs / 'model', manifest, output / 'evidence')
     # ---- 2. BQ2: Glue network tables vs independent pandas recomputation ----
@@ -411,7 +413,9 @@ def export_stage(inputs, output, assets):
         # Two passes (links, then candidate-loop payment times) over only the needed columns.
         for batch in network_dataset.to_batches(columns=NETWORK_COLUMNS, batch_size=200_000):
             yield batch.to_pandas()
+    print('EXPORT_PHASE verify_network', flush=True)
     network_result = analyse_network(network_batches)
+    print('EXPORT_PHASE network_recomputed', flush=True)
     network_proof = compare_network(network_result, read_tables(inputs / 'network'), manifest.get('network_rows', manifest['rows']))
     # Agreement is not enough: refuse implausible results (e.g. one giant ring).
     network_proof['shape'] = check_shape(network_result)
@@ -423,6 +427,7 @@ def export_stage(inputs, output, assets):
     views = {}
     from .dashboard_exploration import stream_model_view
     for name, (start, end) in evaluation_periods(snapshot['splits'], manifest['end_date']).items():
+        print(f'EXPORT_PHASE model_view {name}', flush=True)
         views[name] = stream_model_view(dataset, scores, ranker, start, end, manifest['subset'])
     # ---- 4. Metadata for the dashboard ----
     snapshot['model'] = {'name': ranker.selection['selected']['name'], 'views': views,
@@ -525,6 +530,7 @@ def export_stage(inputs, output, assets):
     snapshot['generated_at'] = snapshot['pipeline']['refresh_time']
     # Imported lazily, only at this point of the export stage.
     from .dashboard_exploration import enrich_snapshot
+    print('EXPORT_PHASE exploration', flush=True)
     enrich_snapshot(snapshot, dataset, scores, ranker, treasury=False)
     site = output / 'dashboard'
     site.mkdir()

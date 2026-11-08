@@ -63,34 +63,74 @@ def scorer_projection(frame, scores, capacity, model=True, subset='HI-Small'):
 
 
 class RankedPopulation:
-    """Keep compact exact metric inputs and only bounded full-feature queue rows."""
+    """Exact score-level aggregates and bounded queues, independent of row count."""
     def __init__(self, capacity, model, subset):
         self.capacity, self.model, self.subset = capacity, model, subset
-        self.parts, self.queue = [], None
+        self.queue = None
+        self.levels = None
+        self.daily = defaultdict(int)
+        self.edges = np.linspace(0, 1, 21) if model else np.arange(0, 111, 10)
+        self.histogram = np.zeros(len(self.edges) - 1, dtype=np.int64)
 
     def add(self, frame, values):
         if frame.empty:
             return
+        values = np.asarray(values)
+        if len(values) != len(frame) or not np.isfinite(values).all():
+            raise ValueError('Invalid prediction scores')
         compact = frame[['timestamp', 'source_row_index', 'is_laundering']].copy()
         compact['risk_score'] = values
-        self.parts.append(compact)
-        ordering = rank(compact.reset_index(drop=True), values).head(self.capacity)
-        candidate = frame.iloc[ordering.index].copy()
-        candidate['_rank_score'] = ordering.risk_score.to_numpy()
+        levels = compact.groupby('risk_score').is_laundering.agg(['sum', 'count'])
+        self.levels = levels if self.levels is None else self.levels.add(levels, fill_value=0)
+        # Numeric day conversion avoids formatting every timestamp as a Python string.
+        days, counts = np.unique(frame.timestamp.to_numpy(dtype='datetime64[D]'), return_counts=True)
+        for day, count in zip(days, counts):
+            self.daily[str(day)] += int(count)
+        self.histogram += np.histogram(values, self.edges)[0]
+        # Only rows at the batch's top score boundary can enter the global queue.
+        if len(values) > self.capacity:
+            cutoff = np.partition(values, len(values) - self.capacity)[len(values) - self.capacity]
+            positions = np.flatnonzero(values >= cutoff)
+        else:
+            positions = np.arange(len(values))
+        candidate = frame.iloc[positions].copy()
+        candidate['_rank_score'] = values[positions]
+        candidate = candidate.sort_values(['_rank_score', 'timestamp', 'source_row_index'],
+                                          ascending=[False, True, True]).head(self.capacity)
         queue = candidate if self.queue is None else pd.concat([self.queue, candidate], ignore_index=True)
         self.queue = queue.sort_values(['_rank_score', 'timestamp', 'source_row_index'],
                                       ascending=[False, True, True]).head(self.capacity).copy()
 
     def finish(self):
-        if self.parts:
-            compact = pd.concat(self.parts, ignore_index=True)
-        else:
-            compact = pd.DataFrame({'timestamp': pd.Series(dtype='datetime64[ns]'),
-                'source_row_index': pd.Series(dtype='int64'), 'is_laundering': pd.Series(dtype='int64'),
-                'risk_score': pd.Series(dtype='float64')})
-        self.parts.clear()
-        return scorer_projection(compact, compact.risk_score.to_numpy(), self.capacity,
-                                 model=self.model, subset=self.subset)
+        grouped = (self.levels.sort_index(ascending=False).astype('int64') if self.levels is not None
+                   else pd.DataFrame({'sum': pd.Series(dtype='int64'), 'count': pd.Series(dtype='int64')}))
+        n, positives = int(grouped['count'].sum()), int(grouped['sum'].sum())
+        hits, reviewed = grouped['sum'].cumsum(), grouped['count'].cumsum()
+        ap = float(((grouped['sum'] / positives) * (hits / reviewed)).sum()) if positives else None
+        metrics, daily_by_k = {}, {}
+        queue = self.queue
+        base = dict(rows=n, positives=positives, average_precision=ap)
+        for k in CAPACITIES:
+            if k > self.capacity:
+                continue
+            effective = min(k, n)
+            count = int(queue.head(k).is_laundering.sum()) if queue is not None else 0
+            precision = count / effective if effective else None
+            metrics[str(k)] = {**base, 'k': effective, 'hits': count, 'precision_at_k': precision,
+                'recall_at_k': count / positives if positives else None,
+                'lift_at_k': precision / (positives / n) if positives and precision is not None else None}
+            selected = queue.head(k).timestamp.dt.strftime('%Y-%m-%d').value_counts() if queue is not None else {}
+            daily_by_k[str(k)] = [{'day': day, 'transactions': total, 'reviewed': int(selected.get(day, 0))}
+                                 for day, total in sorted(self.daily.items())]
+        positions = np.unique(np.linspace(0, max(0, len(grouped) - 1), min(80, len(grouped)), dtype=int))
+        curve = [{'recall': float(hits.iloc[i] / positives), 'precision': float(hits.iloc[i] / reviewed.iloc[i])}
+                 for i in positions] if positives else []
+        ids = ([] if queue is None else queue.transaction_id.tolist() if 'transaction_id' in queue
+               else [f'{self.subset}:{i}' for i in queue.source_row_index])
+        return {'metrics_by_k': metrics, 'daily_by_k': daily_by_k,
+                'histogram': [{'label': f'{a:.2f}–{b:.2f}', 'transactions': int(count)}
+                              for a, b, count in zip(self.edges[:-1], self.edges[1:], self.histogram)],
+                'pr_curve': curve, 'queue': ids}
 
 
 def stream_model_view(dataset, scores, ranker, start, end, subset='HI-Small'):

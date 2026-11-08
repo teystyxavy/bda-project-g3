@@ -85,9 +85,11 @@ def run_stage(s3, run_id, stage, sources, deployment_hash, output_uri, assets, w
     local_paths = {'baseline': 'baseline/baseline', 'baseline_manifest': 'baseline/manifest'}
     for name, key in sources.items():
         if name != 'run':
+            print(f'EXPORT_DOWNLOAD {name} starting', flush=True)
             download_input(s3, key, inputs / local_paths.get(name, name))
     from .ingest_compute import baseline_stage, export_stage
     result = (baseline_stage if stage == 'baseline' else export_stage)(inputs, output, Path(assets))
+    print(f'STAGE_COMPUTE_COMPLETE stage={stage}', flush=True)
     for file in sorted(output.rglob('*')):
         if file.is_file():
             s3.upload_file(str(file), BUCKET, prefix + file.relative_to(output).as_posix(),

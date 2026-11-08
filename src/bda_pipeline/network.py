@@ -145,7 +145,7 @@ def build_links(batches):
     Raises:
         ValueError: on missing values, non-binary labels or invalid USD amounts.
     """
-    partials, rows, self_transfers = [], 0, 0
+    levels, rows, self_transfers = [], 0, 0
     for frame in batches:
         if frame[COLUMNS].isna().any().any():
             raise ValueError('Missing network input value')
@@ -155,11 +155,22 @@ def build_links(batches):
             raise ValueError('Invalid USD amount')
         frame = frame.assign(timestamp=_naive_utc(frame.timestamp))
         part, skipped = _link_partial(frame)
-        partials.append(part)
+        # Binary compaction: each link participates in at most log2(batches)
+        # merges, rather than repeatedly re-grouping the whole accumulated graph.
+        level = 0
+        while level < len(levels) and levels[level] is not None:
+            part = _merge_links([levels[level], part])
+            levels[level] = None
+            level += 1
+        if level == len(levels):
+            levels.append(part)
+        else:
+            levels[level] = part
         rows += len(frame)
         self_transfers += skipped
-        if len(partials) >= 16:
-            partials = [_merge_links(partials)]
+        if rows % 2_000_000 < len(frame):
+            print(f'EXPORT_NETWORK_LINKS rows={rows}', flush=True)
+    partials = [part for part in levels if part is not None]
     if not partials:
         raise ValueError('No network input rows')
     return _merge_links(partials), rows, self_transfers
@@ -239,8 +250,8 @@ def candidate_loops(ordinary_links):
     rotation may be the one in time order, so nothing is filtered here).
     """
     e = ordinary_links[['src', 'dst']]
-    two = e.merge(e, left_on='dst', right_on='src', suffixes=('_1', '_2'))
-    two = two[two.src_1 != two.dst_2]
+    two = e[e.src < e.dst].merge(e, left_on='dst', right_on='src', suffixes=('_1', '_2'))
+    two = two[two.src_1 < two.dst_2]
     closing = e.rename(columns={'src': 'dst_2', 'dst': 'src_1'})
     three = two.merge(closing, on=['dst_2', 'src_1'])
     three = three.rename(columns={'src_1': 'a', 'dst_1': 'b', 'dst_2': 'c'})
