@@ -219,3 +219,45 @@ test('an incoming case uses only that sender\'s earlier published payments and n
   assert.match(trail.summary,/^Among the payments this stream publishes, the sender made 2 payments to 2 receivers/);
   assert.match(JSON.parse(h.run(`JSON.stringify(streamTrail(data,data.queue[2]))`)).summary,/^None of this sender's earlier payments/);
 });
+
+// A HI-Large-shaped closed club: hubs that all pay one another, senders that each pay every hub once,
+// one sender tied to a single hub and one joined by a $2 payment.
+function clubRing(hubCount=5,senderCount=44) {
+  const hubs=Array.from({length:hubCount},(_,i)=>`1:H${i}`), nodes=[], links=[];
+  const node=(id,role)=>({id,role,fan_in:3,fan_out:3,in_usd:1000,out_usd:1000,touches_laundering:false});
+  hubs.forEach(id=>nodes.push(node(id,'hub')));
+  for(const a of hubs) for(const b of hubs) if(a!==b) links.push({source:a,target:b,txns:1,usd:500,loop:false});
+  for(let i=0;i<senderCount;i++) {const id=`2:S${i}`;nodes.push(node(id,'counterparty'));hubs.forEach(hub=>links.push({source:id,target:hub,txns:1,usd:200+i,loop:false}));}
+  nodes.push(node('3:ONE','counterparty'));links.push({source:'3:ONE',target:hubs[0],txns:14,usd:5000,loop:false});
+  nodes.push(node('4:TINY','counterparty'));links.push({source:'4:TINY',target:hubs[1],txns:1,usd:2,loop:false});
+  return {nodes,links,total_accounts:nodes.length,shown_accounts:nodes.length,truncated:false,loops:[],
+    payments:links.map((link,i)=>[i,i,link.usd,0]),payments_total:links.length,payment_start:'2022-09-01T00:00:00'};
+}
+
+test('club view draws the senders that pay every hub as one group and hides hub-to-hub links until hover',async()=>{
+  const h=await harness();
+  h.context.ring=clubRing();
+  const view=JSON.parse(h.run('JSON.stringify(focusGraph(ring))'));
+  assert.deepEqual(view.club.groups,[{id:'group:sender',dir:'sender',count:44}]);
+  assert.equal(view.club.closed,true);assert.equal(view.club.trivial,1);assert.equal(view.club.hubLinks,20);
+  // 5 hubs + the single-hub sender + the group; the $2 account is left out.
+  assert.deepEqual(view.nodes.map(node=>node.id).sort(),['1:H0','1:H1','1:H2','1:H3','1:H4','3:ONE','group:sender']);
+  const group=view.links.filter(link=>link.source==='group:sender');
+  assert.equal(group.length,5);assert.ok(group.every(link=>link.members===44&&link.txns===44&&!link.club));
+  assert.equal(view.links.filter(link=>link.club).length,20);
+  // Every original link maps to a merged one, except the trivial account's.
+  assert.equal(view.linkMap.length,h.context.ring.links.length);assert.equal(view.linkMap.filter(i=>i<0).length,1);
+  // The presenter replays every payment but the trivial one on the merged links.
+  h.run('snapshot={network:{ring_list:[{rank:1,ring_id:"1:H0",hubs:5,loops:0,usd:1,laundering_rate:0,accounts:51}],graphs:{"1:H0":ring},thresholds:[{threshold:10,headline:true,hubs:{accounts:5},high_volume:{accounts:0}}],totals:{},rings:{},parameters:{loop_window_days:7,headline_threshold:10}}}');
+  const pres=JSON.parse(h.run('JSON.stringify(presenterData(snapshot.network).rings[0])'));
+  assert.equal(pres.pays.length,h.context.ring.links.length-1);assert.equal(pres.grouped,44);
+  assert.ok(pres.pays.every(pay=>pay[0]>=0&&pay[0]<pres.links.length));
+  assert.equal(pres.links.filter(link=>link[4]).length,20);
+});
+
+test('a ring without a shared sender pool keeps the ordinary focus view',async()=>{
+  const h=await harness();
+  h.context.ring=clubRing(1,44);
+  assert.equal(h.run('clubGraph(ring)'),null);
+  assert.equal(h.run('focusGraph(ring).club'),undefined);
+});

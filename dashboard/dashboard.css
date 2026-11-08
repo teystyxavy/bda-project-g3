@@ -501,3 +501,8 @@ th{font-weight:700;color:var(--text-strong);background:#15293c;font-size:12.5px;
   stroke:color-mix(in srgb,var(--svc) 55%,transparent);fill:color-mix(in srgb,var(--svc) 12%,#0a1424)}
 .map-node[data-stage=publish][data-state=pending] rect,.map-node[data-stage=publish][data-state=complete] rect{stroke:url(#svc-publish);stroke-opacity:.6}
 .map-node[data-state=complete] rect{filter:drop-shadow(0 0 7px color-mix(in srgb,var(--svc) 40%,transparent))}
+/* Club view (big many-hub rings): hub-to-hub links show only on hover; one group node stands for the accounts that pay most hubs. */
+.ring-link.ring-link-club{opacity:0;transition:opacity .2s}.ring-dim .ring-link.ring-link-club.ring-hl{opacity:.85}.ring-hit-off{pointer-events:none}
+.ring-club ellipse{fill:rgba(255,111,94,.04);stroke:rgba(255,111,94,.38);stroke-width:1.2;stroke-dasharray:5 5}.ring-club-label{font-size:11px;font-weight:600;fill:#e9a59c;paint-order:stroke;stroke:#0a1622;stroke-width:3.5px;stroke-linejoin:round}
+.ring-dim .ring-club{opacity:.35}.ring-group-ring{fill:none;stroke:rgba(79,168,255,.45);stroke-width:1.4;stroke-dasharray:3 3}.ring-node-receiver .ring-group-ring{stroke:rgba(255,182,72,.5)}
+.ring-group-count{font-size:12px;font-weight:700;fill:#06121c;pointer-events:none}.ring-group-list{max-height:320px;overflow:auto}.ring-group-member{background:none;border:0;padding:0;color:inherit;font:inherit;text-decoration:underline dotted;cursor:pointer;text-align:left}
