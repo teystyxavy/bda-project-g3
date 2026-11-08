@@ -475,14 +475,14 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
     element('ingestion-fields').disabled=!login || submitting || pending || lastStatus?.status==='RUNNING';
     const medium=element('ingestion-subset').value==='HI-Medium';
     const fullOption=Array.from(element('ingestion-size').options).find(option=>option.value==='full');
-    if(fullOption) fullOption.disabled=medium;
-    if(medium && element('ingestion-size').value==='full') element('ingestion-size').value='demo';
-    element('ingestion-rows').max=medium?'1000':'5100000';
-    const full=!medium && element('ingestion-size').value==='full';
+    if(fullOption) {fullOption.disabled=false;fullOption.textContent=medium?'Full dataset · about 32 million transactions':'Full dataset · about 5.1 million transactions';}
+    element('ingestion-rows').max=medium?'32000000':'5100000';
+    const full=element('ingestion-size').value==='full';
     element('ingestion-rows-field').hidden=element('ingestion-size').value!=='custom';
     element('ingestion-preview').disabled=!login || submitting || pending;
-    element('ingestion-train').disabled=!full;
-    if(!full) element('ingestion-train').checked=false;
+    element('ingestion-train').disabled=!full || medium;
+    if(!full || medium) element('ingestion-train').checked=false;
+    element('ingestion-train-help').textContent=medium?'HI-Medium uses the existing model; candidate training is unavailable.':'Available for full HI-Small runs. Requires separate review before promotion.';
     element('ingestion-start').disabled=!login || submitting || lastStatus?.status==='RUNNING';
     element('ingestion-start').textContent=submitting?'Submitting…':pending?'Retry same submission':'Start ingestion';
     element('ingestion-history-refresh').disabled=readOnly()?statusBusy:!login || historyBusy;
@@ -728,11 +728,12 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
     const mode=element('ingestion-size').value;
     const rows=mode==='full'?null:mode==='demo'?1000:Number(element('ingestion-rows').value);
     const version=element('ingestion-version').value===''?null:Number(element('ingestion-version').value);
-    if(rows!==null && (!Number.isInteger(rows)||rows<1||rows>5100000)) throw new Error('Choose a transaction limit from 1 to 5,100,000.');
+    const maximum=element('ingestion-subset').value==='HI-Medium'?32000000:5100000;
+    if(rows!==null && (!Number.isInteger(rows)||rows<1||rows>maximum)) throw new Error(`Choose a transaction limit from 1 to ${integer(maximum)}.`);
     if(version!==null && (!Number.isInteger(version)||version<1||version>100000)) throw new Error('Choose a positive whole-number dataset version.');
     const subset=element('ingestion-subset').value;
     if(!['HI-Small','HI-Medium'].includes(subset)) throw new Error('Cloud ingestion supports HI-Small and HI-Medium only.');
-    if(subset==='HI-Medium' && (rows===null || rows>1000 || element('ingestion-train').checked)) throw new Error('HI-Medium requires 1 to 1,000 rows and does not support training.');
+    if(subset==='HI-Medium' && element('ingestion-train').checked) throw new Error('HI-Medium uses the existing model and does not support candidate training.');
     return {subset,rows,dataset_version:version,refresh:element('ingestion-refresh').checked,
       rerun:element('ingestion-rerun').checked,train:mode==='full'&&element('ingestion-train').checked};
   }

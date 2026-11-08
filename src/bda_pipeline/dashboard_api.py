@@ -96,10 +96,10 @@ def clients():
 def options():
     return {'schema_version': 1, 'subsets': [
         {'value': 'HI-Small', 'label': 'HI-Small', 'supported': True},
-        {'value': 'HI-Medium', 'label': 'HI-Medium (up to 1,000 rows)', 'supported': True},
+        {'value': 'HI-Medium', 'label': 'HI-Medium', 'supported': True},
         *[{'value': v, 'label': v + ' (not supported by cloud pipeline)', 'supported': False}
           for v in ['HI-Large', 'LI-Small', 'LI-Medium', 'LI-Large']]],
-        'demo_rows': 1000, 'row_bounds': {'minimum': 1, 'maximum': 5100000}, 'poll_seconds': 10,
+        'demo_rows': 1000, 'row_bounds': {'minimum': 1, 'maximum': 32000000}, 'poll_seconds': 10,
         'notice': 'New processing can incur AWS charges. Reuse verified inputs by default. '
                   'Training creates a private candidate; it never promotes the model.'}
 
@@ -115,8 +115,9 @@ def validate_submission(body):
     if subset not in ('HI-Small', 'HI-Medium'):
         raise ApiError(400, 'The cloud pipeline supports HI-Small and HI-Medium only.')
     rows = body.get('rows')
-    if rows is not None and (type(rows) is not int or not 1 <= rows <= 5100000):
-        raise ApiError(400, 'Row limit must be an integer from 1 to 5,100,000, or choose the full dataset.')
+    maximum = 32_000_000 if subset == 'HI-Medium' else 5_100_000
+    if rows is not None and (type(rows) is not int or not 1 <= rows <= maximum):
+        raise ApiError(400, f'Row limit must be an integer from 1 to {maximum:,}, or choose the full dataset.')
     version = body.get('dataset_version')
     if version is not None and (type(version) is not int or not 1 <= version <= 100000):
         raise ApiError(400, 'Dataset version must be a positive integer.')
@@ -127,8 +128,8 @@ def validate_submission(body):
         flags[flag] = body.get(flag, False)
     if flags['train'] and rows is not None:
         raise ApiError(400, 'Candidate training requires the full dataset.')
-    if subset == 'HI-Medium' and (rows is None or rows > 1000 or flags['train']):
-        raise ApiError(400, 'HI-Medium requires 1 to 1,000 rows and does not support training.')
+    if subset == 'HI-Medium' and flags['train']:
+        raise ApiError(400, 'HI-Medium uses the existing model and does not support candidate training.')
     return request_id, {**({'subset': subset} if subset != 'HI-Small' else {}), 'rows': rows, 'dataset_version': version, **flags}
 
 

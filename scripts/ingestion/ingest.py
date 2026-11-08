@@ -314,7 +314,7 @@ def cloud_start(args, states):
         ``acquisition_location='aws-lambda'`` and a console URL.
 
     Raises:
-        ValueError: invalid combinations/bounds (rows must be 1..5,100,000,
+        ValueError: invalid combinations/bounds (custom rows must be within the selected subset bounds,
             roughly the size of HI-Small; training needs every row).
         RuntimeError: the cloud state machine is not deployed.
     """
@@ -323,7 +323,6 @@ def cloud_start(args, states):
     from bda_pipeline.cloud_acquisition import validate_selection
     subset = validate_selection(getattr(args, 'subset', 'HI-Small'), args.rows, args.train)
     if args.train and args.rows: raise ValueError('Training requires the full subset')
-    if args.rows is not None and not 0 < args.rows <= 5_100_000: raise ValueError('Invalid row bound')
     if args.dataset_version is not None and args.dataset_version < 1: raise ValueError('Invalid dataset version')
     run_id = valid_run(args.run_id or datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-') + secrets.token_hex(4))
     machine = f'arn:aws:states:{REGION}:{ACCOUNT}:stateMachine:is459-g3-cloud-ingest'

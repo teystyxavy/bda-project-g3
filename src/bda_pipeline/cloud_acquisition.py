@@ -37,6 +37,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,15 +54,16 @@ from .ingest_contract import BUCKET, REGION, CONFIG_KEY, canonical, sha, valid_r
 # to keep memory use predictable inside the Lambda while uploading ~0.5 GB CSVs.
 TRANSFER = TransferConfig(max_concurrency=2, multipart_chunksize=16 * 1024 * 1024)
 def validate_selection(subset, rows, train):
-    """Bound Medium cloud acquisition to the reviewed smoke size."""
+    """Validate supported subsets and bounded custom limits; None selects the full dataset."""
     subset = resolve_subset(subset)
     if subset not in ('HI-Small', 'HI-Medium'):
         raise ValueError('Cloud acquisition supports HI-Small and HI-Medium only')
     if subset == 'HI-Medium':
         if train:
             raise ValueError('HI-Medium training is not supported')
-        if type(rows) is not int or not 0 < rows <= 1000:
-            raise ValueError('HI-Medium cloud acquisition requires --rows between 1 and 1000')
+    maximum = 32_000_000 if subset == 'HI-Medium' else 5_100_000
+    if rows is not None and (type(rows) is not int or not 0 < rows <= maximum):
+        raise ValueError(f'Row limit must be an integer from 1 to {maximum:,}, or omitted for the full dataset')
     return subset
 
 
@@ -120,8 +122,6 @@ def request(event):
     # ``type(...) is bool`` rejects strings such as "false", which are truthy.
     if any(type(value[key]) is not bool for key in ['train', 'refresh', 'rerun']):
         raise ValueError('Modes must be boolean')
-    if value['rows'] is not None and (type(value['rows']) is not int or not 0 < value['rows'] <= 5_100_000):
-        raise ValueError('Invalid row bound')
     version = value['dataset_version']
     if version is not None and (type(version) is not int or version < 1):
         raise ValueError('Invalid dataset version')
@@ -258,6 +258,9 @@ def acquire(event, clients, root, context=None, downloader=None, getter=None, se
         # Do not let third-party HTTP errors or progress output expose credential values.
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             record = acquire_dataset(directory, subset=subset, version=version, refresh=options['refresh'], downloader=downloader)
+    # acquire_dataset has verified independent working copies. Free Kaggle's
+    # duplicate downloads before writing a full Medium prepared CSV.
+    shutil.rmtree(root / 'kaggle-cache', ignore_errors=True)
     record['origin'] = 'verified-s3-kaggle-reuse' if cached else 'kaggle-api'
     resolved = record['dataset_version']
     # The Kaggle version must be known so the result is reproducible and cacheable.

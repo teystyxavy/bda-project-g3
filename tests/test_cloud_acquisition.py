@@ -135,7 +135,7 @@ def test_medium_cache_is_isolated_and_reused(tmp_path):
 
 
 @pytest.mark.parametrize('options', [
-    {'subset': 'HI-Medium'}, {'subset': 'HI-Medium', 'rows': 1001},
+    {'subset': 'HI-Medium', 'rows': 32_000_001}, {'subset': 'HI-Medium', 'rows': True},
     {'subset': 'HI-Medium', 'rows': 10, 'train': True},
     {'subset': 'LI-Medium', 'rows': 10}, {'subset': 'HI-Large', 'rows': 10},
 ])
@@ -155,3 +155,26 @@ def test_medium_launcher_passes_subset_without_local_data():
     args = SimpleNamespace(fx_file=None, deployment=None, subset='HI-Medium', rows=1000,
         train=False, dataset_version=8, run_id='medium-launch', refresh=False, rerun=False)
     assert cli.cloud_start(args, States())['execution_arn'] == 'medium-execution'
+
+
+@pytest.mark.parametrize('rows', [None, 1001, 31_898_238, 32_000_000])
+def test_medium_accepts_full_and_custom_limits(rows):
+    assert request({'run_id': 'full-medium', 'subset': 'HI-Medium', 'rows': rows})['rows'] == rows
+
+
+def test_full_medium_acquisition_prepares_all_rows(tmp_path):
+    downloader = fixture(tmp_path, 'HI-Medium')
+    root = tmp_path / 'full-medium'
+    root.mkdir()
+    (root / 'kaggle-cache').mkdir()
+    (root / 'kaggle-cache' / 'duplicate').write_text('download cache')
+    s3 = S3()
+    result = acquire({'run_id': 'full-medium', 'subset': 'HI-Medium', 'dataset_version': 7},
+                     {'s3': s3}, root, downloader=downloader)
+    manifest = json.loads(s3.data['pipeline/runs/full-medium/raw/manifest.json'])
+    assert result['rows'] == 20
+    assert not (root / 'kaggle-cache').exists()
+    assert (root / 'dataset' / 'HI-Medium_Trans.csv').is_file()
+    assert manifest['source_scope'] == 'selected-subset'
+    assert manifest['subset'] == 'HI-Medium'
+    assert manifest['train'] is False

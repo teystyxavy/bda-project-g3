@@ -5,7 +5,7 @@ variables {
 run "bounded_cloud_acquisition_reuses_existing_batch" {
   command = plan
   assert {
-    condition     = aws_lambda_function.acquisition.timeout == 900 && aws_lambda_function.acquisition.memory_size == 3072 && aws_lambda_function.acquisition.ephemeral_storage[0].size == 10240 && aws_lambda_function.acquisition.reserved_concurrent_executions == 1
+    condition     = aws_lambda_function.acquisition.timeout == 900 && aws_lambda_function.acquisition.memory_size == 4096 && aws_lambda_function.acquisition.ephemeral_storage[0].size == 10240 && aws_lambda_function.acquisition.reserved_concurrent_executions == 1
     error_message = "Acquisition must stay bounded and serialize its source cache."
   }
   assert {

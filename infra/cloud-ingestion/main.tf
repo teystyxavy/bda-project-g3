@@ -103,7 +103,7 @@ resource "aws_lambda_function" "acquisition" {
   package_type                   = "Image"
   image_uri                      = var.image_uri
   architectures                  = ["x86_64"]
-  memory_size                    = 3072
+  memory_size                    = 4096
   timeout                        = 900
   reserved_concurrent_executions = 1
   ephemeral_storage { size = 10240 }

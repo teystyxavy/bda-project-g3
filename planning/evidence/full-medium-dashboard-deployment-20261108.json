@@ -1,0 +1,116 @@
+{
+  "date": "2026-11-08",
+  "scope": "Full HI-Medium dashboard ingestion with the existing model; candidate training disabled",
+  "image": {
+    "base_image_digest": "sha256:58a114d644734c56bb4835cafbf5f2b158ea32e3cbe3e6fc466e5d6763d259b5",
+    "image_uri": "588738581042.dkr.ecr.ap-southeast-1.amazonaws.com/is459-g3-acquisition@sha256:c1cf70141854c085b9f50471b4389734430b9d73b51a5b5b3446cbef08e57d71",
+    "code_sha256": "0f7546261ae00b04e2452025984f853ab3e7146f445dc586d7d9a548f27ea291",
+    "method": "OCI image derived from deployed dependency image with one verified source layer"
+  },
+  "acquisition": {
+    "elapsed_seconds": 429.5,
+    "event": {
+      "run_id": "full-medium-acq-20261108",
+      "subset": "HI-Medium",
+      "dataset_version": 8
+    },
+    "function_error": null,
+    "result": {
+      "cache_hit": false,
+      "run_id": "full-medium-acq-20261108",
+      "rows": 31898238,
+      "dataset_version": 8
+    },
+    "manifest": {
+      "acquisition_location": "aws-lambda",
+      "created_at": "2026-11-08T07:12:21.208399+00:00",
+      "currencies": [
+        "Australian Dollar",
+        "Bitcoin",
+        "Brazil Real",
+        "Canadian Dollar",
+        "Euro",
+        "Mexican Peso",
+        "Ruble",
+        "Rupee",
+        "Saudi Riyal",
+        "Shekel",
+        "Swiss Franc",
+        "UK Pound",
+        "US Dollar",
+        "Yen",
+        "Yuan"
+      ],
+      "dataset_origin": "verified-s3-kaggle-reuse",
+      "dataset_version": 8,
+      "deployment_sha256": "47ce337e104c704632c571c28fca2c5d47a8afe9457792f7897239f004889a2d",
+      "end_date": "2022-09-28",
+      "export_dates": null,
+      "files": {
+        "accounts.csv": {
+          "bytes": 145008642,
+          "sha256": "0fb441d31df9ca0868803eebce718b7e85a4e385334222427c400a5ba64475f9"
+        },
+        "fx.csv": {
+          "bytes": 30765,
+          "sha256": "cd99c50bab1da77c9cd781aab8ce484bf9251056e4111320b2211bafb32fa356"
+        },
+        "transactions.csv": {
+          "bytes": 3031783420,
+          "sha256": "3126afb8155e7c8815d62bc5370549a7b5ae6bf7dfe872b3cd7813e66a3d7ff5"
+        }
+      },
+      "model_manifest_sha256": "32e80d8a7699cf14a2a52ec5365baf2e7d3de2cd4dde35415521b8cc0f3326c4",
+      "processing_sha256": "5b6045e0627f50b6304a96df523672f1562a35dd38849ec4b6b60bd0e7e406c8",
+      "rerun": false,
+      "rows": 31898238,
+      "run_id": "full-medium-acq-20261108",
+      "schema_version": 1,
+      "source_scope": "selected-subset",
+      "start_date": "2022-09-01",
+      "subset": "HI-Medium",
+      "train": false
+    }
+  },
+  "runtime_report": [
+    "REPORT RequestId: fa0e9d4b-f796-4e4f-8a27-8911d6e99209\tDuration: 426396.29 ms\tBilled Duration: 428529 ms\tMemory Size: 3072 MB\tMax Memory Used: 3064 MB\tInit Duration: 2132.03 ms\t\n"
+  ],
+  "deployed_acquisition_limits": {
+    "memory_mib": 4096,
+    "timeout_seconds": 900,
+    "ephemeral_storage_mib": 10240
+  },
+  "memory_note": "The full-size acceptance test passed at 3072 MiB with 3064 MiB peak usage. Allocation was then raised to 4096 MiB for headroom.",
+  "dashboard": {
+    "lambda_code_sha256": "2FqkXgMiZksETjbdDDloz83SXjTh1ygFyJWP5mlrw1I=",
+    "files": [
+      {
+        "file": "index.html",
+        "sha256": "324119c1261570a86d83ff0196c673c197ed1bd11e88eae95b4769609bef0e95"
+      },
+      {
+        "file": "dashboard.js",
+        "sha256": "7fba736cd876d063946a137fc808de7eb67b390eee8e82449a2cf951eecc3be6"
+      }
+    ],
+    "invalidation_id": "I4E75A5FC53CYPJJIFDRQK0BP",
+    "snapshot_unchanged": true,
+    "export_asset_prefix": "pipeline/deployments/dashboard-full-medium-e134891a8807c81e364aa8ccf34bb092be2f4bb06edc4a4606677fc63498b378/dashboard",
+    "updated_export_jobs": [
+      "is459-g3-ingest-export",
+      "is459-g3-ingest-export-fallback-a8b3b9b43adf",
+      "is459-g3-ingest-export-fallback-f67a4b1a400d",
+      "is459-g3-ingest-export-recovery-20261107"
+    ],
+    "live_auth_options_and_validation": true,
+    "public_files_verified": true
+  },
+  "validation": {
+    "focused_python": "60 passed",
+    "broader_python": "84 passed; 3 model tests blocked by missing local OpenMP runtime",
+    "focused_dashboard": "8 passed",
+    "terraform": "1 mocked test passed; image and memory changes applied through reviewed saved plans"
+  },
+  "batch_processing_started": false,
+  "current_results_unchanged": true
+}

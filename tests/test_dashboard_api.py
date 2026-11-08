@@ -265,7 +265,7 @@ def test_parallel_branches_name_their_active_aws_services():
     assert active == {'score': 'AWS Glue', 'network': 'AWS Glue', 'baseline': 'AWS Glue'}
 
 
-@pytest.mark.parametrize('rows', [1, 1000])
+@pytest.mark.parametrize('rows', [None, 1, 1000, 31_898_238])
 def test_medium_submission_preserves_subset_and_status(control, rows):
     response = api.handler(event(payload=body(subset='HI-Medium', rows=rows)), None)
     assert response['statusCode'] == 202
@@ -275,8 +275,8 @@ def test_medium_submission_preserves_subset_and_status(control, rows):
     assert json.loads(status['body'])['selection']['subset'] == 'HI-Medium'
 
 
-@pytest.mark.parametrize('changes', [{'rows': None}, {'rows': 1001}, {'train': True}])
-def test_medium_rejects_unbounded_runs_before_aws(control, changes):
+@pytest.mark.parametrize('changes', [{'rows': 32_000_001}, {'rows': True}, {'train': True}, {'rows': None, 'train': True}])
+def test_medium_rejects_invalid_runs_before_aws(control, changes):
     response = api.handler(event(payload=body(subset='HI-Medium', **changes)), None)
     assert response['statusCode'] == 400
     assert not control[0].starts
