@@ -2768,7 +2768,7 @@ const QP_STEPS=7, QP_SCENE_START=[0,2,3,5,6], QP_KS=['25','50','100','250'], QP_
 const QP_COLOR={model:'#3fd0b8',rules:'#ffb648',hit:'#ff2e55',miss:'#2c4255',ring:'#b794ff',flag:'#ffb648',sender:'#4fa8ff',receiver:'#ffb648'};
 const QP_HEAT=['#4fa8ff','#3fd0b8','#ffb648','#ff6f5e'];
 const QP={open:false,snap:null,step:0,data:null,k:'100',row:null,raf:null,last:0,W:0,H:0,DPR:1,pts:null,layer:null,image:null,layerKey:'',storyBottom:200,
-  anim:{hay:1,col:0,squeeze:0,dim:0,grid:0,duel:0,chart:0,caseView:0,link:0},tallyAt:0,chartAt:0,linkAt:0,hover:-1,replay:null,glyphs:{},counts:'',returnFocus:null};
+  anim:{hay:1,col:0,squeeze:0,dim:0,grid:0,duel:0,chart:0,caseView:0,link:0,wall:0},wallCells:[],wallGlyphs:{},tallyAt:0,chartAt:0,linkAt:0,hover:-1,replay:null,glyphs:{},counts:'',returnFocus:null};
 const qpNow=()=>typeof performance==='object'?performance.now():Date.now();
 const qpAccount=(bank,account)=>`${String(bank).replace(/^0+(?=.)/,'')}:${account}`;
 const qpHits=(metrics,k)=>metrics.hits??Math.round((metrics.precision_at_k||0)*Number(k));
@@ -2824,7 +2824,11 @@ function qpStoryHTML(step=QP.step,data=QP.data,k=QP.k,row=QP.row) {
       return `<div class="pres-eyebrow">Case file · rank #${integer(row.rank)} of ${integer(data.rows)}</div><h2>${presUsd(row.amount_usd_asof)} by ${escapeText(row.payment_format)} in ${escapeText(row.payment_currency)}, score <em>${Number(row.model_score).toFixed(3)}</em>.</h2><p>${shown?`Replaying the sender's ${seen>shown?`latest ${integer(shown)} of ${integer(seen)}`:integer(shown)} earlier payments, then the flagged one.`:'No earlier payments from this sender are published.'} Whether this payment was laundering is not published; an analyst makes the call.</p>`;
     }
     default: {
-      if(!data.rings) return `<div class="pres-eyebrow">The queue</div><h2>${integer(n)} cases, <span class="pres-dirty">${integer(qpHits(m,k))}</span> of them laundering.</h2><p>Click any square to open its case file.</p>`;
+      if(!data.rings) {const shown=Math.min(n,QP_WALL_MAX), all=qpHits(m,k)>=n, top=data.queue.slice(0,n), formats=new Map();
+        top.forEach(row=>formats.set(row.payment_format,(formats.get(row.payment_format)||0)+1));
+        const usd=top.map(row=>Number(row.amount_usd_asof)||0).sort((a,b)=>a-b), median=usd[Math.floor(usd.length/2)]||0, [lead,leadCount]=[...formats.entries()].sort((a,b)=>b[1]-a[1])[0]||['',0];
+        const mix=leadCount===top.length?`Every one is a${/^[AEIOU]/i.test(lead)?'n':''} ${escapeText(lead)} payment`:`${integer(leadCount)} of ${integer(top.length)} are ${escapeText(lead)} payments`;
+        return `<div class="pres-eyebrow">The review queue · top ${integer(n)}</div><h2>${integer(n)} cases, <span class="pres-dirty">${integer(qpHits(m,k))}</span> of them laundering.</h2><p>Each tile is one flagged payment: the sender on the left, everyone it paid before on the right, and the flagged payment ${all?'in red. Every one is labelled laundering':'in amber'}.${shown<n?` The first ${integer(shown)} are shown.`:''} Click a tile to open its case file.</p><p>${mix}; the median is ${presUsd(median)}.</p>`;}
       const rings=new Set(data.queue.slice(0,n).filter(item=>item.ring).map(item=>item.ring)).size;
       return `<div class="pres-eyebrow">BQ1 × BQ2</div><h2><em class="qp-ring">${integer(qpOverlap(data.queue,k))}</em> of the model's top ${integer(n)} touch an account in a BQ2 ring.</h2><p>They fall in ${plural(rings,'ring')} of the ${integer(data.rings.drawn)} BQ2 draws, which hold ${integer(data.rings.accounts)}${data.rings.population?` of ${integer(data.rings.population)}`:''} accounts. One method scores single payments, the other maps who pays whom, and they land on the same accounts. The rules' top ${integer(n)}: ${integer(qpOverlap(data.rulesQueue,k))}.</p>`;
     }
@@ -2846,7 +2850,7 @@ function bq1PresenterRefresh() {
 }
 function qpEnsureOverlay() {
   if(element('qp')) return;
-  const scenes=[['0','The haystack'],['2','The queue'],['3','Head to head'],['5','Case file'],['6','BQ1 × BQ2']].map(([step,label],i)=>`<li><button type="button" data-qp-step="${step}"><span>${i+1}</span>${label}</button></li>`).join('');
+  const scenes=[['0','The haystack'],['2','The queue'],['3','Head to head'],['5','Case file'],['6','BQ1 × BQ2']].map(([step,label],i)=>`<li><button type="button" data-qp-step="${step}"><span>${i+1}</span><b id="qp-scene-${step}" style="font-weight:inherit">${label}</b></button></li>`).join('');
   document.body.insertAdjacentHTML('beforeend',`<div id="qp" class="presenter qp" hidden role="dialog" aria-modal="true" aria-labelledby="qp-label"><div class="pres-app">
 <div class="pres-top"><div class="pres-brand" id="qp-label"><b>BQ1</b> · AML review queue · presenter view</div><ol class="pres-scenes" id="qp-scenes" aria-label="Story sections">${scenes}</ol><button type="button" class="pres-icon" id="qp-fs">Full screen</button><button type="button" class="pres-icon" id="qp-close">Close ✕</button></div>
 <div class="pres-stage" id="qp-stage"><canvas id="qp-canvas" style="position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none" role="img" aria-label="Animated view of scored payments and the review queue"></canvas><div class="pres-story" id="qp-story" aria-live="polite"></div>
@@ -2862,7 +2866,8 @@ function qpEnsureOverlay() {
 function openBq1Presenter() {
   if(!bq1PresenterAvailable(snapshot)) return;
   qpEnsureOverlay();
-  if(QP.snap!==snapshot) {QP.snap=snapshot;QP.data=bq1PresenterData(snapshot);QP.pts=null;QP.glyphs={};}
+  if(QP.snap!==snapshot) {QP.snap=snapshot;QP.data=bq1PresenterData(snapshot);QP.pts=null;QP.glyphs={};QP.wallGlyphs={};}
+  const lastScene=element('qp-scene-6');if(lastScene) lastScene.textContent=QP.data.rings?'BQ1 × BQ2':'The cases';
   QP.k=QP.data.ks.includes('100')?'100':QP.data.ks.at(-1);QP.open=true;QP.returnFocus=document.activeElement;QP.layerKey='';
   element('qp-ks').innerHTML=QP.data.ks.map(k=>`<button type="button" data-k="${k}" aria-pressed="false">${k}</button>`).join('');
   qpCaseOptions();qpSetCase(QP.data.queue[0]);
@@ -3196,10 +3201,57 @@ function qpDrawLink(ctx,t) {
   });
   ctx.restore();
 }
+// The last step without a BQ2 cross-check: the top cases as tiles, each a small
+// star of the sender's published payments with the flagged one highlighted.
+const QP_WALL_MAX=100;
+function qpWallGlyph(row) {
+  const key=row.transaction_id;if(QP.wallGlyphs[key]) return QP.wallGlyphs[key];
+  const sender=qpAccount(row.from_bank,row.from_account), flagged=qpAccount(row.to_bank,row.to_account), counts=new Map();
+  (QP.data.histories[key]?.events||[]).forEach(event=>{const id=qpAccount(event.to_bank,event.to_account);counts.set(id,(counts.get(id)||0)+1);});
+  counts.set(flagged,(counts.get(flagged)||0)+1);
+  const self=counts.has(sender);counts.delete(sender);
+  // Most-paid receivers first, at most 14 drawn; the flagged receiver always stays.
+  let receivers=[...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,14);
+  if(!receivers.some(([id])=>id===flagged)&&flagged!==sender) receivers[receivers.length-1]=[flagged,counts.get(flagged)];
+  receivers=receivers.sort((a,b)=>a[0]<b[0]?-1:1);
+  return QP.wallGlyphs[key]={receivers,flagged,self:self||flagged===sender,extra:Math.max(counts.size-receivers.length,0)};
+}
+function qpDrawWall(ctx,t) {
+  const a=QP.anim.wall;if(a<=.01) {QP.wallCells=[];return;}
+  const data=QP.data, k=QP.k, n=Math.min(Number(k),QP_WALL_MAX), rows=data.queue.slice(0,n), {W,H}=QP, now=qpNow();
+  const all=qpHits(data.model[k],k)>=Number(k), flagColor=all?QP_COLOR.hit:QP_COLOR.flag;
+  // Wide screens: the story keeps the left column and the tiles fill the rest, edge to edge.
+  const narrow=W<820, area=narrow?{x:16,y:presClamp(QP.storyBottom+14,80,H*.5),w:W-32}:{x:Math.min(W*.36,560),y:70,w:W-Math.min(W*.36,560)-24};area.h=H-area.y-(narrow?46:40);
+  const cols=narrow?5:n<=25?5:n<=50?Math.min(10,Math.ceil(Math.sqrt(n*area.w/area.h))):10, gridRows=Math.ceil(n/cols), cw=area.w/cols, ch=Math.min(area.h/gridRows,cw*1.1);
+  QP.wallCells=rows.map((row,i)=>({x:area.x+(i%cols)*cw,y:area.y+Math.floor(i/cols)*ch,w:cw,h:ch}));
+  ctx.save();
+  QP.wallCells.forEach((cell,i)=>{
+    const appear=a*presClamp((now-QP.linkAt-i*14)/350);if(appear<=0) return;
+    const row=rows[i], g=qpWallGlyph(row), hover=i===QP.hover, small=cell.w<110;ctx.globalAlpha=appear;
+    ctx.fillStyle=hover?'rgba(63,208,184,.08)':'rgba(13,24,36,.55)';ctx.strokeStyle=hover?'rgba(63,208,184,.7)':'rgba(31,51,70,.8)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.roundRect?ctx.roundRect(cell.x+3,cell.y+3,cell.w-6,cell.h-6,8):ctx.rect(cell.x+3,cell.y+3,cell.w-6,cell.h-6);ctx.fill();ctx.stroke();
+    const box={x:cell.x+10,y:cell.y+(small?20:22),w:cell.w-20,h:cell.h-(small?40:44)}, S=[box.x+box.w*.12,box.y+box.h/2], m=g.receivers.length;
+    const pos=g.receivers.map((_,j)=>{const y=m===1?S[1]:box.y+box.h*(j+.5)/m;return [box.x+box.w*.9-Math.abs(y-S[1])/Math.max(box.h,1)*box.w*.18,y];});
+    g.receivers.forEach(([id,count],j)=>{if(id===g.flagged) return;const b=pos[j], c=presCurve(S,b,.1);
+      ctx.beginPath();ctx.moveTo(S[0],S[1]);ctx.quadraticCurveTo(c[0],c[1],b[0],b[1]);ctx.strokeStyle='rgba(127,157,181,.3)';ctx.lineWidth=.6+Math.min(Math.log1p(count)*.5,1.6);ctx.stroke();
+      ctx.beginPath();ctx.arc(b[0],b[1],1.7,0,Math.PI*2);ctx.fillStyle='#6f8aa0';ctx.fill();});
+    if(g.self) {ctx.beginPath();ctx.arc(S[0],S[1]-7,6,0,Math.PI*2);ctx.strokeStyle='rgba(183,148,255,.5)';ctx.lineWidth=1;ctx.stroke();}
+    const fj=g.receivers.findIndex(([id])=>id===g.flagged);
+    if(fj>=0) {const b=pos[fj], c=presCurve(S,b,.1), pulse=1+.15*Math.sin(t/260+i);
+      ctx.beginPath();ctx.moveTo(S[0],S[1]);ctx.quadraticCurveTo(c[0],c[1],b[0],b[1]);ctx.strokeStyle=presRgba(flagColor,.9);ctx.lineWidth=1.8;ctx.stroke();
+      presDot(ctx,b[0],b[1],2.8,flagColor,9*pulse);}
+    presDot(ctx,S[0],S[1],small?3.2:4,QP_COLOR.sender,small?9:12);
+    ctx.font='500 10px ui-monospace,Menlo,monospace';ctx.textAlign='left';ctx.fillStyle='#8aa1b4';ctx.fillText(`#${row.rank}`,cell.x+10,cell.y+16);
+    ctx.textAlign='right';ctx.fillStyle='#5f7a8e';ctx.fillText(small?String(row.payment_format||'').slice(0,6):String(row.payment_format||''),cell.x+cell.w-10,cell.y+16);
+    ctx.textAlign='center';ctx.fillStyle=all?'#ff8aa0':'#ffcf8a';ctx.fillText(presUsd(row.amount_usd_asof),cell.x+cell.w/2,cell.y+cell.h-10);
+  });
+  ctx.restore();
+}
 function qpFrame(t) {
   QP.raf=null;if(!QP.open) return;
   const n=QP.step, still=!motionAllowed();
-  const target={hay:[1,1,QP.W<820?.3:1,0,0,0,0][n],col:n>=1?1:0,squeeze:n>=2?1:0,dim:n>=2?1:0,grid:n===2||n===3||n===6?1:0,duel:n===3?1:0,chart:n===4?1:0,caseView:n===5?1:0,link:n===6?1:0};
+  const wall=n===6&&!QP.data.rings;
+  const target={hay:[1,1,QP.W<820?.3:1,0,0,0,0][n],col:n>=1?1:0,squeeze:n>=2?1:0,dim:n>=2?1:0,grid:n===2||n===3||(n===6&&!wall)?1:0,duel:n===3?1:0,chart:n===4?1:0,caseView:n===5?1:0,link:n===6&&!wall?1:0,wall:wall?1:0};
   for(const key in QP.anim) {const rate=key==='col'?.05:key==='grid'?.05:.1, d=target[key]-QP.anim[key];QP.anim[key]=still||Math.abs(d)<.002?target[key]:QP.anim[key]+d*rate;}
   const r=QP.replay;
   if(r?.playing&&n===5) {const dt=Math.min((t-(QP.last||t))/1000,.25), next=r.t+dt*r.span/r.dur*r.speed;if(next>=qpEnd()) {qpSeek(qpEnd());qpSetPlaying(false);} else qpSeek(next);qpTimeline();}
@@ -3208,7 +3260,7 @@ function qpFrame(t) {
     qpFreshCanvas();
     const ctx=element('qp-canvas').getContext('2d');
     ctx.setTransform(QP.DPR,0,0,QP.DPR,0,0);ctx.clearRect(0,0,QP.W,QP.H);
-    qpDrawDots(ctx);qpDrawGrids(ctx,t);qpDrawChart(ctx);qpDrawCase(ctx,t);qpDrawLink(ctx,t);
+    qpDrawDots(ctx);qpDrawGrids(ctx,t);qpDrawChart(ctx);qpDrawCase(ctx,t);qpDrawLink(ctx,t);qpDrawWall(ctx,t);
   } catch(error) {if(!QP.warned) {QP.warned=true;console.error('BQ1 presenter frame failed',error);}}
   QP.raf=requestAnimationFrame(qpFrame);
 }
@@ -3217,6 +3269,7 @@ function qpFrame(t) {
 function qpCellAt(event) {
   if(!(QP.step===2||QP.step===3||QP.step===6)||qpTally().on) return -1;
   const box=element('qp-canvas').getBoundingClientRect(), x=event.clientX-box.left, y=event.clientY-box.top;
+  if(QP.step===6&&!QP.data.rings) return QP.wallCells.findIndex(cell=>x>=cell.x&&x<cell.x+cell.w&&y>=cell.y&&y<cell.y+cell.h);
   return qpModelCells().findIndex(c=>Math.abs(x-c.x)<=c.s/2+2&&Math.abs(y-c.y)<=c.s/2+2);
 }
 function qpHideTip() {const tip=element('qp-tip');if(tip) tip.hidden=true;}
