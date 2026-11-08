@@ -1741,7 +1741,13 @@ function focusGraph(graph) {
   if(graph.nodes.length<=RING_BIG) return graph;
   if(ringFocusCache.has(graph)) return ringFocusCache.get(graph);
   const keep=new Set(graph.nodes.filter(node=>node.role!=='counterparty').map(node=>node.id));
-  graph.nodes.filter(node=>node.role==='counterparty').sort((a,b)=>(b.in_usd+b.out_usd)-(a.in_usd+a.out_usd)).slice(0,RING_FOCUS_KEEP).forEach(node=>keep.add(node.id));
+  // Counterparties shared by two or more hubs are what tie the hubs into one ring, so they always stay (up to RING_FOCUS_KEEP).
+  const role=new Map(graph.nodes.map(node=>[node.id,node.role])), hubsOf=new Map();
+  for(const link of graph.links) for(const [mine,other] of [[link.source,link.target],[link.target,link.source]])
+    if(role.get(other)==='hub'&&role.get(mine)==='counterparty') {if(!hubsOf.has(mine)) hubsOf.set(mine,new Set());hubsOf.get(mine).add(other);}
+  const money=node=>node.in_usd+node.out_usd;
+  graph.nodes.filter(node=>(hubsOf.get(node.id)?.size||0)>=2).sort((a,b)=>money(b)-money(a)).slice(0,RING_FOCUS_KEEP).forEach(node=>keep.add(node.id));
+  graph.nodes.filter(node=>node.role==='counterparty'&&!keep.has(node.id)).sort((a,b)=>(b.in_usd+b.out_usd)-(a.in_usd+a.out_usd)).slice(0,RING_FOCUS_KEEP).forEach(node=>keep.add(node.id));
   const unseen=new Map();
   for(const link of graph.links) for(const [mine,other] of [[link.source,link.target],[link.target,link.source]])
     if(keep.has(mine)&&!keep.has(other)) {if(!unseen.has(mine)) unseen.set(mine,new Set());unseen.get(mine).add(other);}
@@ -1749,8 +1755,10 @@ function focusGraph(graph) {
     hidden:Object.fromEntries([...unseen].map(([id,set])=>[id,set.size])),focusOf:graph.nodes.length};
   ringFocusCache.set(graph,focused);return focused;
 }
-// Rings up to RING_BIG accounts keep the original layout; bigger ones get room to breathe.
-function layoutRing(graph) {return graph.nodes.length>RING_BIG?layoutRingSpread(graph):layoutRingClassic(graph);}
+// Rings with several hubs are drawn as a constellation of stars; other rings up to RING_BIG accounts keep the
+// original layout, and bigger ones get room to breathe.
+const ringHubs=graph=>graph.nodes.filter(node=>node.role==='hub').length;
+function layoutRing(graph) {return ringHubs(graph)>=2?layoutRingConstellation(graph):graph.nodes.length>RING_BIG?layoutRingSpread(graph):layoutRingClassic(graph);}
 function layoutRingSpread(graph) {
   const {width,height,margin}=GRAPH, n=graph.nodes.length, cx=width/2, cy=height/2, usable=height-2*margin;
   const roles=flowRoles(graph), hasHub=graph.nodes.some(node=>node.role==='hub');
@@ -1835,6 +1843,65 @@ function layoutRingSpread(graph) {
     if(!moved) break;
   }
   return Object.fromEntries(graph.nodes.map((node,i)=>[node.id,pos[i]]));
+}
+
+// Rings with two or more hubs: each hub is drawn as its own small star. Hubs sit on an oval, each with a fan
+// of the accounts only it deals with pointing outwards; loop accounts and accounts shared by several hubs sit
+// inside the oval, near the hubs they touch. A one-hub ring already reads as a star, so it keeps its layout.
+function layoutRingConstellation(graph) {
+  const {width,height,margin}=GRAPH, cx=width/2, cy=height/2, n=graph.nodes.length;
+  const index=new Map(graph.nodes.map((node,i)=>[node.id,i])), roles=flowRoles(graph);
+  const isHub=graph.nodes.map(node=>node.role==='hub'), nbr=graph.nodes.map(()=>new Set());
+  for(const link of graph.links) {const a=index.get(link.source), b=index.get(link.target);if(a==null||b==null||a===b) continue;nbr[a].add(b);nbr[b].add(a);}
+  const hubs=graph.nodes.map((_,i)=>i).filter(i=>isHub[i]), money=i=>graph.nodes[i].in_usd+graph.nodes[i].out_usd;
+  // Hub order round the oval: the biggest hub first, then each time the hub sharing the most with the last one.
+  const shared=(a,b)=>{let s=nbr[a].has(b)?2:0;for(const x of nbr[a]) if(nbr[b].has(x)) s++;return s;};
+  const order=[hubs.slice().sort((a,b)=>money(b)-money(a))[0]], left=new Set(hubs);left.delete(order[0]);
+  while(left.size) {const last=order.at(-1);let best=null, score=-1;for(const h of left) {const s=shared(last,h);if(s>score) {score=s;best=h;}}order.push(best);left.delete(best);}
+  // Each counterparty that deals with exactly one hub joins that hub's fan.
+  const fans=new Map(hubs.map(h=>[h,[]])), inFan=new Array(n).fill(false);
+  graph.nodes.forEach((node,i)=>{if(node.role!=='counterparty') return;const own=[...nbr[i]].filter(j=>isHub[j]);if(own.length===1) {fans.get(own[0]).push(i);inFan[i]=true;}});
+  const H=hubs.length, span=H===2?Math.PI*1.15:Math.max(Math.PI*.3,Math.min(Math.PI*.85,Math.PI*2/H*1.5));
+  // Two hubs get two big fans side by side, like a one-hub ring drawn twice; more hubs get small fans.
+  const GAP=22, minR=H===2?Math.min(150,height/2-margin-12):40, maxR=H===2?minR+40:90;
+  const fanShape=count=>{for(let rows=1;;rows++) {const per=Math.ceil(count/rows), r0=Math.min(maxR,Math.max(minR,per*GAP/span));if(per<=Math.floor(span*r0/GAP)+1) return {rows,r0};}};
+  const depth=Math.max(...[...fans.values()].map(f=>{const {rows,r0}=fanShape(f.length);return r0+(rows-1)*GAP;}),40)+12;
+  // Oval size: as big as the canvas allows once the deepest fan fits outside it.
+  const ry=Math.max(70,height/2-margin-depth), rx=Math.max(110,Math.min(width/2-margin-depth,ry*1.9));
+  const pos=new Array(n), fixed=new Array(n).fill(false), between=n-H-[...fans.values()].reduce((s,f)=>s+f.length,0);
+  order.forEach((h,k)=>{const angle=H===2?(k?0:Math.PI):-Math.PI/2+k/H*Math.PI*2;
+    pos[h]={x:cx+Math.cos(angle)*(H===2?Math.max(90+14*Math.sqrt(between),width/2-margin-depth):rx),y:cy+Math.sin(angle)*(H===2?0:ry)};fixed[h]=true;
+    // Fan: senders, then two-way accounts, then receivers, spread over an arc pointing away from the middle.
+    const rank={sender:0,both:1,receiver:2}, members=fans.get(h).sort((a,b)=>rank[roles[graph.nodes[a].id]]-rank[roles[graph.nodes[b].id]]||money(b)-money(a));
+    const out=Math.atan2(pos[h].y-cy,pos[h].x-cx), {rows,r0}=fanShape(members.length);
+    for(let row=0;row<rows;row++) {
+      const mine=members.filter((_,j)=>j%rows===row), m=mine.length, radius=r0+row*GAP;
+      mine.forEach((i,q)=>{const a=out-span/2+span*(q+.5+(row%2?.25:0)*(m>1?1:0))/Math.max(m,1);pos[i]={x:pos[h].x+Math.cos(a)*radius,y:pos[h].y+Math.sin(a)*radius};fixed[i]=true;});
+    }
+  });
+  // Everything else starts near the middle of the hubs it touches, pulled towards the centre.
+  const target=new Array(n);let spiral=0;
+  graph.nodes.forEach((_,i)=>{if(fixed[i]) return;const near=[...nbr[i]].filter(j=>isHub[j]);
+    const mx=near.length?near.reduce((s,j)=>s+pos[j].x,0)/near.length:cx, my=near.length?near.reduce((s,j)=>s+pos[j].y,0)/near.length:cy;
+    target[i]={x:cx+(mx-cx)*.5,y:cy+(my-cy)*.5};const k=spiral++, a=k*2.399963, d=8*Math.sqrt(k+1);pos[i]={x:target[i].x+Math.cos(a)*d,y:target[i].y+Math.sin(a)*d};});
+  const room=graph.nodes.map((node,i)=>isHub[i]?17:node.role==='loop'?11:9);
+  const clampX=v=>Math.min(width-margin,Math.max(margin,v)), clampY=v=>Math.min(height-margin,Math.max(margin,v));
+  for(let pass=0;pass<160;pass++) {
+    let moved=false;
+    for(let i=0;i<n;i++) if(!fixed[i]) {pos[i].x+=(target[i].x-pos[i].x)*.02;pos[i].y+=(target[i].y-pos[i].y)*.02;}
+    for(let a=0;a<n;a++) for(let b=a+1;b<n;b++) {
+      if(fixed[a]&&fixed[b]) continue;
+      const need=room[a]+room[b]+4;let dx=pos[b].x-pos[a].x, dy=pos[b].y-pos[a].y, d=Math.hypot(dx,dy);
+      if(d>=need) continue;if(d<.01) {dx=(a%2?1:-1)*.7;dy=.7;d=1;}
+      const ux=dx/d, uy=dy/d, push=(need-d)*(fixed[a]||fixed[b]?1:.5);moved=true;
+      if(!fixed[a]) {pos[a].x=clampX(pos[a].x-ux*push);pos[a].y=clampY(pos[a].y-uy*push);}
+      if(!fixed[b]) {pos[b].x=clampX(pos[b].x+ux*push);pos[b].y=clampY(pos[b].y+uy*push);}
+    }
+    if(!moved&&pass>40) break;
+  }
+  // Fill the canvas (up to 1.7x), so the explorer doesn't have to zoom in, and never spill off it.
+  const xs=pos.map(p=>p.x), ys=pos.map(p=>p.y), s=Math.min(1.7,(width/2-margin)/Math.max(cx-Math.min(...xs),Math.max(...xs)-cx,1),(height/2-margin)/Math.max(cy-Math.min(...ys),Math.max(...ys)-cy,1));
+  return Object.fromEntries(graph.nodes.map((node,i)=>[node.id,{x:cx+(pos[i].x-cx)*s,y:cy+(pos[i].y-cy)*s}]));
 }
 
 function layoutRingClassic(graph) {
@@ -1924,7 +1991,7 @@ function renderRing() {
   const scene=ringScene={ring:selectedRing,width,height,graph,layout,pos,roles,byId,radius,animate,dots,
     ids:graph.nodes.map(node=>node.id),adjacent:Object.fromEntries(Object.entries(adjacent).map(([id,set])=>[id,[...set]])),
     reverse:graph.links.map(link=>pairs.has(link.target+'\n'+link.source)),scale:Object.fromEntries(graph.nodes.map(node=>[node.id,1])),
-    view:same?previous.view:null,hover:null,hoverLink:null,drag:null,gesture:null,settled:!animate,raf:null,last:0,geometry:[]};
+    chord:ringHubs(graph)>=2?{x:cx,y:cy}:null,view:same?previous.view:null,hover:null,hoverLink:null,drag:null,gesture:null,settled:!animate,raf:null,last:0,geometry:[]};
 
   const gradients=graph.links.map((link,i)=>`<linearGradient id="ring-grad-${i}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${RING_GLOW[roles[link.source]]}"/><stop offset="1" stop-color="${RING_GLOW[roles[link.target]]}"/></linearGradient>`).join('');
   const marker=name=>`<marker id="ring-arrow-${name}" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto"><path d="M1 1 L9 5 L1 9" fill="none" stroke="${RING_TONE[name]}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker>`;
@@ -1934,10 +2001,12 @@ function renderRing() {
   const hubRank=new Map(graph.nodes.filter(node=>node.role==='hub').map((node,i)=>[node.id,i]));
   const nodeMarkup=graph.nodes.map(node=>{const role=roles[node.id], r=radius[node.id], minor=node.role==='counterparty'||(hubRank.get(node.id)??0)>=(graph.focusOf||graph.nodes.length>RING_BIG?1:3);
     return `<g class="ring-node ring-node-${role}${node.id===selectedAccount?' ring-node-selected':''}" data-node="${escapeText(node.id)}" tabindex="0" role="button" aria-label="${escapeText(ROLE[role].label)} ${escapeText(node.id)}, ${integer(node.fan_in)} senders, ${integer(node.fan_out)} receivers">${node.role==='hub'?`<circle class="ring-halo" r="${(r+3).toFixed(1)}"/>`:''}<circle class="ring-grab" r="${(r+7).toFixed(1)}"/><circle class="ring-core" r="${r.toFixed(1)}" fill="${RING_GLOW[role]}" filter="url(#ring-glow)"/><text class="ring-label${minor?' ring-label-minor':''}" y="${(node.role==='hub'?r+17:-r-7).toFixed(1)}" text-anchor="middle">${escapeText(shortAccount(node.id))}</text></g>`;}).join('');
-  const lanes=hasHub?`<text class="ring-lane" x="${margin-10}" y="${height-16}">← MONEY IN</text><text class="ring-lane" x="${width-margin+10}" y="${height-16}" text-anchor="end">MONEY OUT →</text>`:'';
-  const crowded=graph.nodes.filter(node=>node.role==='loop').length>8, busy=graph.nodes.length>RING_BIG||graph.links.length>80;
-  element('ring-graph').innerHTML=`<svg id="ring-svg" class="${[crowded&&'ring-crowded',busy&&'ring-busy',!animate&&'ring-static',ringFlowPaused&&'ring-paused'].filter(Boolean).join(' ')}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Money flows between ${graph.shown_accounts} accounts of the selected ring"><defs><filter id="ring-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="3.2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>${gradients}${['in','out','other','loop'].map(marker).join('')}</defs><rect class="ring-backdrop" width="${width}" height="${height}"/>${lanes}<g id="ring-viewport"><g class="ring-links">${linkMarkup}</g><g class="ring-hits">${hitMarkup}</g><g class="ring-dots" filter="url(#ring-glow)">${dotMarkup}</g><g class="ring-accounts">${nodeMarkup}</g></g></svg>`;
-  element('ring-graph-note').textContent=`${graph.focusOf?`Focus view: ${integer(graph.nodes.length)} of ${integer(graph.total_accounts??graph.focusOf)} accounts, every hub and loop account plus the ${RING_FOCUS_KEEP} counterparties that moved the most money. Show all draws ${integer(graph.focusOf)}. Hover a hub for its name. `:''}${graph.truncated&&!graph.focusOf?`Showing ${graph.shown_accounts} of ${graph.total_accounts} accounts: every hub and loop account, then counterparties by payment volume. `:''}${animate?'Moving dots are payments, travelling the way the money went; more dots means more payments, bigger dots more USD.':'Arrows show the direction of the money.'} Larger accounts moved more money. ${crowded?'Loop-account names appear on hover. ':''}Hover to trace an account, ${animate?'drag one to pull on its links':'drag to rearrange'}, drag the background to pan.`;
+  const lanes=hasHub&&ringHubs(graph)<2?`<text class="ring-lane" x="${margin-10}" y="${height-16}">← MONEY IN</text><text class="ring-lane" x="${width-margin+10}" y="${height-16}" text-anchor="end">MONEY OUT →</text>`:'';
+  const loops=graph.nodes.filter(node=>node.role==='loop').length, busy=graph.nodes.length>RING_BIG||graph.links.length>80;
+  // Many hubs trading with each other make a dense mesh: those links fade back until an account is hovered.
+  const hubLinks=graph.links.filter(link=>byId.get(link.source)?.role==='hub'&&byId.get(link.target)?.role==='hub').length, mesh=scene.chord&&hubLinks>15, crowded=loops>8||scene.chord&&loops>4;
+  element('ring-graph').innerHTML=`<svg id="ring-svg" class="${[crowded&&'ring-crowded',busy&&'ring-busy',mesh&&'ring-mesh',!animate&&'ring-static',ringFlowPaused&&'ring-paused'].filter(Boolean).join(' ')}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Money flows between ${graph.shown_accounts} accounts of the selected ring"><defs><filter id="ring-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="3.2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>${gradients}${['in','out','other','loop'].map(marker).join('')}</defs><rect class="ring-backdrop" width="${width}" height="${height}"/>${lanes}<g id="ring-viewport"><g class="ring-links">${linkMarkup}</g><g class="ring-hits">${hitMarkup}</g><g class="ring-dots" filter="url(#ring-glow)">${dotMarkup}</g><g class="ring-accounts">${nodeMarkup}</g></g></svg>`;
+  element('ring-graph-note').textContent=`${graph.focusOf?`Focus view: ${integer(graph.nodes.length)} of ${integer(graph.total_accounts??graph.focusOf)} accounts: every hub and loop account, the accounts shared between hubs, and the ${RING_FOCUS_KEEP} other counterparties that moved the most money. Show all draws ${integer(graph.focusOf)}. Hover a hub for its name. `:''}${graph.truncated&&!graph.focusOf?`Showing ${graph.shown_accounts} of ${graph.total_accounts} accounts: every hub and loop account, then counterparties by payment volume. `:''}${animate?'Moving dots are payments, travelling the way the money went; more dots means more payments, bigger dots more USD.':'Arrows show the direction of the money.'} Larger accounts moved more money. ${crowded?'Loop-account names appear on hover. ':''}Hover to trace an account, ${animate?'drag one to pull on its links':'drag to rearrange'}, drag the background to pan.`;
   element('ring-flow').hidden=!animate;element('ring-legend-flow').hidden=!animate;
   bindRingScene(scene);
   if(selectedAccount&&byId.has(selectedAccount)) showAccount(selectedAccount);
@@ -2084,7 +2153,9 @@ function stepRing(scene,dt) {
 function ringGeometry(scene,i) {
   const link=scene.graph.links[i], a=scene.pos[link.source], b=scene.pos[link.target];
   const dx=b.x-a.x, dy=b.y-a.y, bend=scene.reverse[i]?.2:.07;
-  const c={x:(a.x+b.x)/2+dy*bend,y:(a.y+b.y)/2-dx*bend};
+  // In a many-hub ring, hub-to-hub links bow in towards the middle like a chord diagram instead of criss-crossing.
+  const pull=scene.chord&&scene.byId.get(link.source)?.role==='hub'&&scene.byId.get(link.target)?.role==='hub'?.6:0;
+  const mx=(a.x+b.x)/2, my=(a.y+b.y)/2, c=pull?{x:mx+(scene.chord.x-mx)*pull+dy*bend*.5,y:my+(scene.chord.y-my)*pull-dx*bend*.5}:{x:mx+dy*bend,y:my-dx*bend};
   const trim=(p,r)=>{const ex=c.x-p.x, ey=c.y-p.y, e=Math.hypot(ex,ey)||1;return {x:p.x+ex/e*r,y:p.y+ey/e*r};};
   const from=trim(a,scene.radius[link.source]*scene.scale[link.source]+1), to=trim(b,scene.radius[link.target]*scene.scale[link.target]+2);
   return {from,c,to,length:Math.max(20,Math.hypot(dx,dy))};
@@ -2328,7 +2399,7 @@ function presStoryHTML(step=PRES.step,data=PRES.data,ring=PRES.ring,revealed=0) 
     case 0:return `<div class="pres-eyebrow">This release · ${integer(t.rows)} payments</div><h2>${integer(t.accounts)} accounts. A few hundred of them are working together.</h2><p>Every dot is one real account. Where it sits means nothing yet. The job: find the ones that move money as a team.</p>`;
     case 1:return `<div class="pres-eyebrow">Step 1 · fan-in and fan-out</div><h2><em>${integer(data.candidates)}</em> accounts collect from ${data.low.threshold}+ senders and pay ${data.low.threshold}+ receivers.</h2><p>Counted over ${integer(t.links)} account-to-account links. Pooling money from many and passing it on to many is what a mule does.</p>`;
     case 2:return `<div class="pres-eyebrow">Step 2 · hubs, loops, rings</div><h2>${integer(s.accounts)} accounts fall into <em>${integer(s.rings)} rings</em>.</h2><p>Hubs with ${data.headline}+ senders and ${data.headline}+ receivers, timed loops (A → B → C → A within ${data.loopDays} days), and the accounts they deal with. Each cluster is one case to review. Ring #1 sits in the middle.</p>`;
-    case 3:return `<div class="pres-eyebrow">Ring #${ring.rank} · lead account ${escapeText(ring.nodes[0]?.[0]||ring.id)}</div><h2>${ring.hubs?`${ring.hubs===1?'One hub':`${ring.hubs} hubs`}, ${integer((ring.accounts??n)-ring.hubs)} other accounts, <em>${presUsd(ring.usd)}</em> moved.`:`${integer(n)} accounts passing money in <em>${plural(ring.loops,'timed loop')}</em>.`}</h2><p>${integer(ring.pays.length)}${ring.total>ring.pays.length?` of ${integer(ring.total)}`:''} real payments, replayed in the order they happened.${ring.focus?` Shown in focus: ${integer(n)} of ${integer(ring.accounts)} accounts, every hub and loop account plus the ones that moved the most money.`:''} ${ring.hubs?'Senders sit on the left and receivers on the right. Watch the hub collect, then pay out.':`Each purple flash is a loop closing: money leaves an account and comes back within ${data.loopDays} days.`}</p>`;
+    case 3:return `<div class="pres-eyebrow">Ring #${ring.rank} · lead account ${escapeText(ring.nodes[0]?.[0]||ring.id)}</div><h2>${ring.hubs?`${ring.hubs===1?'One hub':`${ring.hubs} hubs`}, ${integer((ring.accounts??n)-ring.hubs)} other accounts, <em>${presUsd(ring.usd)}</em> moved.`:`${integer(n)} accounts passing money in <em>${plural(ring.loops,'timed loop')}</em>.`}</h2><p>${integer(ring.pays.length)}${ring.total>ring.pays.length?` of ${integer(ring.total)}`:''} real payments, replayed in the order they happened.${ring.focus?` Shown in focus: ${integer(n)} of ${integer(ring.accounts)} accounts, every hub and loop account, the accounts shared between hubs and the ones that moved the most money.`:''} ${ring.hubs===1?'Senders sit on the left and receivers on the right. Watch the hub collect, then pay out.':ring.hubs?'Each hub is its own star: accounts only it deals with fan out around it, shared accounts sit in the middle.':`Each purple flash is a loop closing: money leaves an account and comes back within ${data.loopDays} days.`}</p>`;
     case 4:return dirty?`<div class="pres-eyebrow">Ring #${ring.rank} · ground truth</div><h2><span class="pres-dirty" id="pres-count">${revealed}</span> of ${integer(n)}${ring.focus?' shown':''} accounts touched a laundering payment.</h2><p>The detector never saw these labels. They come with the dataset and are only shown after the ring was found.</p>`
       :`<div class="pres-eyebrow">Ring #${ring.rank} · ground truth</div><h2><span id="pres-count">${revealed}</span> of ${integer(n)}${ring.focus?' shown':''} accounts touched a laundering payment.</h2><p>Dense structure is not proof. Payroll, payment processors and escrow accounts look like this too, so an analyst still makes the call.</p>`;
     case 5:return `<div class="pres-eyebrow">Does it hold up?</div><h2>${presPct(t.laundering_rate)} of all accounts touch laundering. Inside the rings it's <span class="pres-dirty">${presPct(s.laundering_rate)}</span>.</h2><p>That is ${s.lift==null?'well above':`${s.lift.toFixed(0)}×`} the base rate, found without using a single label.</p>`;
@@ -2462,6 +2533,15 @@ function presDot(ctx,x,y,r,color,glow) {
   ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();
 }
 const presCurve=(a,b,bend=.14)=>[(a[0]+b[0])/2-(b[1]-a[1])*bend,(a[1]+b[1])/2+(b[0]-a[0])*bend];
+// Hub-to-hub links in a many-hub ring bow towards the hubs' centre, as in the explorer.
+function presHubCentre(ring,P) {
+  if(!(ring.hubs>=2)) return null;let x=0, y=0, k=0;
+  ring.nodes.forEach((node,i)=>{if(node[1]==='hub') {x+=P[i][0];y+=P[i][1];k++;}});return k>1?[x/k,y/k]:null;
+}
+function presLinkCurve(ring,link,a,b,centre) {
+  if(!centre||ring.nodes[link[0]][1]!=='hub'||ring.nodes[link[1]][1]!=='hub') return presCurve(a,b);
+  const mx=(a[0]+b[0])/2, my=(a[1]+b[1])/2;return [mx+(centre[0]-mx)*.6-(b[1]-a[1])*.05,my+(centre[1]-my)*.6+(b[0]-a[0])*.05];
+}
 const presQuad=(a,c,b,u)=>{const v=1-u;return [v*v*a[0]+2*v*u*c[0]+u*u*b[0],v*v*a[1]+2*v*u*c[1]+u*u*b[1]];};
 // Rest positions come from the explorer's own deterministic layout (layoutRing).
 function presLayout(ring) {
@@ -2476,7 +2556,8 @@ function presFit(layout,box,cap=2.4) {
 }
 function presGraphBox() {
   const {W,H}=PRES;if(W<820) return {x:26,y:150,w:W-52,h:Math.max(H-270,120)};
-  const left=Math.min(W*.3,470);return {x:40+left*.35,y:70,w:W-300-60-left*.35,h:H-110};
+  // Many-hub rings fill their box edge to edge, so they start clear of the story text instead of tucking under it.
+  const left=Math.min(W*.3,470), tuck=PRES.ring?.hubs>=2?left+10:left*.35;return {x:40+tuck,y:70,w:W-300-60-tuck,h:H-110};
 }
 function presNodeColor(ring,i) {const p=presRevealP(i);return p>=.5?(ring.nodes[i][2]?PRES_COLOR.dirty:PRES_COLOR.clean):PRES_COLOR[ring.nodes[i][1]];}
 
@@ -2499,18 +2580,19 @@ function presDrawGraph(ctx,t,alpha) {
   const ring=PRES.ring, r=PRES.replay, box=presGraphBox(), F=presFit(presLayout(ring),box), P=F.pts, s=presClamp(F.s,.7,2.2);
   const flight=presFlight(), maxRecv=Math.max(...r.recv,1), now=performance.now();
   ctx.save();ctx.globalAlpha=alpha*(1-.72*PRES.anim.dim);
-  if(ring.hubs&&PRES.W>=820) {ctx.font='600 11px ui-monospace,Menlo,monospace';ctx.fillStyle='rgba(120,150,175,.55)';ctx.textAlign='center';
+  if(ring.hubs===1&&PRES.W>=820) {ctx.font='600 11px ui-monospace,Menlo,monospace';ctx.fillStyle='rgba(120,150,175,.55)';ctx.textAlign='center';
     ctx.fillText('SENDERS  →',box.x+box.w*.12,box.y+box.h-4);ctx.fillText('→  RECEIVERS',box.x+box.w*.88,box.y+box.h-4);}
+  const centre=presHubCentre(ring,P);
   ring.links.forEach((link,i)=>{
-    const a=P[link[0]], b=P[link[1]], c=presCurve(a,b), heat=presClamp(1-(r.t-r.lastLink[i])/(r.mps*r.speed*2.2)), seen=r.lastLink[i]>-1e8;
+    const a=P[link[0]], b=P[link[1]], c=presLinkCurve(ring,link,a,b,centre), heat=presClamp(1-(r.t-r.lastLink[i])/(r.mps*r.speed*2.2)), seen=r.lastLink[i]>-1e8;
     ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.quadraticCurveTo(c[0],c[1],b[0],b[1]);
-    ctx.strokeStyle=heat>0?presRgba('#cfe3f2',.18+heat*.6):presRgba('#7f9db5',(seen?.3:.1)*(ring.nodes.length>RING_BIG?.45:1));ctx.lineWidth=(1+heat*1.6+Math.log1p(link[2])*.35)*Math.min(s,1.4);ctx.stroke();
+    ctx.strokeStyle=heat>0?presRgba('#cfe3f2',.18+heat*.6):presRgba('#7f9db5',(seen?.3:.1)*(ring.nodes.length>RING_BIG?.45:1)*(centre&&ring.hubs>=4&&ring.nodes[link[0]][1]==='hub'&&ring.nodes[link[1]][1]==='hub'?.5:1));ctx.lineWidth=(1+heat*1.6+Math.log1p(link[2])*.35)*Math.min(s,1.4);ctx.stroke();
   });
   if(r.loopFlash) {const age=(now-r.loopFlash.at)/1600;if(age<1) {const [a,b,c]=r.loopFlash.nodes.map(i=>P[i]);ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.lineTo(c[0],c[1]);ctx.closePath();
     ctx.fillStyle=presRgba(PRES_COLOR.loop,.22*(1-age));ctx.fill();ctx.strokeStyle=presRgba(PRES_COLOR.loop,.9*(1-age));ctx.lineWidth=2.5;ctx.stroke();}}
   for(let k=r.next;k<ring.pays.length;k++) {
     const pay=ring.pays[k];if(pay[1]>r.t) break;const u=(r.t-pay[1])/flight;if(u<0||u>=1) continue;
-    const link=ring.links[pay[0]], a=P[link[0]], b=P[link[1]], [x,y]=presQuad(a,presCurve(a,b),b,presEase(u)), role=ring.nodes[link[0]][1];
+    const link=ring.links[pay[0]], a=P[link[0]], b=P[link[1]], [x,y]=presQuad(a,presLinkCurve(ring,link,a,b,centre),b,presEase(u)), role=ring.nodes[link[0]][1];
     const color=PRES.reveal.on?(pay[3]?PRES_COLOR.dirty:'#9fb6c8'):role==='both'?'#d7e4ee':PRES_COLOR[role];
     presDot(ctx,x,y,(1.6+Math.sqrt(pay[2]/2e5)*2.2)*Math.min(s,1.3),color,9*Math.min(s,1.3));
   }
@@ -2539,7 +2621,8 @@ function presDrawWall(ctx) {
     const P=presFit(presLayout(ring),{x:cell.x+10,y:cell.y+10,w:cell.w-20,h:cell.h-32},1.2).pts;
     // Big rings: quieter links and smaller counterparties, so the hubs and loops carry the glyph.
     ctx.lineWidth=.6;ctx.strokeStyle=ring.focus?'rgba(127,157,181,.14)':'rgba(127,157,181,.28)';
-    ring.links.forEach(link=>{ctx.beginPath();ctx.moveTo(P[link[0]][0],P[link[0]][1]);ctx.lineTo(P[link[1]][0],P[link[1]][1]);ctx.stroke();});
+    const centre=presHubCentre(ring,P), a0=ctx.globalAlpha;
+    ring.links.forEach(link=>{const a=P[link[0]], b=P[link[1]], c=centre&&ring.nodes[link[0]][1]==='hub'&&ring.nodes[link[1]][1]==='hub'?presLinkCurve(ring,link,a,b,centre):null;ctx.globalAlpha=a0*(c&&ring.hubs>=4?.45:1);ctx.beginPath();ctx.moveTo(a[0],a[1]);c?ctx.quadraticCurveTo(c[0],c[1],b[0],b[1]):ctx.lineTo(b[0],b[1]);ctx.stroke();});ctx.globalAlpha=a0;
     ring.nodes.forEach((node,i)=>{ctx.beginPath();ctx.arc(P[i][0],P[i][1],node[1]==='hub'?3.2:ring.focus&&node[1]!=='loop'?1.3:1.9,0,Math.PI*2);ctx.fillStyle=node[2]?PRES_COLOR.dirty:'#4f6a80';ctx.fill();});
     if(ring.focus) {ctx.font='500 10px ui-monospace,Menlo,monospace';ctx.fillStyle='#5f7a8e';ctx.textAlign='center';ctx.fillText(`${integer(ring.accounts)} accts`,cell.x+cell.w/2,cell.y+cell.h-10);}
     ctx.font='500 11px ui-monospace,Menlo,monospace';ctx.fillStyle='#8aa1b4';ctx.textAlign='left';ctx.fillText(`#${ring.rank}`,cell.x+10,cell.y+cell.h-10);
