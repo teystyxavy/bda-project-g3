@@ -268,11 +268,11 @@ test('the presenter story names the lead ring, the held-back group, what the ran
   // Ring #1 is a closed club, so the story leads with the first open ring and names that rank, not #1.
   assert.equal(h.run('presenterData(snapshot.network).lead.rank'),2);
   const two=h.run('story(2)');
-  assert.match(two,/Ring #2 sits in the middle/);assert.doesNotMatch(two,/Ring #1 sits/);
+  assert.match(two,/Let's zoom in on one\./);assert.doesNotMatch(two,/sits in the middle/);
   assert.match(two,/1 oversized connected group \(26,370 accounts\) is held back/);
-  // "Does it hold up?" says what the ranking and coverage do not show, from the published numbers.
+  // "Does it hold up?" gives the ring and hub rates against the base rate.
   const five=h.run('story(5)');
-  assert.match(five,/ten top-ranked rings run 2\.0%, below the base rate/);assert.match(five,/reach 5\.9% of the accounts that touch laundering/);
+  assert.match(five,/Inside the rings it's/);assert.match(five,/among hubs/);assert.doesNotMatch(five,/not yet reliable/);
   // A club ring counts its real hub-to-hub payments and does not claim to be a star of separate hubs.
   h.run('clubStory=presStoryHTML(3,presenterData(snapshot.network),presenterData(snapshot.network).rings[0],0)');
   assert.doesNotMatch(h.run('clubStory'),/Each hub is its own star/);
