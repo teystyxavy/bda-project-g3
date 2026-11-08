@@ -66,7 +66,8 @@ import pyarrow.parquet as pq
 # worker_ranker loads + verifies the frozen XGBoost model; score_frame scores a DataFrame.
 from bda_pipeline.inference import model_features,score_frame,worker_ranker
 from bda_pipeline.model import digest
-from bda_pipeline.orchestration import MANIFEST
+# SHA-256 of model-manifest.json: pins the exact frozen model this script may use.
+MANIFEST = "323a1eb1555f587d6553f09b9b0b90a9f49030460986df1faaf8b55ef3fc1b8f"
 # Streaming helpers: INPUT_COLUMNS (raw scoring inputs without the rolling
 # features or labels), MemoryStore (in-memory stand-in for DynamoDB),
 # account_key (hashed account id), canonical (sorted compact JSON),
