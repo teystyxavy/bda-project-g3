@@ -80,7 +80,7 @@ def zip_sources(target, names, minimal=False):
             archive.writestr(info, data)
 
 
-def prepare(output, models, wheels, image_uri):
+def prepare(output, models, wheels, image_uri, export_deployment=None):
     """Build the artifact folder, deployment config and Terraform variables.
 
     Args:
@@ -89,6 +89,10 @@ def prepare(output, models, wheels, image_uri):
         wheels: path to the ``.gluewheels.zip`` bundle.
         image_uri: ECR image *pinned by digest* (``...@sha256:<64 hex>``), so
             SageMaker training runs exactly the reviewed image, never a moved tag.
+        export_deployment: optional ``pipeline/deployments/export-improved-<sha256>``
+            prefix holding the export job's own pipeline_stage.py,
+            bda_pipeline.zip and dashboard shell (see infra/ingestion
+            ``var.export_deployment``). None keeps export on this deployment.
 
     Returns:
         The deployment config dict (also written as ``deployment.json``).
@@ -98,6 +102,8 @@ def prepare(output, models, wheels, image_uri):
             model artifact hash mismatch, or an unsafe model file name.
     """
     if output.exists(): raise ValueError('Use a fresh preparation directory')
+    if export_deployment and not re.fullmatch(r'pipeline/deployments/export-improved-[0-9a-f]{64}', export_deployment):
+        raise ValueError('Pin the export runtime to a content-addressed export-improved prefix')
     # Only accept <account>.dkr.ecr.<region>.amazonaws.com/is459-g3-training@sha256:...
     if not re.fullmatch(f'{ACCOUNT}\\.dkr\\.ecr\\.{REGION}\\.amazonaws\\.com/is459-g3-training@sha256:[0-9a-f]{{64}}', image_uri):
         raise ValueError('Require the pinned Group 3 ECR image digest')
@@ -152,6 +158,10 @@ def prepare(output, models, wheels, image_uri):
     # Windows path works in HCL) and uploads them under artifact_prefix.
     variables = {'artifact_directory': str(output.resolve()).replace('\\', '/'), 'pipeline_config': config,
                  'model_file': files[-1]}
+    if export_deployment:
+        # Pinned export runtime (script, package, dashboard shell) already in S3;
+        # infra/ingestion points only the export job at it and enables checkpoints.
+        variables['export_deployment'] = {'prefix': export_deployment}
     (output / 'terraform.tfvars.json').write_text(json.dumps(variables, indent=2))
     # Written last and excluding itself: the deploy scripts re-hash every file
     # against this list before applying, to detect edits after preparation.
@@ -168,5 +178,6 @@ if __name__ == '__main__':
     parser.add_argument('--models', type=Path, required=True)
     parser.add_argument('--wheels', type=Path, required=True)
     parser.add_argument('--image-uri', required=True)
+    parser.add_argument('--export-deployment', help='optional pipeline/deployments/export-improved-<sha256> prefix')
     args = parser.parse_args()
-    prepare(args.output, args.models, args.wheels, args.image_uri)
+    prepare(args.output, args.models, args.wheels, args.image_uri, args.export_deployment)

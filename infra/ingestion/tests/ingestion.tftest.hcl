@@ -42,3 +42,22 @@ run "network_replaces_athena_corridors" {
     error_message = "The retired Athena corridor query must not be wired into any IAM policy or the workflow."
   }
 }
+
+run "export_runs_the_pinned_improved_runtime" {
+  command = plan
+  variables {
+    export_deployment = { prefix = "pipeline/deployments/export-improved-e31cd65b0440cf1680cd04e6c39db18ca3e7e60865839eb9427b95dbc50c579b" }
+  }
+  assert {
+    condition     = endswith(aws_glue_job.job["export"].command[0].script_location, "/export-improved-e31cd65b0440cf1680cd04e6c39db18ca3e7e60865839eb9427b95dbc50c579b/pipeline_stage.py") && endswith(aws_glue_job.job["export"].non_overridable_arguments["--extra-py-files"], "/export-improved-e31cd65b0440cf1680cd04e6c39db18ca3e7e60865839eb9427b95dbc50c579b/bda_pipeline.zip") && length(regexall("/export-improved-e31cd65b0440cf1680cd04e6c39db18ca3e7e60865839eb9427b95dbc50c579b/dashboard/", aws_glue_job.job["export"].non_overridable_arguments["--extra-files"])) == 3
+    error_message = "The export job must run the pinned export script, package and dashboard shell."
+  }
+  assert {
+    condition     = aws_glue_job.job["export"].non_overridable_arguments["--NETWORK_CHECKPOINTS"] == "true" && aws_glue_job.job["export"].non_overridable_arguments["--OVERSIZED_COMPONENT_REVIEW"] == "true" && aws_glue_job.job["export"].non_overridable_arguments["--CHECKPOINT_READ_ONLY"] == "false" && !contains(keys(aws_glue_job.job["export"].non_overridable_arguments), "--RECOVERY_ID")
+    error_message = "The canonical export must checkpoint and review oversized components without a recovery identity."
+  }
+  assert {
+    condition     = !contains(keys(aws_glue_job.job["baseline"].non_overridable_arguments), "--NETWORK_CHECKPOINTS") && !strcontains(aws_glue_job.job["baseline"].command[0].script_location, "export-improved-") && length(aws_s3_object.deployment_artifact) == 16
+    error_message = "Only the export job changes; baseline and the uploaded artifacts are unaffected."
+  }
+}
