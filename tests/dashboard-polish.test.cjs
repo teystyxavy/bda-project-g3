@@ -255,6 +255,31 @@ test('club view draws the senders that pay every hub as one group and hides hub-
   assert.equal(pres.links.filter(link=>link[4]).length,20);
 });
 
+test('the presenter story names the lead ring, the held-back group, what the ranking misses and the club\'s real payment count',async()=>{
+  const h=await harness();
+  const ids=Array.from({length:11},(_,i)=>`1:R${i}`);
+  h.context.club=clubRing();h.context.plain=clubRing(1,3);
+  h.run(`snapshot={network:{ring_list:${JSON.stringify(ids.map((id,i)=>({rank:i+1,ring_id:id,hubs:i===1?1:5,loops:0,usd:1,laundering_rate:0.02,accounts:51})))},
+    graphs:Object.fromEntries(${JSON.stringify(ids)}.map((id,i)=>[id,i===1?plain:club])),
+    thresholds:[{threshold:10,headline:true,hubs:{accounts:5,laundering_rate:0.81},high_volume:{accounts:0}}],
+    totals:{rows:1000,accounts:100,links:50,laundering_rate:0.115},rings:{rings:9732,accounts:41208,laundering_rate:0.32,lift:2.8,coverage:0.059},
+    component_review:{components:1,accounts:26370},parameters:{loop_window_days:7,headline_threshold:10}}}`);
+  h.run('story=(step)=>{const data=presenterData(snapshot.network);return presStoryHTML(step,data,data.lead,0);}');
+  // Ring #1 is a closed club, so the story leads with the first open ring and names that rank, not #1.
+  assert.equal(h.run('presenterData(snapshot.network).lead.rank'),2);
+  const two=h.run('story(2)');
+  assert.match(two,/Ring #2 sits in the middle/);assert.doesNotMatch(two,/Ring #1 sits/);
+  assert.match(two,/1 oversized connected group \(26,370 accounts\) is held back/);
+  // "Does it hold up?" says what the ranking and coverage do not show, from the published numbers.
+  const five=h.run('story(5)');
+  assert.match(five,/ten top-ranked rings run 2\.0%, below the base rate/);assert.match(five,/reach 5\.9% of the accounts that touch laundering/);
+  // A club ring counts its real hub-to-hub payments and does not claim to be a star of separate hubs.
+  h.run('clubStory=presStoryHTML(3,presenterData(snapshot.network),presenterData(snapshot.network).rings[0],0)');
+  assert.doesNotMatch(h.run('clubStory'),/Each hub is its own star/);
+  assert.match(h.run('presStoryHTML(4,presenterData(snapshot.network),presenterData(snapshot.network).rings[0],0)'),/about 1\.0 payments per pair/);
+  assert.doesNotMatch(h.run('presStoryHTML(4,presenterData(snapshot.network),presenterData(snapshot.network).rings[0],0)'),/spread over months/);
+});
+
 test('a ring without a shared sender pool keeps the ordinary focus view',async()=>{
   const h=await harness();
   h.context.ring=clubRing(1,44);
