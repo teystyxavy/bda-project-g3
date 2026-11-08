@@ -833,7 +833,10 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
   function incomingDetail(row,cutoff) {
     const panel=element('incoming-detail');panel.hidden=false;
     panel.innerHTML=`<div class="heading"><h3>${rankChip(row)}Transaction ${escapeText(row.transaction_id)}</h3><button id="incoming-close" type="button">Close evidence</button></div><div class="transfer-path"><span>Sender<br><strong>${escapeText(row.from_bank)} / ${escapeText(row.from_account)}</strong></span><span aria-hidden="true">→</span><span>Receiver<br><strong>${escapeText(row.to_bank)} / ${escapeText(row.to_account)}</strong></span></div><div class="evidence-facts"><span><small>Event time</small>${escapeText(eventTime(row.timestamp))}</span><span><small>Scored at</small>${row.scored_at?escapeText(clock(row.scored_at)):'—'}</span><span><small>Ranking score</small>${Number(row.model_score).toFixed(4)}${cutoff?` · ${row.review_now===true?'Review now':'below the batch cutoff'}`:''}</span><span><small>Payment</small>${escapeText(row.payment_format)} / ${escapeText(row.payment_currency)}</span><span><small>Prior-day USD valuation</small>${dollars(row.amount_usd_asof)}</span><span><small>Sender payments, past 1h / 24h / 7d</small>${integer(row.txn_count_1h)} / ${integer(row.txn_count_24h)} / ${integer(row.txn_count_7d)}</span><span><small>Sender counterparties, past 24h / 7d</small>${integer(row.distinct_counterparties_24h)} / ${integer(row.distinct_counterparties_7d)}</span>${receiverFacts(row)}</div><p class="field-help">The rolling history counts activity before this payment. Receiver history is unavailable where it was not retained in the snapshot. Scores rank review priority; they are not probabilities.</p>`;
-    element('incoming-close').onclick=()=>{panel.hidden=true;};
+    element('incoming-close').onclick=()=>{panel.hidden=true;element('incoming-queue')?.querySelectorAll?.('tbody tr.row-selected')?.forEach(tr=>tr.classList.remove('row-selected'));};
+    element('incoming-queue')?.querySelectorAll?.('tbody tr')?.forEach(tr=>tr.classList?.toggle('row-selected',Number(tr.dataset?.rank)===row.rank));
+    const selected=element('incoming-queue')?.querySelector?.('tbody tr.row-selected');
+    if(selected) selected.scrollIntoView?.({behavior:'smooth',block:'nearest'});
     panel.scrollIntoView?.({behavior:'smooth',block:'start'});
   }
 
@@ -907,7 +910,7 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
     element('incoming-queue').querySelectorAll?.('tbody tr').forEach((tr,index)=>{const row=data.queue[index];if(!row||!tr.children) return;
       const button=document.createElement('button');button.textContent=row.transaction_id;button.title='Show evidence';
       button.onclick=event=>{event?.stopPropagation?.();incomingDetail(row,cutoff);};tr.onclick=()=>incomingDetail(row,cutoff);
-      tr.classList.add(`tier-row-${tierFor(row.rank).id}`);tr.children[1].replaceChildren(priorityChip(row.rank));tr.children[2].replaceChildren(button);});
+      tr.dataset.rank=String(row.rank);tr.classList.add(`tier-row-${tierFor(row.rank).id}`);tr.children[1].replaceChildren(priorityChip(row.rank));tr.children[2].replaceChildren(button);});
     element('incoming-detail').hidden=true;
     if(!data.queue.length) element('incoming-queue').textContent='The queue fills as transactions are scored.';
     element('incoming-provenance').textContent=JSON.stringify({run_id:data.run_id,generated_at:data.generated_at,last_progress_at:data.last_progress_at,
