@@ -65,6 +65,30 @@ def test_all_rows_reordered_across_batches_and_cache_integrity(cohort):
         module.load_verified_scores(root/'verified/verification.json', report['source_sha256'], 'a'*64, 12)
 
 
+def test_fast_fingerprints_preserve_canonical_bytes_across_datetime_units_and_timezones(cohort):
+    _, frame, _ = cohort
+    frame = frame[SCORING_COLUMNS].copy()
+    frame['from_account'] = 'café"\\'
+    frame['timestamp'] = pd.date_range('2022-09-07', periods=len(frame), freq='s', tz='Asia/Singapore')
+    legacy_path = frame.copy()
+    legacy_path['timestamp'] = legacy_path.timestamp.astype(object)
+    assert legacy_path.timestamp.dtype == object
+    expected = module.feature_fingerprints(legacy_path)
+    for unit in ('s', 'ms', 'us', 'ns'):
+        current = frame.copy()
+        current['timestamp'] = current.timestamp.dt.as_unit(unit)
+        np.testing.assert_array_equal(module.feature_fingerprints(current), expected)
+    current = frame.copy()
+    current['timestamp'] = current.timestamp.dt.tz_convert('UTC')
+    current['from_bank'] = current.from_bank.astype('string')
+    np.testing.assert_array_equal(module.feature_fingerprints(current), expected)
+    for bad in (None, b'001', 1):
+        broken = frame.copy()
+        broken.loc[0, 'from_bank'] = bad
+        with pytest.raises(ValueError, match='Expected string'):
+            module.feature_fingerprints(broken)
+
+
 @pytest.mark.parametrize('change,error', [
     ('duplicate', 'Duplicate'), ('missing', 'Incomplete'), ('feature', 'fingerprint'),
     ('score', 'Invalid cloud score'), ('label', 'evaluation labels'), ('date', 'partition'),

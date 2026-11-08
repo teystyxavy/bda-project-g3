@@ -43,6 +43,31 @@ def test_history_uses_composite_identity_and_never_future_rows():
     assert 'is_laundering' not in result['b']['events'][0]
 
 
+def test_streamed_histories_keep_exact_counts_latest_eight_and_timestamp_ties():
+    rows = 41
+    frame = pd.DataFrame({'transaction_id': [str(i) for i in range(rows)],
+        'timestamp': pd.to_datetime(['2022-09-08'] * 30 + ['2022-09-09'] * 11),
+        'source_row_index': np.arange(rows), 'from_bank': ['01'] * rows,
+        'from_account': ['0001'] * rows, 'to_bank': ['02'] * rows,
+        'to_account': ['0002'] * rows, 'payment_format': ['ACH'] * rows,
+        'amount_usd_asof': np.arange(rows, dtype=float)})
+    # Shuffle fragments to prove the implementation does not assume input order.
+    frame = frame.sample(frac=1, random_state=459).reset_index(drop=True)
+    table = pa.Table.from_pandas(frame)
+    class StreamingOnly:
+        def to_batches(self, **kwargs):
+            yield from ds.dataset(table).to_batches(**dict(kwargs, batch_size=7))
+        def to_table(self, **kwargs):
+            raise AssertionError('Must not materialize whole sender histories')
+    targets = {'late': dict(timestamp='2022-09-09', source_row_index=35, from_bank='01', from_account='0001'),
+               'early': dict(timestamp='2022-09-08', source_row_index=4, from_bank='01', from_account='0001')}
+    result = account_histories(StreamingOnly(), targets)
+    assert result['late']['observed_prior_transactions'] == 35
+    assert [r['transaction_id'] for r in result['late']['events']] == [str(i) for i in range(27, 35)]
+    assert result['early']['observed_prior_transactions'] == 4
+    assert [r['transaction_id'] for r in result['early']['events']] == ['0', '1', '2', '3']
+
+
 def test_treasury_heatmap_reconciles_full_volume_and_complete_daily_history():
     rows = []
     for i in range(20):

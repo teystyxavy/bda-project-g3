@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+import threading
 
 import pytest
 
@@ -9,6 +10,40 @@ from bda_pipeline.glue_compute import download_input, run_stage, safe_relative
 from bda_pipeline.ingest_contract import BUCKET, canonical, paths, sha, stage_request
 from bda_pipeline.ingest_control import assert_glue_stage, no_active_workers, stop_owned_workers
 from test_ingestion import MemoryS3, config, manifest
+
+
+def test_input_downloads_are_bounded_parallel_and_complete(tmp_path):
+    s3 = MemoryS3()
+    for i in range(6):
+        s3.data[BUCKET, f'input/part-{i}'] = f'payload-{i}'.encode()
+    barrier = threading.Barrier(3)
+    lock = threading.Lock()
+    active, peak = 0, 0
+    original = s3.download_file
+    def download(*args):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        try:
+            barrier.wait(timeout=5)
+            original(*args)
+        finally:
+            with lock:
+                active -= 1
+    s3.download_file = download
+    download_input(s3, 'input/', tmp_path / 'download', workers=3)
+    assert peak == 3
+    assert {path.name: path.read_bytes() for path in (tmp_path / 'download').iterdir()} == {
+        f'part-{i}': f'payload-{i}'.encode() for i in range(6)}
+
+
+def test_download_size_mismatch_is_rejected(tmp_path):
+    s3 = MemoryS3()
+    s3.data[BUCKET, 'input/file'] = b'expected'
+    s3.download_file = lambda bucket, key, target: Path(target).write_bytes(b'short')
+    with pytest.raises(ValueError, match='size differs'):
+        download_input(s3, 'input/file', tmp_path)
 
 
 def staged_inputs():
@@ -137,6 +172,31 @@ def test_export_stages_the_network_tables_the_control_lambda_sends(monkeypatch, 
     with pytest.raises(ValueError, match='Missing export verification input'):
         run_stage(s3, 'test-run', 'export', json.loads(args['--INPUTS_JSON']), sha(cfg), args['--OUTPUT'],
                   Path(__file__).resolve().parents[1] / 'dashboard', tmp_path / 'work2')
+
+
+def test_concurrent_recovery_never_writes_canonical_export(monkeypatch, tmp_path):
+    s3, cfg, _ = staged_inputs()
+    p = paths('test-run')
+    for key in [p['baseline'] + '/baseline/bq1_scored.parquet', p['baseline'] + '/manifest/manifest.json',
+                p['scored'] + '/data.parquet', p['network'] + '/_SUCCESS']:
+        s3.data[BUCKET, key] = b'fixture'
+    # Canonical output may even be written by the original while recovery runs.
+    s3.data[BUCKET, p['export'] + '/original.json'] = b'original'
+    def export(inputs, output, assets):
+        output.mkdir()
+        (output / 'proof.json').write_text('{}')
+    monkeypatch.setattr('bda_pipeline.ingest_compute.export_stage', export)
+    request = stage_request('test-run', 'export', cfg, {'network': p['network'] + '/'})
+    args = request['Arguments']
+    prefix = 'tmp/ingest/recovery-exports/test-run/concurrent-1/'
+    run_stage(s3, 'test-run', 'export', json.loads(args['--INPUTS_JSON']), sha(cfg),
+              f's3://{BUCKET}/{prefix}', tmp_path, tmp_path / 'work', recovery_id='concurrent-1')
+    assert s3.data[BUCKET, prefix + '_SUCCESS'] == b''
+    assert s3.data[BUCKET, p['export'] + '/original.json'] == b'original'
+    assert (BUCKET, p['export'] + '/_SUCCESS') not in s3.data
+    with pytest.raises(ValueError, match='Unexpected stage output'):
+        run_stage(s3, 'test-run', 'export', {}, sha(cfg), args['--OUTPUT'], tmp_path,
+                  tmp_path / 'unsafe', recovery_id='concurrent-1')
 
 
 @pytest.mark.parametrize('stage', ['baseline', 'export'])

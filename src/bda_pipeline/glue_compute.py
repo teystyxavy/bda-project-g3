@@ -5,7 +5,11 @@ run on the Glue driver; executors are not used for these Python calculations.
 No outputs are uploaded until calculations pass; _SUCCESS is uploaded last.
 """
 import json
+import re
 import shutil
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from pathlib import Path, PurePosixPath
 
 from .ingest_contract import BUCKET, paths, sha, stage_request, validate_manifest
@@ -18,7 +22,7 @@ def safe_relative(key):
     return Path(*path.parts)
 
 
-def download_input(s3, key, target):
+def download_input(s3, key, target, workers=4):
     """Download an exact object or a paginated prefix without path traversal."""
     safe_relative(key.rstrip('/'))
     if key.endswith('/'):
@@ -26,8 +30,13 @@ def download_input(s3, key, target):
                    for item in page.get('Contents', []) if not item['Key'].endswith('/'))
     else:
         objects = [{'Key': key}]
-    count = 0
-    for item in objects:
+    if not 1 <= workers <= 8:
+        raise ValueError('Download workers must be between one and eight')
+    target.mkdir(parents=True, exist_ok=True)
+    lock, reserved = threading.Lock(), 0
+
+    def download(item):
+        nonlocal reserved
         name = item['Key']
         if not name.startswith(key):
             raise ValueError('Input escaped its prefix')
@@ -37,15 +46,45 @@ def download_input(s3, key, target):
         size = item.get('Size')
         if size is None:
             size = s3.head_object(Bucket=BUCKET, Key=name)['ContentLength']
-        if shutil.disk_usage(target).free < size + 1024 ** 3:
-            raise ValueError('Insufficient Glue scratch disk; no output committed')
-        s3.download_file(BUCKET, name, str(destination))
-        count += 1
+        # Reserve all in-flight bytes before starting transfers. Parallelism
+        # must not let independent free-space checks overcommit scratch disk.
+        with lock:
+            if shutil.disk_usage(target).free < reserved + size + 1024 ** 3:
+                raise ValueError('Insufficient Glue scratch disk; no output committed')
+            reserved += size
+        try:
+            s3.download_file(BUCKET, name, str(destination))
+            if destination.stat().st_size != size:
+                raise ValueError('Downloaded input size differs from S3')
+        finally:
+            with lock:
+                reserved -= size
+        return size
+
+    count, transferred, reported = 0, 0, time.monotonic()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        pending = set()
+        for item in objects:
+            pending.add(pool.submit(download, item))
+            if len(pending) >= workers:
+                finished, pending = wait(pending, return_when=FIRST_COMPLETED)
+                for future in finished:
+                    transferred += future.result()
+                    count += 1
+                if time.monotonic() - reported >= 15:
+                    print(f'EXPORT_DOWNLOAD_PROGRESS files={count} bytes={transferred} input={key}', flush=True)
+                    reported = time.monotonic()
+        for future in pending:
+            transferred += future.result()
+            count += 1
     if not count:
         raise ValueError('Missing Glue stage input')
+    print(f'EXPORT_DOWNLOAD_COMPLETE files={count} bytes={transferred} input={key}', flush=True)
 
 
-def run_stage(s3, run_id, stage, sources, deployment_hash, output_uri, assets, workspace):
+def run_stage(s3, run_id, stage, sources, deployment_hash, output_uri, assets, workspace, checkpoint_enabled=False,
+              recovery_id=None, component_review=False, recovery_attempt=None, checkpoint_read_only=False,
+              compatible_network_hash=None):
     """Stage verified inputs, compute, upload outputs, then commit the stage.
 
     Source channels must exactly match the request rebuilt from the deployment
@@ -53,9 +92,21 @@ def run_stage(s3, run_id, stage, sources, deployment_hash, output_uri, assets, w
     A failed upload leaves no _SUCCESS and cannot be published.
     """
     p = paths(run_id)
-    if stage not in ('baseline', 'export') or output_uri != f's3://{BUCKET}/{p[stage]}/':
+    if stage not in ('baseline', 'export'):
         raise ValueError('Unexpected stage output')
     prefix = p[stage] + '/'
+    if recovery_id is not None:
+        if stage != 'export' or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', recovery_id):
+            raise ValueError('Unexpected recovery identity')
+        # Isolated scratch output cannot be discovered as the canonical release.
+        # This allows concurrent exports without either job writing into the other.
+        prefix = f'tmp/ingest/recovery-exports/{run_id}/{recovery_id}/'
+    if recovery_attempt is not None:
+        if not recovery_id or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', recovery_attempt):
+            raise ValueError('Unexpected recovery attempt')
+        prefix += recovery_attempt + '/'
+    if output_uri != f's3://{BUCKET}/{prefix}':
+        raise ValueError('Unexpected stage output')
     if s3.list_objects_v2(Bucket=BUCKET, Prefix=prefix, MaxKeys=1).get('KeyCount', 0):
         raise ValueError('Stage output already exists; use a fresh run')
     workspace = Path(workspace)
@@ -88,7 +139,19 @@ def run_stage(s3, run_id, stage, sources, deployment_hash, output_uri, assets, w
             print(f'EXPORT_DOWNLOAD {name} starting', flush=True)
             download_input(s3, key, inputs / local_paths.get(name, name))
     from .ingest_compute import baseline_stage, export_stage
-    result = (baseline_stage if stage == 'baseline' else export_stage)(inputs, output, Path(assets))
+    if component_review and (stage != 'export' or not recovery_id or not checkpoint_enabled):
+        raise ValueError('Oversized-component review requires an isolated checkpointed export recovery')
+    if stage == 'export' and checkpoint_enabled:
+        from .network_checkpoint import NetworkCheckpoint, ReadOnlyNetworkCheckpoint, COMPATIBLE_NETWORK_HASH
+        if compatible_network_hash and compatible_network_hash != COMPATIBLE_NETWORK_HASH:
+            raise ValueError('Unreviewed compatible network implementation')
+        checkpoint_class = ReadOnlyNetworkCheckpoint if checkpoint_read_only else NetworkCheckpoint
+        factory = lambda identity: checkpoint_class(s3, run_id, identity, workspace / 'checkpoints',
+            compatible_network_hashes=(compatible_network_hash,) if compatible_network_hash else ())
+        options = {'component_review': True} if component_review else {}
+        result = export_stage(inputs, output, Path(assets), checkpoint_factory=factory, **options)
+    else:
+        result = (baseline_stage if stage == 'baseline' else export_stage)(inputs, output, Path(assets))
     print(f'STAGE_COMPUTE_COMPLETE stage={stage}', flush=True)
     for file in sorted(output.rglob('*')):
         if file.is_file():

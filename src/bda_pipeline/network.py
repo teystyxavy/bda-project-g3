@@ -63,6 +63,11 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import time
+
+
+def progress(phase, **counts):
+    print('EXPORT_NETWORK phase=' + phase + ' ' + ' '.join(f'{k}={v}' for k, v in counts.items()), flush=True)
 
 HUB_THRESHOLDS = (5, 10, 15)
 HEADLINE_THRESHOLD = 10
@@ -173,7 +178,10 @@ def build_links(batches):
     partials = [part for part in levels if part is not None]
     if not partials:
         raise ValueError('No network input rows')
-    return _merge_links(partials), rows, self_transfers
+    progress('merge_links', rows=rows, partials=len(partials))
+    links = _merge_links(partials)
+    progress('links_complete', rows=rows, links=len(links))
+    return links, rows, self_transfers
 
 
 def account_table(links):
@@ -242,7 +250,7 @@ def candidate_pairs(ordinary_links):
     return both.rename(columns={'src': 'a', 'dst': 'b'})[['a', 'b']]
 
 
-def candidate_loops(ordinary_links):
+def candidate_loops(ordinary_links, chunk_size=20_000):
     """Directed three-account cycles among ordinary-sized accounts, one canonical rotation each.
 
     A cycle a -> b -> c -> a is kept in the rotation that starts at its
@@ -250,13 +258,29 @@ def candidate_loops(ordinary_links):
     rotation may be the one in time order, so nothing is filtered here).
     """
     e = ordinary_links[['src', 'dst']]
-    two = e[e.src < e.dst].merge(e, left_on='dst', right_on='src', suffixes=('_1', '_2'))
-    two = two[two.src_1 < two.dst_2]
+    # Bound the two-hop intermediate instead of materializing it for the entire
+    # graph. Only closed triangles survive each chunk. Detection is unchanged.
+    if chunk_size < 1:
+        raise ValueError('chunk_size must be positive')
+    starts = e[e.src < e.dst]
+    outgoing = e.set_index('src')
     closing = e.rename(columns={'src': 'dst_2', 'dst': 'src_1'})
-    three = two.merge(closing, on=['dst_2', 'src_1'])
-    three = three.rename(columns={'src_1': 'a', 'dst_1': 'b', 'dst_2': 'c'})
-    canonical = three[(three.a < three.b) & (three.a < three.c)]
-    return canonical[['a', 'b', 'c']].drop_duplicates().sort_values(['a', 'b', 'c'], ignore_index=True)
+    closing = pd.MultiIndex.from_frame(closing[['dst_2', 'src_1']])
+    found = []
+    reported = time.monotonic()
+    for offset in range(0, len(starts), chunk_size):
+        part = starts.iloc[offset:offset + chunk_size].rename(columns={'src': 'src_1', 'dst': 'dst_1'})
+        two = part.join(outgoing.rename(columns={'dst': 'dst_2'}), on='dst_1', how='inner')
+        two = two[two.src_1 < two.dst_2]
+        matches = closing.get_indexer(pd.MultiIndex.from_frame(two[['dst_2', 'src_1']])) >= 0
+        found.append(two.loc[matches, ['src_1', 'dst_1', 'dst_2']])
+        if time.monotonic() - reported >= 30:
+            progress('loop_candidates', links=min(offset + chunk_size, len(starts)), total=len(starts))
+            reported = time.monotonic()
+    if not found:
+        return pd.DataFrame(columns=['a', 'b', 'c'])
+    return (pd.concat(found, ignore_index=True).set_axis(['a', 'b', 'c'], axis=1)
+            .drop_duplicates().sort_values(['a', 'b', 'c'], ignore_index=True))
 
 
 def find_loops(candidates, times):
@@ -295,7 +319,7 @@ def components(edges):
     return {node: find(node) for node in parent}
 
 
-def analyse_network(batches_factory):
+def analyse_network(batches_factory, checkpoint=None):
     """Run the whole method and return the shared tables (see ``TABLES``) plus derived data.
 
     Args:
@@ -309,8 +333,24 @@ def analyse_network(batches_factory):
         ``pairs``, ``loops``, ``ring_members`` and ``ring_edges``, plus
         ``accounts`` (every account, used for evaluation only).
     """
-    links, rows, self_transfers = build_links(batches_factory())
+    restored = checkpoint.load('result') if checkpoint else None
+    if restored is not None:
+        progress('result_restored')
+        return restored
+    restored = checkpoint.load('links') if checkpoint else None
+    if restored is None:
+        progress('links_start')
+        links, rows, self_transfers = build_links(batches_factory())
+        if checkpoint:
+            checkpoint.save('links', {'links': links, 'counts': pd.DataFrame([
+                {'rows': rows, 'self_transfers': self_transfers}])})
+    else:
+        links = restored['links']
+        rows, self_transfers = (int(restored['counts'].iloc[0][key]) for key in ('rows', 'self_transfers'))
+        progress('links_restored', rows=rows, links=len(links))
+    progress('accounts_start')
     accounts = account_table(links)
+    progress('accounts_complete', accounts=len(accounts))
     ordinary = accounts.index[accounts.links <= MAX_LINKS]
     ordinary_set = set(ordinary)
     ordinary_links = links[links.src.isin(ordinary_set) & links.dst.isin(ordinary_set)]
@@ -320,8 +360,11 @@ def analyse_network(batches_factory):
     candidates = candidates[['fan_in', 'fan_out', 'in_txns', 'out_txns', 'in_usd', 'out_usd']].reset_index()
     candidates = candidates.sort_values('account', ignore_index=True)
 
+    progress('pair_candidates_start', links=len(ordinary_links))
     pair_candidates = candidate_pairs(ordinary_links)
+    progress('loop_candidates_start', pairs=len(pair_candidates))
     loop_candidates = candidate_loops(ordinary_links)
+    progress('loop_candidates_complete', loops=len(loop_candidates))
     needed = set(zip(pair_candidates.a, pair_candidates.b)) | set(zip(pair_candidates.b, pair_candidates.a))
     for a, b, c in loop_candidates.itertuples(index=False):
         needed.update([(a, b), (b, c), (c, a)])
@@ -334,24 +377,55 @@ def analyse_network(batches_factory):
     wanted = pd.DataFrame(sorted(needed), columns=['src', 'dst']).assign(timed=True)
     wanted = wanted.merge(hub_links[['src', 'dst']], on=['src', 'dst'], how='outer')
     wanted['timed'] = wanted.timed.notna() & wanted.timed.astype(bool)
-    pieces = []
-    for frame in batches_factory():
-        src = account_key(frame.from_bank, frame.from_account)
-        dst = account_key(frame.to_bank, frame.to_account)
-        part = pd.DataFrame({'src': src.to_numpy(), 'dst': dst.to_numpy(), 'ts': _naive_utc(frame.timestamp).to_numpy(),
-                             'usd': frame.amount_usd.to_numpy(dtype=float), 'lab': frame.is_laundering.to_numpy(dtype=np.int64)})
-        pieces.append(part.merge(wanted, on=['src', 'dst']))
-    seen = (pd.concat(pieces, ignore_index=True) if pieces
-            else pd.DataFrame({'src': [], 'dst': [], 'ts': pd.Series([], dtype='datetime64[ns]'), 'usd': [], 'lab': [], 'timed': []}))
-    times = _times(seen[seen.timed.astype(bool)])
+    restored_payments = checkpoint.load('payments') if checkpoint else None
+    if restored_payments is None:
+        pieces = []
+        # Build the candidate-link index once. A full merge re-hashed millions
+        # of wanted links for every 200k-row input batch.
+        wanted_index = pd.MultiIndex.from_frame(wanted[['src', 'dst']])
+        if not wanted_index.is_unique:
+            raise ValueError('Duplicate wanted payment link')
+        wanted_timed = wanted.timed.to_numpy(dtype=bool)
+        progress('payment_pass_start', wanted=len(wanted))
+        payment_rows, reported = 0, time.monotonic()
+        for frame in batches_factory():
+            src = account_key(frame.from_bank, frame.from_account)
+            dst = account_key(frame.to_bank, frame.to_account)
+            positions = wanted_index.get_indexer(pd.MultiIndex.from_arrays([src, dst]))
+            matched = positions >= 0
+            chosen = frame.loc[matched]
+            pieces.append(pd.DataFrame({'src': src.to_numpy()[matched], 'dst': dst.to_numpy()[matched],
+                'ts': _naive_utc(chosen.timestamp).to_numpy(), 'usd': chosen.amount_usd.to_numpy(dtype=float),
+                'lab': chosen.is_laundering.to_numpy(dtype=np.int64), 'timed': wanted_timed[positions[matched]]}))
+            payment_rows += len(frame)
+            if time.monotonic() - reported >= 30:
+                progress('payment_pass', rows=payment_rows, total=rows)
+                reported = time.monotonic()
+        if payment_rows != rows:
+            raise ValueError('Payment scan population differs from link aggregation')
+        progress('payment_pass_complete', rows=payment_rows)
+        seen = (pd.concat(pieces, ignore_index=True) if pieces
+                else pd.DataFrame({'src': [], 'dst': [], 'ts': pd.Series([], dtype='datetime64[ns]'), 'usd': [], 'lab': [], 'timed': []}))
+        del pieces, wanted_index, wanted_timed
+        if checkpoint:
+            checkpoint.save('payments', {'seen': seen})
+    else:
+        seen = restored_payments['seen']
+        progress('payments_restored', rows=len(seen))
+    progress('payment_times_start', rows=len(seen))
+    times = _times(seen.loc[seen.timed.astype(bool), ['src', 'dst', 'ts']])
+    progress('timing_checks_start', pairs=len(pair_candidates), loops=len(loop_candidates))
     pairs = find_pairs(ordinary_links, times)
     loops = find_loops(loop_candidates, times).sort_values(['a', 'b', 'c'], ignore_index=True)
+    del times, needed, wanted, pair_candidates, loop_candidates
+    progress('timing_checks_complete', pairs=len(pairs), loops=len(loops))
 
     loop_links = pd.DataFrame([(s, d) for a, b, c in loops.itertuples(index=False) for s, d in [(a, b), (b, c), (c, a)]],
                               columns=['src', 'dst'])
     ring_links = pd.concat([hub_links[['src', 'dst']], loop_links], ignore_index=True).drop_duplicates()
     ring_links = ring_links.merge(links, on=['src', 'dst'])
     label = components(zip(ring_links.src, ring_links.dst))
+    progress('components_complete', accounts=len(label))
     sizes = pd.Series(label).value_counts()
     keep = {node for node, root in label.items() if sizes[root] >= MIN_RING_ACCOUNTS}
     loop_members = set(loops.a) | set(loops.b) | set(loops.c)
@@ -366,11 +440,17 @@ def analyse_network(batches_factory):
     ring_edges = ring_edges[['src', 'dst', 'ring_id', 'txns', 'usd', 'first_ts', 'last_ts', 'laundering_txns']]
     ring_edges = ring_edges.sort_values(['src', 'dst'], ignore_index=True)
     ring_payments = ring_payment_table(seen, ring_edges)
+    del seen
+    progress('ring_payments_complete', rows=len(ring_payments))
 
     totals = pd.DataFrame([dict(rows=rows, self_transfers=self_transfers, accounts=len(accounts), links=len(links),
                                 laundering_accounts=int(accounts.touches_laundering.sum()))])
-    return dict(totals=totals, candidates=candidates, pairs=pairs, loops=loops, ring_members=members,
-                ring_edges=ring_edges, accounts=accounts, ring_payments=ring_payments)
+    result = dict(totals=totals, candidates=candidates, pairs=pairs, loops=loops, ring_members=members,
+                  ring_edges=ring_edges, accounts=accounts, ring_payments=ring_payments)
+    if checkpoint:
+        checkpoint.save('result', result)
+    progress('complete', rings=members.ring_id.nunique(), loops=len(loops))
+    return result
 
 
 def ring_payment_table(seen, ring_edges):

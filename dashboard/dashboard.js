@@ -1622,7 +1622,8 @@ function renderNetwork() {
   const checked=data.verification?.status==='passed', run=snapshot.pipeline;
   // Releases with pipeline metadata lead with the dataset and its dates, as on the review queue.
   const scope=run?`${run.subset?`${run.subset} · `:''}${run.start_date} to ${run.end_date} · ${integer(t.rows)} transactions · `:'';
-  trustStrip('network-context',`${scope}${checked?'Glue tables matched an independent recomputation · ':''}${integer(t.accounts)} accounts · ${integer(t.links)} account links after merging repeat payments · ${integer(t.self_transfers)} self-transfers excluded`,checked);
+  const review=data.component_review, reviewNote=review?.components?` · ${integer(review.components)} oversized connected groups (${integer(review.accounts)} accounts) withheld from investigation rings; separate network review required. Full-population totals retained.`:'';
+  trustStrip('network-context',`${scope}${checked?'Glue tables matched an independent recomputation · ':''}${integer(t.accounts)} accounts · ${integer(t.links)} account links after merging repeat payments · ${integer(t.self_transfers)} self-transfers excluded${reviewNote}`,checked&&!review?.components);
   cards('network-kpis',[
     ['Rings to investigate',integer(rings.rings),`${integer(rings.accounts)} accounts · largest ${integer(rings.largest)}`,false,
       Array.isArray(data.ring_sizes)&&data.ring_sizes.length>1?{values:data.ring_sizes,color:'#ff6f5e',label:'Accounts in each ring, in rank order',caption:`Ring size by rank, #1 → #${integer(data.ring_sizes.length)}`}:null],

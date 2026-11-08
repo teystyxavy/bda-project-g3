@@ -169,8 +169,15 @@ def aml_exploration(dataset, scores, ranker, end_date='2022-09-18', subset='HI-S
         for batch in dataset.to_batches(columns=INPUT_COLUMNS + optional, filter=condition, batch_size=100_000):
             frame = batch.to_pandas().reset_index(drop=True)
             frame['model_score'] = scores[frame.source_row_index.to_numpy(dtype='int64')]
-            for scope_id, _, dimension, value in scopes:
-                current = frame if dimension is None else frame.loc[frame[dimension].eq(value)]
+            # Partition once per dimension instead of comparing every row
+            # against every currency/format/bank option separately.
+            partitions = [('all', frame)]
+            for dimension in ('payment_format', 'payment_currency', 'from_bank'):
+                requested = {value: scope_id for scope_id, _, dim, value in scopes if dim == dimension}
+                selected = frame.loc[frame[dimension].isin(requested)]
+                partitions.extend((requested[value], group) for value, group in
+                    selected.groupby(dimension, sort=False, observed=True))
+            for scope_id, current in partitions:
                 for kind, column in [('model', 'model_score'), ('rules', 'risk_score')]:
                     populations[scope_id][kind].add(current, current[column].to_numpy())
         projected = []
@@ -210,20 +217,33 @@ def account_histories(dataset, targets):
     columns = ['transaction_id', 'timestamp', 'source_row_index', 'from_bank', 'from_account',
                'to_bank', 'to_account', 'payment_format', 'amount_usd_asof']
     condition = ds.field('from_bank').isin(sorted({key[0] for key in senders})) & ds.field('from_account').isin(sorted({key[1] for key in senders}))
-    frame = dataset.to_table(columns=columns, filter=condition).to_pandas()
-    groups = {(str(bank), str(account)): group.sort_values(['timestamp', 'source_row_index'])
-              for (bank, account), group in frame.groupby(['from_bank', 'from_account']) if (bank, account) in senders}
-    result = {}
+    # Keep only eight preceding rows per displayed case and exact counts. A
+    # high-volume sender must not force its whole history into driver memory.
+    by_sender = defaultdict(list)
+    counts, tails, observed = {}, {}, set()
     for key, target in targets.items():
-        history = groups.get((target['from_bank'], target['from_account']))
-        if history is None:
-            continue
-        stamp = pd.Timestamp(target['timestamp'])
-        prior = history.loc[(history.timestamp < stamp) |
-            ((history.timestamp == stamp) & (history.source_row_index < target['source_row_index']))]
-        result[key] = {'observed_prior_transactions': len(prior),
-            'events': records(prior.tail(8).drop(columns=['source_row_index', 'from_bank', 'from_account'])),
-            'scope': 'Latest eight strictly preceding outgoing transactions in this dataset; composite bank/account key.'}
+        by_sender[(target['from_bank'], target['from_account'])].append((key, target, pd.Timestamp(target['timestamp'])))
+        counts[key] = 0
+    for batch in dataset.to_batches(columns=columns, filter=condition, batch_size=100_000):
+        frame = batch.to_pandas()
+        for sender, group in frame.groupby(['from_bank', 'from_account'], sort=False):
+            if sender not in by_sender:
+                continue
+            for key, target, stamp in by_sender[sender]:
+                observed.add(key)
+                prior = group.loc[(group.timestamp < stamp) |
+                    ((group.timestamp == stamp) & (group.source_row_index < target['source_row_index']))]
+                counts[key] += len(prior)
+                tail = prior.sort_values(['timestamp', 'source_row_index']).tail(8)
+                if key in tails:
+                    tail = pd.concat([tails[key], tail], ignore_index=True)
+                tails[key] = tail.sort_values(['timestamp', 'source_row_index']).tail(8).copy()
+    result = {}
+    for key in targets:
+        if key in observed:
+            result[key] = {'observed_prior_transactions': counts[key],
+                'events': records(tails[key].drop(columns=['source_row_index', 'from_bank', 'from_account'])),
+                'scope': 'Latest eight strictly preceding outgoing transactions in this dataset; composite bank/account key.'}
     return result
 
 

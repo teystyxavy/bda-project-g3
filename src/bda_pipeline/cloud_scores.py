@@ -72,11 +72,17 @@ def feature_fingerprints(frame):
                ['timestamp', 'payment_format', 'payment_currency', 'receiving_currency', 'source_row_index']]
     normalized = frame[SCORING_COLUMNS].copy()
     for column in IDENTIFIERS + ['payment_format', 'payment_currency', 'receiving_currency']:
-        if not normalized[column].map(lambda v: isinstance(v, str)).all():
+        values = normalized[column]
+        if len(values) and (values.isna().any() or pd.api.types.infer_dtype(values, skipna=False) != 'string'):
             raise ValueError(f'Expected string: {column}')
     if normalized.isna().any().any():
         raise ValueError('Missing scoring feature')
-    normalized['timestamp'] = normalized.timestamp.map(lambda value: pd.Timestamp(value).value)
+    if pd.api.types.is_datetime64_any_dtype(normalized.timestamp.dtype):
+        # Preserve the canonical nanosecond integer representation, including
+        # UTC conversion for timezone-aware arrays, without Python per-row calls.
+        normalized['timestamp'] = normalized.timestamp.array.as_unit('ns').asi8
+    else:
+        normalized['timestamp'] = normalized.timestamp.map(lambda value: pd.Timestamp(value).value)
     normalized['source_row_index'] = normalized.source_row_index.astype('int64')
     for column in numbers:
         normalized[column] = normalized[column].astype('float64')

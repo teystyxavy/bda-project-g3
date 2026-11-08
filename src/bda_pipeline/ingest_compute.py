@@ -8,6 +8,7 @@ SageMaker is used only for optional candidate training.
 import gc
 import hashlib
 import json
+import os
 import shutil
 import tarfile
 from datetime import datetime, timezone
@@ -310,7 +311,9 @@ def verify_scores(reference, scored, model_dir, manifest, output):
     fingerprints = np.empty(n, dtype='S32')
     scores = np.empty(n, dtype='float64')
     difference = 0.
-    with ScoreWorkers(model_dir, workers=min(8, max(1, (selected_rows + 1_999_999) // 2_000_000))) as workers:
+    worker_count = min(16, os.cpu_count() or 1, max(1, (selected_rows + 1_999_999) // 2_000_000))
+    print(f'EXPORT_SCORE_WORKERS workers={worker_count}', flush=True)
+    with ScoreWorkers(model_dir, workers=worker_count) as workers:
         batches = ds.dataset(reference, format='parquet').to_batches(columns=SCORING_COLUMNS, batch_size=100_000)
         processed = 0
         for frame, (values, _) in workers.batches(batches):
@@ -345,7 +348,7 @@ def verify_scores(reference, scored, model_dir, manifest, output):
                     'labels_excluded': True, 'model_sha256': SavedRanker(model_dir).selection['selected']['sha256']}
 
 
-def export_stage(inputs, output, assets):
+def export_stage(inputs, output, assets, checkpoint_factory=None, component_review=False):
     """Glue stage 'export': verify scores + mule network, build the release.
 
     Reads (under ``inputs``): ``run/manifest.json``; ``baseline/baseline/
@@ -414,21 +417,69 @@ def export_stage(inputs, output, assets):
         for batch in network_dataset.to_batches(columns=NETWORK_COLUMNS, batch_size=200_000):
             yield batch.to_pandas()
     print('EXPORT_PHASE verify_network', flush=True)
-    network_result = analyse_network(network_batches)
+    checkpoint = None
+    if checkpoint_factory:
+        from importlib.resources import files
+        checkpoint = checkpoint_factory({'schema': 1, 'reference_sha256': reference_hash,
+            'manifest_sha256': digest(inputs / 'run/manifest.json'),
+            'network_code_sha256': hashlib.sha256(files('bda_pipeline').joinpath('network.py').read_bytes()).hexdigest()})
+    network_result = analyse_network(network_batches, checkpoint=checkpoint)
     print('EXPORT_PHASE network_recomputed', flush=True)
     network_proof = compare_network(network_result, read_tables(inputs / 'network'), manifest.get('network_rows', manifest['rows']))
-    # Agreement is not enough: refuse implausible results (e.g. one giant ring).
-    network_proof['shape'] = check_shape(network_result)
+    # Verify the full detection result first; oversized connected groups are
+    # retained as private evidence, not presented as single investigation cases.
+    network_review = None
+    if component_review:
+        from .network_review import investigation_view
+        network_result, network_review, quarantined, shape = investigation_view(network_result)
+        network_proof['shape'] = shape
+        network_proof['component_review'] = network_review
+        if network_review['components']:
+            review_dir = output / 'evidence/oversized-networks'
+            review_dir.mkdir(parents=True)
+            for name, frame in quarantined.items():
+                frame.to_parquet(review_dir / (name + '.parquet'), index=False)
+            (review_dir / 'summary.json').write_text(json.dumps(network_review, allow_nan=False))
+            print(f"EXPORT_NETWORK quarantined_components={network_review['components']} accounts={network_review['accounts']}", flush=True)
+        del quarantined
+    else:
+        network_proof['shape'] = check_shape(network_result)
     (output / 'evidence/scores.json').write_text(json.dumps(score_proof, allow_nan=False))
     (output / 'evidence/network.json').write_text(json.dumps(network_proof, allow_nan=False))
     # ---- 3. Per-period metrics and review queues ----
     ranker = SavedRanker(inputs / 'model')
     snapshot = json.loads((inputs / 'baseline/manifest/dashboard.json').read_text())
+    export_cache = None
+    if checkpoint:
+        from .export_checkpoint import ExportCheckpoint
+        from .ingest_contract import sha
+        # Bind every runtime module: a new numerical implementation never
+        # silently reuses old dashboard calculations. Network migration remains
+        # separate and still goes through full Spark parity and shape checks.
+        package = files('bda_pipeline')
+        code = {item.name: hashlib.sha256(item.read_bytes()).hexdigest()
+                for item in package.iterdir() if item.name.endswith('.py')}
+        export_cache = ExportCheckpoint(checkpoint.s3, manifest['run_id'], {
+            'schema': 1, 'reference_sha256': reference_hash,
+            'manifest_sha256': digest(inputs / 'run/manifest.json'),
+            'baseline_dashboard_sha256': digest(inputs / 'baseline/manifest/dashboard.json'),
+            'code_sha256': sha(code), 'network_proof_sha256': sha(network_proof),
+            'model_sha256': ranker.selection['selected']['sha256']})
+
+    def substage(name, function):
+        return export_cache.compute(name, function) if export_cache else function()
+
+    # Build the bounded network projection before scanning model views. Do not
+    # retain millions of raw edges/payments throughout later dashboard scans.
+    network_section = substage('network-dashboard', lambda: dashboard_section(network_result))
+    del network_result
+    gc.collect()
     views = {}
     from .dashboard_exploration import stream_model_view
     for name, (start, end) in evaluation_periods(snapshot['splits'], manifest['end_date']).items():
         print(f'EXPORT_PHASE model_view {name}', flush=True)
-        views[name] = stream_model_view(dataset, scores, ranker, start, end, manifest['subset'])
+        views[name] = substage('model-view-' + name,
+            lambda: stream_model_view(dataset, scores, ranker, start, end, manifest['subset']))
     # ---- 4. Metadata for the dashboard ----
     snapshot['model'] = {'name': ranker.selection['selected']['name'], 'views': views,
         'inference_source': 'aws-glue', 'validation_gate_passed': ranker.selection['validation_gate_passed'],
@@ -447,8 +498,8 @@ def export_stage(inputs, output, assets):
     if development_dates:
         from .dashboard_exploration import evaluation_date_breakdown
         test_start, test_end = evaluation_periods(snapshot['splits'], manifest['end_date'])['test']
-        snapshot['model']['test_date_breakdown'] = evaluation_date_breakdown(
-            dataset, scores, development_dates, test_start, test_end, manifest['subset'])
+        snapshot['model']['test_date_breakdown'] = substage('test-date-breakdown',
+            lambda: evaluation_date_breakdown(dataset, scores, development_dates, test_start, test_end, manifest['subset']))
     transfer = not manifest['train'] and manifest['subset'] != training_subset
     snapshot['model']['evaluation_scope'] = (
         f"Transfer evaluation on {manifest['subset']} with the frozen {training_subset} model; synthetic populations may overlap, so this is not an independent generalisation claim."
@@ -518,8 +569,12 @@ def export_stage(inputs, output, assets):
     # ---- 6. Build the dashboard site and the release package ----
     snapshot['provenance']['scoring_location'] = 'AWS Glue scoring and mule-network analysis, Glue export'
     # BQ2 is the verified mule-network section; the retired treasury views are removed.
-    snapshot['network'] = dashboard_section(network_result)
+    snapshot['network'] = network_section
     snapshot['network']['verification'] = network_proof
+    if network_review:
+        snapshot['network']['component_review'] = network_review
+        if network_review['components']:
+            snapshot['network']['definitions']['ring'] += ' ' + network_review['reason']
     if manifest.get('selection'):
         snapshot['network']['population'] = {'kind': 'full-source', 'subset': manifest['subset'],
             'rows': manifest['network_rows'], 'start_date': manifest['selection']['network_start_date'],
@@ -531,7 +586,10 @@ def export_stage(inputs, output, assets):
     # Imported lazily, only at this point of the export stage.
     from .dashboard_exploration import enrich_snapshot
     print('EXPORT_PHASE exploration', flush=True)
-    enrich_snapshot(snapshot, dataset, scores, ranker, treasury=False)
+    def build_exploration():
+        enrich_snapshot(snapshot, dataset, scores, ranker, treasury=False)
+        return snapshot['exploration']
+    snapshot['exploration'] = substage('exploration', build_exploration)
     site = output / 'dashboard'
     site.mkdir()
     (site / 'dashboard.json').write_text(
