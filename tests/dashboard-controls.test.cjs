@@ -422,10 +422,10 @@ test('a receiver-feature run shows receiver histories and incoming activity colu
   h.el('incoming-tab').onclick();await settle();
   assert.match(h.el('incoming-message').textContent,/All 884 incoming transactions, 32 sender histories and 113 receiver histories reconcile/);
   assert.match(h.el('incoming-kpis').innerHTML,/Complete receiver histories<\/span><strong>113 \/ 113<\/strong>/);
-  // A sender-only snapshot has no receiver card or columns.
+  // A sender-only snapshot has no receiver card; its receiver columns say Unavailable rather than vanish.
   const old=await harness({configured:false,authenticated:false,fetchHook:streamHook(streamSnapshot({}))});
   old.el('incoming-tab').onclick();await settle();
-  assert.doesNotMatch(old.el('incoming-queue').innerHTML,/Receiver payments/);
+  assert.match(old.el('incoming-queue').innerHTML,/<td>Unavailable \/ Unavailable \/ Unavailable<\/td><td>Unavailable \/ Unavailable<\/td>/);
   assert.doesNotMatch(old.el('incoming-kpis').innerHTML,/receiver histories/);
 });
 
@@ -578,6 +578,36 @@ test('single-period releases remove unavailable options and disable the selector
   assert.equal(control.value,'test');
   assert.equal(control.disabled,true);
   assert.match(control.options[0].textContent,/Sep 15–28/);
+});
+
+test('Delta 1 shows validation and test while hiding later periods',async()=>{
+  const h=await harness();
+  vm.runInContext(`snapshot={aml_scope:'selected-population',full_rows:11579238,source_index_rows:31898238,
+    pipeline:{subset:'HI-Medium',start_date:'2022-09-11',end_date:'2022-09-28'},
+    population:{source_subset:'HI-Medium',start_date:'2022-09-11',end_date:'2022-09-28'},
+    splits:{train:['2022-09-01','2022-09-11'],validation:['2022-09-11','2022-09-15'],test:['2022-09-15','2022-09-25'],tail:['2022-09-25','2022-09-29']},
+    model:{name:'hist-depth5-delta1',evaluation_scope:'Validation is hidden; no retuning.',views:{validation:{metrics:{rows:6619966}},test:{metrics:{rows:4959079}},tail:{metrics:{rows:193}}},
+      test_date_breakdown:{previous_test_dates:{metrics:{rows:4952285,precision_at_k:1,average_precision:0.5}},unseen_dates:{metrics:{rows:6794,precision_at_k:0.99,average_precision:0.9}}}}};
+    updateEvaluationLabels();renderScoringCoverage()`,h.context);
+  assert.deepEqual(Array.from(h.el('split').options,option=>option.textContent),['Validation · Sep 11–14','Test · Sep 15–24']);
+  assert.equal(h.el('split').disabled,false);
+  assert.match(h.el('scoring-coverage-periods').innerHTML,/Model-selection diagnostics/);
+  assert.match(h.el('scoring-coverage-periods').innerHTML,/6,619,966/);
+  assert.match(h.el('scoring-coverage-periods').innerHTML,/193/);
+  assert.match(h.el('scoring-coverage-kpis').innerHTML,/31,898,238/);
+  assert.equal(h.el('test-date-breakdown').hidden,false);
+  assert.doesNotMatch(h.el('evaluation-methods').textContent,/Rolling history before Sep 11 is unavailable/);
+});
+
+test('HI-Large Delta 1 export uses its own validation and test dates',async()=>{
+  const h=await harness();
+  vm.runInContext(`snapshot={aml_scope:'full',full_rows:179702229,pipeline:{subset:'HI-Large',start_date:'2022-08-01',end_date:'2023-01-12',train:false},splits:{train:['2022-09-01','2022-09-11'],validation:['2022-09-11','2022-09-15'],test:['2022-09-15','2023-01-13']},model:{name:'hist-depth5-delta1',training_subset:'HI-Large',views:{validation:{metrics:{rows:6623289}},test:{metrics:{rows:95812493}}}}};updateEvaluationLabels();renderScoringCoverage()`,h.context);
+  assert.deepEqual(Array.from(h.el('split').options,option=>option.value),['validation','test']);
+  assert.match(h.el('split').options[1].textContent,/Sep 15–Jan 12/);
+  assert.equal(h.el('split').disabled,false);
+  assert.match(h.el('scoring-coverage-kpis').innerHTML,/102,435,782/);
+  assert.match(h.el('scoring-coverage-periods').innerHTML,/77,266,447/);
+  assert.doesNotMatch(h.el('scoring-coverage-explanation').textContent,/model validation dates/);
 });
 
 

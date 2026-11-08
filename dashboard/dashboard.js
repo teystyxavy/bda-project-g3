@@ -136,8 +136,10 @@ function scoreColumns(target,histogram,cutIndex,cutText) {
   });
 }
 
+function isDelta1Dashboard() {return snapshot?.model?.name==='hist-depth5-delta1';}
 function periodNames() {
-  return snapshot?.splits ? Object.keys(snapshot.splits).filter(name=>name!=='train') : ['validation','test','tail'];
+  const names=snapshot?.splits ? Object.keys(snapshot.splits).filter(name=>name!=='train') : ['validation','test','tail'];
+  return names.filter(name=>name!=='tail'||!isDelta1Dashboard());
 }
 function isoDay(milliseconds) {return new Date(milliseconds).toISOString().slice(0,10);}
 function monthDay(iso) {
@@ -152,7 +154,7 @@ function windowText(window) {
 // The last evaluation window runs to the run's final day, as in batch.evaluation_periods.
 function periodWindow(period) {
   const window=[...snapshot.splits[period]], end=snapshot?.pipeline?.end_date;
-  if(period===periodNames().at(-1) && end) {
+  if(period===Object.keys(snapshot.splits).filter(name=>name!=='train').at(-1) && end) {
     const next=isoDay(Date.parse(end+'T00:00:00Z')+86400000);
     if(next>window[1]) window[1]=next;
   }
@@ -180,7 +182,7 @@ function updateEvaluationLabels() {
   control.title=names.length<2?'This release contains one evaluation period.':'';
   if(snapshot?.splits) {
     const train=windowText(snapshot.splits.train);
-    element('evaluation-methods').textContent=`Training reference: ${train}; ${names.map(name=>`${name}: ${windowText(periodWindow(name))}`).join('; ')}. Evaluation views show separate chronological populations. Rolling history before ${monthDay(snapshot.pipeline?.start_date || snapshot.splits.train[0])} is unavailable.`;
+    element('evaluation-methods').textContent=`Training reference: ${train}; ${names.map(name=>`${name}: ${windowText(periodWindow(name))}`).join('; ')}. Evaluation views show separate chronological populations. `+(snapshot.population?'Rolling features retain verified full-source history; displayed case timelines cover the selected dates only.':`Rolling history before ${monthDay(snapshot.pipeline?.start_date || snapshot.splits.train[0])} is unavailable.`);
     element('model-methods').textContent=element('model-methods').textContent.replace(/trained on [^;]*;/,`trained on ${train};`);
     if(snapshot.splits.validation) element('validation-window').textContent=element('validation-window').textContent.replace(/^.*?only\./,`${windowText(periodWindow('validation'))} only.`);
     return;
@@ -204,8 +206,12 @@ function renderScoringCoverage() {
     element('scoring-coverage-summary').textContent=`BQ1: ${p.source_subset} · ${p.start_date} to ${p.end_date}, inclusive. BQ2: ${integer(n?.rows || snapshot.source_index_rows)} full-source transactions.`;
     cards('scoring-coverage-kpis',[['Transactions scored',integer(total),'BQ1 selected dates'],['Transactions in evaluation',integer(evaluated),'Frozen model · no retraining'],['BQ2 transactions',integer(n?.rows || snapshot.source_index_rows),'Complete source population']]);
     element('scoring-coverage-explanation').textContent=snapshot.model.evaluation_scope || 'Frozen-model evaluation; training and validation dates are excluded.';
-    table('scoring-coverage-periods',['Date period','Transactions','Scope'],periods.map((period,index)=>[evaluationPeriodLabel(period),integer(counts[index]),'BQ1 evaluation only']));
-    element('test-date-breakdown').hidden=true;
+    table('scoring-coverage-periods',['Date period','Transactions','Scope'],[
+      ...(reference?[[`Outside displayed evaluation`,integer(reference),'Excluded from displayed metrics']]:[]),
+      ...periods.map((period,index)=>[evaluationPeriodLabel(period),integer(counts[index]),period==='validation'?'Model-selection diagnostics':period==='tail'?'Later-period evaluation':'Test evaluation'])]);
+    const breakdown=snapshot.model.test_date_breakdown;
+    element('test-date-breakdown').hidden=!breakdown;
+    if(breakdown) table('test-date-breakdown-table',['Test slice','Transactions','Precision@100','Average precision'],Object.entries(breakdown).map(([name,value])=>[name==='unseen_dates'?'Dates absent from development':'Previously reported test dates',integer(value.metrics.rows),percent(value.metrics.precision_at_k),value.metrics.average_precision===null?'—':Number(value.metrics.average_precision).toFixed(4)]));
     return;
   }
   element('scoring-coverage-title').textContent=`All ${integer(total)} transactions scored`;
@@ -220,14 +226,14 @@ function renderScoringCoverage() {
     (medium?` The model was trained on ${trainingSubset} and reused for ${snapshot.pipeline.subset} without retraining. This is transfer evaluation; the synthetic populations may overlap, so it is not independent evidence of generalisation.`:' Training-reference scores are not included in the reported evaluation metrics.');
   const beforeTraining=snapshot.pipeline?.start_date && snapshot.splits && snapshot.pipeline.start_date<snapshot.splits.train[0];
   if(beforeTraining) {
-    element('scoring-coverage-explanation').textContent=`The model training window is ${trainText}. All dates before validation are excluded from evaluation, including earlier source dates that were not training inputs. BQ2 covers all ${integer(total)} source transactions. Neither test slice retunes the model.`;
-    cards('scoring-coverage-kpis',[['Transactions scored',integer(total),'All transaction dates in this run'],['Transactions in evaluation',integer(evaluated),'Validation and test periods'],['Outside evaluation',integer(reference),'Earlier source and training dates']]);
+    element('scoring-coverage-explanation').textContent=`The model training window is ${trainText}. All dates before ${monthDay(snapshot.splits[periods[0]][0])} are excluded from displayed evaluation, including earlier source dates that were not training inputs. BQ2 covers all ${integer(total)} source transactions. Neither test slice retunes the model.`;
+    cards('scoring-coverage-kpis',[['Transactions scored',integer(total),'All transaction dates in this run'],['Transactions in evaluation',integer(evaluated),'Validation and test periods'],['Outside evaluation',integer(reference),'Dates outside displayed evaluation']]);
   }
   const breakdown=snapshot.model.test_date_breakdown;
   element('test-date-breakdown').hidden=!breakdown;
   if(breakdown) table('test-date-breakdown-table',['Test slice','Transactions','Precision@100','Average precision'],Object.entries(breakdown).map(([name,value])=>[name==='unseen_dates'?'Dates absent from development':'Previously reported test dates',integer(value.metrics.rows),percent(value.metrics.precision_at_k),value.metrics.average_precision===null?'—':Number(value.metrics.average_precision).toFixed(4)]));
   table('scoring-coverage-periods',['Date period','Transactions scored','Evaluation coverage'],[
-    [beforeTraining?`${monthDay(snapshot.pipeline.start_date)}–${monthDay(isoDay(Date.parse(snapshot.splits[periods[0]][0]+'T00:00:00Z')-86400000))}`:trainText,integer(reference),beforeTraining?'Excluded · dates before validation':'Excluded · training-reference dates'],
+    [beforeTraining?`${monthDay(snapshot.pipeline.start_date)}–${monthDay(isoDay(Date.parse(snapshot.splits[periods[0]][0]+'T00:00:00Z')-86400000))}`:trainText,integer(reference),beforeTraining?'Excluded · dates before displayed evaluation':'Excluded · training-reference dates'],
     ...periods.map((period,index)=>[evaluationPeriodLabel(period),integer(counts[index]),'Included']),
     ['Total',integer(total),`${integer(evaluated)} evaluated + ${integer(reference)} excluded`]]);
 }
@@ -315,7 +321,8 @@ async function start(snapshotSource=null) {
       const p=snapshot.pipeline;
       element('status').textContent=`Run ${p.run_id} · ${integer(snapshot.full_rows)} transactions · ${p.start_date} to ${p.end_date} · Dataset version ${p.dataset_version??'unrecorded local copy'} · Refreshed ${String(p.refresh_time).slice(0,16).replace("T"," ")} UTC`;
       const scope=p.source_scope==='smoke-prefix' ? 'Demonstration sample' : `Selected ${p.subset || 'HI-Small'} population`;
-      element('method-scope').textContent=`${scope}. Both views use the same verified transaction run. ${snapshot.model?.evaluation_scope || 'Optional training creates a candidate for separate review.'}`;
+      element('method-scope').textContent=`${scope}. ${snapshot.population?'BQ1 covers selected dates; BQ2 retains the complete verified source population.':'Both views use the same verified transaction run.'} ${snapshot.model?.evaluation_scope || 'Optional training creates a candidate for separate review.'}`;
+      if(snapshot.population) element('aml-scope').textContent=`${p.subset} selected dates · ${snapshot.model.name} frozen from ${snapshot.model.training_subset}. Training ${windowText(snapshot.splits.train)} excluded; ${isDelta1Dashboard()?'validation and test are reported separately; later periods are hidden.':'validation, test and later periods are reported separately.'}`;
       document.querySelector('footer').textContent='Group 3 · Verified batch analysis';
     }
     element('split').onchange=renderAml;
@@ -1118,6 +1125,7 @@ function bindChartHover(host,drawn,{left,w,width,recall,xLabel,yFormatter}) {
     if(event.key==='Home'||event.key==='End') {event.preventDefault();show(event.key==='Home'?0:anchors.length-1);return;}
     if(step) {event.preventDefault();show(index+step);}});
 }
+function metricsRows(population) {return population.model.metrics_by_k['100'].rows;}
 function renderAml() {
   if(!snapshot?.exploration) {
     const alerts=element('alerts').closest('article'), scores=element('scores').closest('article');
@@ -1138,28 +1146,28 @@ function renderAml() {
   element('aml-population').value=scopes.some(item=>item.id===previous)?previous:'all';
   if(explorationPeriod!==period) {clearQueueFilters();explorationPeriod=period;}
   const population=selectedPopulation(), model=isModelQueue(), scorer=model?'model':'rules';
-  element('review-capacity').querySelectorAll('option').forEach(option=>{option.disabled=Number(option.value)>population.capacity;});
-  if(Number(selectedCapacity())>population.capacity) element('review-capacity').value='100';
+  element('review-capacity').querySelectorAll('option').forEach(option=>{option.disabled=Number(option.value)>Math.min(population.capacity,metricsRows(population));});
+  if(Number(selectedCapacity())>Math.min(population.capacity,metricsRows(population))) element('review-capacity').value='100';
   const k=selectedCapacity(), data=population[scorer], metrics=data.metrics_by_k[k];
   const other=population[model?'rules':'model'].metrics_by_k[k], otherName=model?'rules':'model';
   // The published review sizes, smallest first: they feed the card sparklines and the chart markers.
-  const sizes=Object.keys(data.metrics_by_k).map(Number).sort((a,b)=>a-b);
+  const sizes=Object.keys(data.metrics_by_k).map(Number).sort((a,b)=>a-b), reviewSizes=sizes.map(size=>data.metrics_by_k[size].k);
   cards('aml-kpis',[['Transactions in population',integer(metrics.rows),`${population.label} · ${evaluationPeriodLabel(period)}`],['Ranking quality · average precision',metrics.average_precision==null?'Unavailable':metrics.average_precision.toFixed(4),`${otherName} ${other.average_precision==null?'unavailable':other.average_precision.toFixed(4)} · whole ranking, not one cut-off`],
     [`Laundering in top ${integer(metrics.k)}`,percent(metrics.precision_at_k),`${integer(metrics.hits)} of ${integer(metrics.k)} · ${otherName} ${percent(other.precision_at_k)}`,true,
-      {values:sizes.map(size=>data.metrics_by_k[size].precision_at_k),color:'#3fd0b8',label:`Share that is laundering at ${sizes.join(', ')} reviews`,caption:`At ${sizes[0]} → ${sizes.at(-1)} reviews`}],
+      {values:sizes.map(size=>data.metrics_by_k[size].precision_at_k),color:'#3fd0b8',label:`Share that is laundering at ${reviewSizes.join(', ')} reviews`,caption:`At ${reviewSizes[0]} → ${reviewSizes.at(-1)} reviews`}],
     ['Share of all laundering caught',percent(metrics.recall_at_k),`of ${integer(metrics.positives)} laundering cases · ${otherName} ${percent(other.recall_at_k)}`,false,
-      {values:sizes.map(size=>data.metrics_by_k[size].recall_at_k),color:'#4fa8ff',label:`Share of all laundering caught at ${sizes.join(', ')} reviews`,caption:`At ${sizes[0]} → ${sizes.at(-1)} reviews`}]]);
+      {values:sizes.map(size=>data.metrics_by_k[size].recall_at_k),color:'#4fa8ff',label:`Share of all laundering caught at ${reviewSizes.join(', ')} reviews`,caption:`At ${reviewSizes[0]} → ${reviewSizes.at(-1)} reviews`}]]);
   const capture=['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#ffb648':'#3fd0b8',
-    rows:Object.entries(population[kind].metrics_by_k).map(([capacity,m])=>({x:Number(capacity),y:m.hits,label:capacity}))}));
+    rows:Object.entries(population[kind].metrics_by_k).map(([capacity,m])=>({x:m.k,y:m.hits,label:String(m.k)}))}));
   element('capture-card').hidden=amlMode==='evaluation';
-  element('capture-note').textContent=`Laundering found as the queue grows from 25 to ${integer(population.capacity)} reviews. Labels only score the ranking.`;
+  element('capture-note').textContent=`Laundering found as the queue grows from 25 to ${integer(Math.min(population.capacity,metrics.rows))} reviews. Labels only score the ranking.`;
   chartLines('capture-chart',capture,Math.max(1,...capture.flatMap(series=>series.rows.map(row=>row.y))),null,'Payments reviewed',value=>integer(Math.round(value)),
     {markers:[{x:Number(k),y:metrics.hits,color:model?'#3fd0b8':'#ffb648',pulse:true,label:`Your review capacity: ${k} reviews, ${integer(metrics.hits)} laundering`}]});
   const pipeline=snapshot.pipeline||{};
   const demo=pipeline.source_scope==='smoke-prefix';
-  trustStrip('aml-context',`${demo?'Demo sample':'Full source, reconciled before publishing'} · ${population.label} · ${evaluationPeriodLabel(period)} · ${model?'Frozen model':'Rule baseline'} ${snapshot.model.provenance.model_sha256.slice(0,12)} · Dataset ${pipeline.dataset_version??'unversioned'} · Published ${String(pipeline.refresh_time||snapshot.generated_at).slice(0,10)}`,!demo);
+  trustStrip('aml-context',`${demo?'Demo sample':snapshot.population?'Selected dates, reconciled against full source':'Full source, reconciled before publishing'} · ${population.label} · ${evaluationPeriodLabel(period)} · ${model?'Frozen model':'Rule baseline'} ${snapshot.model.provenance.model_sha256.slice(0,12)} · Dataset ${pipeline.dataset_version??'unversioned'} · Published ${String(pipeline.refresh_time||snapshot.generated_at).slice(0,10)}`,!demo);
   element('aml-filter-note').textContent=snapshot.exploration.aml.filter_policy;
-  element('aml-note').textContent=`Average precision ${metrics.average_precision==null?'Unavailable':metrics.average_precision.toFixed(4)} · lift@${metrics.k} ${metrics.lift_at_k==null?'Unavailable':metrics.lift_at_k.toFixed(2)+'×'}. Scores rank review priority; they are not probabilities.`+(period==='tail'?' Later-period evaluation; compare separately from the main test period.':' Retrospective evaluation; labels are absent from investigation records.');
+  element('aml-note').textContent=`Average precision ${metrics.average_precision==null?'Unavailable':metrics.average_precision.toFixed(4)} · lift@${metrics.k} ${metrics.lift_at_k==null?'Unavailable':metrics.lift_at_k.toFixed(2)+'×'}. Scores rank review priority; they are not probabilities.`+(period==='validation'?' Validation dates were used for model selection; this view is diagnostic, not fresh test evidence.':period==='tail'?` Later-period evaluation; compare separately from the main test period.${metrics.rows<1000?' This is a small population; metrics can change sharply with a few transactions.':''}`:' Retrospective evaluation; labels are absent from investigation records.');
   element('investigation-panel').hidden=amlMode!=='investigation';
   element('model-comparison').hidden=amlMode!=='evaluation';
   element('evaluation-charts').hidden=amlMode!=='evaluation';
@@ -1192,7 +1200,7 @@ function renderAml() {
     {markers:['model','rules'].flatMap((kind,i)=>sizes.map(size=>{const m=population[kind].metrics_by_k[size];
       return {x:m.recall_at_k,y:m.precision_at_k,color:i?'#ffb648':'#3fd0b8',pulse:String(size)===k&&kind===scorer,label:`${kind==='model'?'Frozen model':'Rules'} · top ${size}: precision ${percent(m.precision_at_k)}, recall ${percent(m.recall_at_k)}`};})),
      note:`Dots are the exact top-${sizes.join('/')} queues; the pulsing one is your review capacity. The curve is published at fewer thresholds, so a straight segment can pass below a dot.`});
-  chartLines('capacity-chart',['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#ffb648':'#3fd0b8',rows:Object.entries(population[kind].metrics_by_k).map(([capacity,m])=>({x:Number(capacity),y:m.hits,label:capacity}))})),Math.max(1,...['model','rules'].flatMap(kind=>Object.values(population[kind].metrics_by_k).map(m=>m.hits))),null,'Transactions reviewed',integer,
+  chartLines('capacity-chart',['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#ffb648':'#3fd0b8',rows:Object.entries(population[kind].metrics_by_k).map(([capacity,m])=>({x:m.k,y:m.hits,label:String(m.k)}))})),Math.max(1,...['model','rules'].flatMap(kind=>Object.values(population[kind].metrics_by_k).map(m=>m.hits))),null,'Transactions reviewed',integer,
     {markers:[{x:Number(k),y:metrics.hits,color:model?'#3fd0b8':'#ffb648',pulse:true,label:`Your review capacity: ${k} reviews, ${integer(metrics.hits)} laundering`}]});
   const allRows=data.queue.map(projectionRecord);
   selectOptions('queue-payment',['',...new Set(allRows.map(row=>row.payment_format))],value=>value||'All formats');
@@ -1477,9 +1485,9 @@ const incomingCases=caseExplorer('icase',{
 // Every number comes from the two snapshots; account numbers are masked in the stream, so nothing is matched by account.
 function streamLinksHTML(data,batch) {
   const names={train:'Training reference',validation:'Validation',test:'Test',tail:'Later period'}, colors={train:'#5f7a8e',validation:'#4fa8ff',test:'#3fd0b8',tail:'#ffb648'};
-  const splits=batch?.splits, periods=splits?Object.keys(splits):[];
+  const splits=batch?.splits, hideLater=batch?.model?.name==='hist-depth5-delta1', periods=splits?Object.keys(splits).filter(name=>name!=='tail'||!hideLater):[];
   const counts=periods.map(name=>data.queue.filter(row=>row.timestamp.slice(0,10)>=splits[name][0]&&row.timestamp.slice(0,10)<splits[name][1]).length);
-  const queued=new Set(Object.values(batch?.exploration?.aml?.periods||{}).flatMap(period=>period.scopes.flatMap(scope=>[...scope.model.queue,...scope.rules.queue])));
+  const queued=new Set(Object.entries(batch?.exploration?.aml?.periods||{}).filter(([name])=>name!=='tail'||!hideLater).flatMap(([,period])=>period.scopes.flatMap(scope=>[...scope.model.queue,...scope.rules.queue])));
   const inBatch=data.queue.filter(row=>queued.has(row.transaction_id)).length;
   const mix=splits?`<div class="period-bar" role="img" aria-label="${escapeText(periods.map((name,i)=>`${names[name]||name}: ${counts[i]}`).join(', '))}">${periods.map((name,i)=>counts[i]?`<i style="flex:${counts[i]};background:${colors[name]||'#a9bccb'}"></i>`:'').join('')}</div><p class="period-key">${periods.map((name,i)=>counts[i]?`<span><i style="background:${colors[name]||'#a9bccb'}"></i>${escapeText(names[name]||name)} · ${escapeText(windowText(splits[name]))} · <b>${integer(counts[i])}</b></span>`:'').join('')}</p>`:'';
   return `<div class="link-card"><div class="link-head"><span class="tab-tag">BQ1</span><h4>Review queue</h4></div><p>Scored by the same frozen model and sender features as the batch review queue, one payment at a time. The stream's top ${integer(data.queue.length)} fall on these evaluation days:</p>${mix}<p>${splits?`${inBatch?`${integer(inBatch)} of them also appear`:'None of them appear'} in the batch queues exported for review, so the two queues rank different payments.`:'Load the batch release to compare dates with the review queue.'}</p><button type="button" data-view="aml">Open the review queue →</button></div>

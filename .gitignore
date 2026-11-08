@@ -63,3 +63,6 @@ Thumbs.db
 /scripts/analysis/
 /scripts/benchmarks/benchmark-training-scale.py
 /scripts/validation/summarise-run.py
+
+# Local Playwright CLI browser logs
+.playwright-cli/

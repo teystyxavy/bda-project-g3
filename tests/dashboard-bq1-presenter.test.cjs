@@ -7,7 +7,7 @@ const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../dashboard/dashboard.js'),'utf8');
 
 class Element {
-  constructor(registry,id='') {this.registry=registry;this.id=id;this.hidden=false;this.disabled=false;this.value='';this.textContent='';this.dataset={};this.style={};this.attributes={};this.html='';
+  constructor(registry,id='') {this.registry=registry;this.id=id;this.hidden=false;this.disabled=false;this.value='';this.textContent='';this.dataset={};this.style={};this.attributes={};this.html='';this.options=[];
     this.classes=new Set();this.classList={add:name=>this.classes.add(name),remove:name=>this.classes.delete(name),contains:name=>this.classes.has(name)};}
   set innerHTML(text) {this.html=text;this.registry.adopt(text);}
   get innerHTML() {return this.html;}

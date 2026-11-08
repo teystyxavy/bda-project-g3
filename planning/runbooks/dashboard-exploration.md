@@ -7,6 +7,32 @@
 > replay snapshot) and **Ingestion** (status and run controls, including cache-only HI-Large). The
 > coverage numbers below describe the 30 Oct HI-Medium release.
 
+## Delta 1 validation/test layout (8 November 2026)
+
+The 8 November UI release `delta1-main-20261108-val-test` used the latest dashboard
+layout and frozen Delta 1 with HI-Medium. Visible periods are validation
+(11–14 September) and test (15–24 September). Later periods are hidden in Delta 1
+views, including stream date breakdowns. Hidden dates are excluded from displayed
+evaluation totals; scoring coverage still reconciles the complete selected build.
+Validation is model-selection diagnostics, not fresh test evidence. Training
+(1–10 September) is excluded from the selected BQ1 build. BQ2 retains the verified
+31,898,238-row complete HI-Medium network population.
+
+HI-Large exports retain their own recorded date windows. The renderer supports
+the HI-Large validation window of 11–14 September 2022 and test window of
+15 September 2022–12 January 2023; it does not impose the Medium dates on Large.
+The running isolated HI-Large recovery export was not modified or restarted.
+
+Before publishing a completed export with the current interface, run
+`scripts/dashboard/refresh-release-layout.py --source <completed-export/release/site> --output <fresh-release>`.
+This packages its existing verified JSON with the current UI, without changing
+model scores, metrics or splits. It rejects incomplete exports. Publish the
+prepared output through `publish-exploration.py` using a freshly read expected
+current pointer. Do not publish the running recovery job's pinned older UI over
+the current layout. The helper also retains the shared 32 MB snapshot budget.
+
+See [publication evidence](../evidence/delta1-validation-test-main-20261108.json).
+
 The 30 October coverage update uses UI release `medium-coverage-20261030` and
 source pipeline run `medium-full-20261030-v2`. Its fixed coverage summary shows
 **31,898,238 scored = 18,893,741 evaluated + 13,004,497 excluded from evaluation**.

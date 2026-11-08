@@ -1,0 +1,137 @@
+{
+  "status": "published-public-and-browser-verified",
+  "model": "hist-depth5-delta1",
+  "model_sha256": "0170bef63f4cd257cbcda8c4748cea0dcf90f202134105fb8226d6dde6a0646f",
+  "model_unchanged": true,
+  "training_started": false,
+  "batch_started": false,
+  "inference": "local frozen model, XGBoost 3.4.1; original published test metrics reproduced",
+  "periods": {
+    "validation": {
+      "start_date": "2022-09-11",
+      "end_exclusive": "2022-09-15",
+      "rows": 6619966,
+      "positives": 8683
+    },
+    "test": {
+      "start_date": "2022-09-15",
+      "end_exclusive": "2022-09-25",
+      "rows": 4959079,
+      "positives": 8640
+    },
+    "tail": {
+      "start_date": "2022-09-25",
+      "end_exclusive": "2022-09-29",
+      "rows": 193,
+      "positives": 113
+    }
+  },
+  "network_rows": 31898238,
+  "labels_in_queues": false,
+  "validation_visible": true,
+  "later_period_visible": false,
+  "visible_periods": [
+    "validation",
+    "test"
+  ],
+  "scope_checks": "Every exported queue entry belongs to its declared date window; all period rows and positives reconcile to verified source proof.",
+  "snapshot_sha256": "76ff87d1286a48abc6a23a56a04872cb4636b077b8e5c8e7e464cdc7d45d06d5",
+  "publication": {
+    "status": "published-origin-verified",
+    "pointer": {
+      "schema_version": 1,
+      "run_id": "delta1-main-20261108-val-test",
+      "snapshot": "releases/delta1-main-20261108-val-test/dashboard.json",
+      "sha256": "76ff87d1286a48abc6a23a56a04872cb4636b077b8e5c8e7e464cdc7d45d06d5",
+      "previous_run_id": "ui-main-20261108-janelle",
+      "source_pipeline_run_id": "delta1-three-periods-20261108"
+    },
+    "invalidation": "I8WJ2L1E7BQM6FKE2U88P0FNM0",
+    "files": [
+      {
+        "file": "index.html",
+        "key": "dashboard/index.html",
+        "content_type": "text/html; charset=utf-8",
+        "bytes": 31321,
+        "sha256": "69c81fade2bfef624f1e416296a37e45003f1c3e3203fea1d2684440d4addf70"
+      },
+      {
+        "file": "dashboard.css",
+        "key": "dashboard/dashboard.css",
+        "content_type": "text/css; charset=utf-8",
+        "bytes": 66011,
+        "sha256": "53f6871298e2295f5d641f248850d16b279a78de5fc2272d28403c4f0d522fa8"
+      },
+      {
+        "file": "dashboard.js",
+        "key": "dashboard/dashboard.js",
+        "content_type": "application/javascript; charset=utf-8",
+        "bytes": 305811,
+        "sha256": "51274064ce05b7648a58c5e88c2d3824ef90f6dd70a338721a0843ce3a14e07b"
+      },
+      {
+        "file": "dashboard.json",
+        "key": "dashboard/dashboard.json",
+        "content_type": "application/json; charset=utf-8",
+        "bytes": 8386879,
+        "sha256": "76ff87d1286a48abc6a23a56a04872cb4636b077b8e5c8e7e464cdc7d45d06d5"
+      }
+    ],
+    "model_changed": false,
+    "paid_batch_started": false
+  },
+  "public_verification": {
+    "files": [
+      {
+        "file": "index.html",
+        "hash_matches": true
+      },
+      {
+        "file": "dashboard.css",
+        "hash_matches": true
+      },
+      {
+        "file": "dashboard.js",
+        "hash_matches": true
+      },
+      {
+        "file": "dashboard.json",
+        "hash_matches": true
+      }
+    ],
+    "pointer": {
+      "schema_version": 1,
+      "run_id": "delta1-main-20261108-val-test",
+      "snapshot": "releases/delta1-main-20261108-val-test/dashboard.json",
+      "sha256": "76ff87d1286a48abc6a23a56a04872cb4636b077b8e5c8e7e464cdc7d45d06d5",
+      "previous_run_id": "ui-main-20261108-janelle",
+      "source_pipeline_run_id": "delta1-three-periods-20261108"
+    }
+  },
+  "dashboard_url": "https://d1n61tlw9pcrog.cloudfront.net/",
+  "visible_evaluation_rows": 11579045,
+  "validation_rows": 6619966,
+  "test_rows": 4959079,
+  "hidden_later_rows": 193,
+  "hi_large_ready": {
+    "date_windows": "Uses export metadata; validation Sep 11\u201314, test Sep 15 2022\u2013Jan 12 2023",
+    "running_export_modified": false,
+    "running_export_restarted": false,
+    "layout_refresh_script": "scripts/dashboard/refresh-release-layout.py"
+  },
+  "checks": {
+    "focused_browser_logic": "6 passed",
+    "python_release_population": "18 passed",
+    "broader_browser_logic": "51 passed; 6 pre-existing failures reproduced on unmodified HEAD",
+    "browser": "Validation and test selections render correct populations; no horizontal overflow at desktop width"
+  },
+  "live_browser": {
+    "status": "Run delta1-three-periods-20261108 \u00b7 11,579,238 transactions \u00b7 2022-09-11 to 2022-09-28 \u00b7 Dataset version unrecorded local copy \u00b7 Refreshed 2026-11-08 08:00 UTC",
+    "periods": [
+      "Validation \u00b7 Sep 11\u201314",
+      "Test \u00b7 Sep 15\u201324"
+    ],
+    "kpis": "Transactions in population4,959,079Whole evaluation period \u00b7 Test \u00b7 Sep 15\u201324Ranking quality \u00b7 average precision0.6869rules 0.0117 \u00b7 whole ranking, not one cut-offLaundering in top 100100.0%100 of 100 \u00b7 rules 3.0%At 25 \u2192 250 reviewsShare of all laundering caught1.2%of 8,640 laundering cases \u00b7 rules 0.0%At 25 \u2192 250 reviews",
+    "overflow": false
+  }
+}

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import boto3
 from botocore.config import Config
-from bda_pipeline.release import ASSETS, _inspect, SENSITIVE_TEXT
+from bda_pipeline.release import ASSETS, ASSET_MAX_BYTES, RELEASE_MAX_BYTES, _inspect, SENSITIVE_TEXT
 
 ACCOUNT = '588738581042'
 BUCKET = 'is459-g3-dashboard-588738581042-ap-southeast-1'
@@ -27,8 +27,8 @@ DISTRIBUTION = 'EU1WB6XM4GKHQ'
 def read_object(client, bucket, key):
     response = client.get_object(Bucket=bucket, Key=key)
     with response['Body'] as stream:
-        data = stream.read(12_000_001)
-    if len(data) > 12_000_000:
+        data = stream.read(max(ASSET_MAX_BYTES.values()) + 1)
+    if len(data) > max(ASSET_MAX_BYTES.values()):
         raise ValueError('Oversized remote asset')
     return data, response['ETag']
 
@@ -50,14 +50,14 @@ def main():
     for item in manifest['files']:
         name = item['file']
         blob = (args.release / 'site' / name).read_bytes()
-        if len(blob) != item['bytes'] or len(blob) > 10_000_000 or hashlib.sha256(blob).hexdigest() != item['sha256']:
+        if len(blob) != item['bytes'] or len(blob) > ASSET_MAX_BYTES[name] or hashlib.sha256(blob).hexdigest() != item['sha256']:
             raise ValueError('Release hash or size mismatch')
         if SENSITIVE_TEXT.search(blob.decode('utf-8')):
             raise ValueError('Private content detected')
         blobs[name] = blob
     snapshot = json.loads(blobs['dashboard.json'])
     _inspect(snapshot)
-    if snapshot.get('buildStatus') != 'complete' or not snapshot.get('exploration') or sum(map(len, blobs.values())) > 12_000_000:
+    if snapshot.get('buildStatus') != 'complete' or not snapshot.get('exploration') or sum(map(len, blobs.values())) > RELEASE_MAX_BYTES:
         raise ValueError('Incomplete or oversized enhanced release')
     session = boto3.Session(profile_name=args.profile, region_name='ap-southeast-1')
     config = Config(connect_timeout=10, read_timeout=60, retries={'mode': 'standard', 'max_attempts': 4})
