@@ -1665,7 +1665,7 @@ function renderNetwork() {
     element('ring-picker').onchange=()=>selectRing(element('ring-picker').value);
     element('ring-search').oninput=()=>findAccount(element('ring-search').value);
     element('ring-export').onclick=()=>{if(selectedRing) download(ringCase(selectedRing),`ring-${ringRow(selectedRing).rank}-case.csv`);};
-    element('ring-reset').onclick=()=>{if(selectedRing){delete ringLayouts[selectedRing];stopRingScene();ringScene=null;renderRing();}};
+    element('ring-reset').onclick=()=>{if(selectedRing){delete ringLayouts[selectedRing];delete ringLayouts[selectedRing+'|focus'];stopRingScene();ringScene=null;renderRing();}};
     element('ring-flow').onclick=toggleRingFlow;
     element('ring-zoom-in').onclick=()=>zoomRing(1.3);element('ring-zoom-out').onclick=()=>zoomRing(1/1.3);element('ring-fit').onclick=()=>ringScene&&fitRing(ringScene);
     // Animate only while the graph is on screen.
@@ -1732,6 +1732,23 @@ function findAccount(text) {
 // band of staggered columns instead of one line, each side spreads over as many
 // columns as its accounts need, and a final pass keeps dots from overlapping.
 const RING_GAP={hub:36,side:26}, RING_BIG=40;
+// Focus view: a big ring draws its hubs, its loop accounts and the counterparties that moved the most money;
+// the rest are counted per account they deal with, and "Show all" brings them back. Small rings are drawn whole.
+const RING_FOCUS_KEEP=20;
+let ringFocus=true;
+const ringFocusCache=new WeakMap();
+function focusGraph(graph) {
+  if(graph.nodes.length<=RING_BIG) return graph;
+  if(ringFocusCache.has(graph)) return ringFocusCache.get(graph);
+  const keep=new Set(graph.nodes.filter(node=>node.role!=='counterparty').map(node=>node.id));
+  graph.nodes.filter(node=>node.role==='counterparty').sort((a,b)=>(b.in_usd+b.out_usd)-(a.in_usd+a.out_usd)).slice(0,RING_FOCUS_KEEP).forEach(node=>keep.add(node.id));
+  const unseen=new Map();
+  for(const link of graph.links) for(const [mine,other] of [[link.source,link.target],[link.target,link.source]])
+    if(keep.has(mine)&&!keep.has(other)) {if(!unseen.has(mine)) unseen.set(mine,new Set());unseen.get(mine).add(other);}
+  const focused={...graph,nodes:graph.nodes.filter(node=>keep.has(node.id)),links:graph.links.filter(link=>keep.has(link.source)&&keep.has(link.target)),
+    hidden:Object.fromEntries([...unseen].map(([id,set])=>[id,set.size])),focusOf:graph.nodes.length};
+  ringFocusCache.set(graph,focused);return focused;
+}
 // Rings up to RING_BIG accounts keep the original layout; bigger ones get room to breathe.
 function layoutRing(graph) {return graph.nodes.length>RING_BIG?layoutRingSpread(graph):layoutRingClassic(graph);}
 function layoutRingSpread(graph) {
@@ -1878,11 +1895,15 @@ const quadPoint = (a,c,b,t) => ({x:(1-t)*(1-t)*a.x+2*(1-t)*t*c.x+t*t*b.x,y:(1-t)
 const xy = p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
 
 function renderRing() {
-  const graph=snapshot.network.graphs[selectedRing];
-  if(!graph) return;
+  const full=snapshot.network.graphs[selectedRing];
+  if(!full) return;
+  // Focus view unless the selected account is one it leaves out (then the whole ring is drawn).
+  const focused=ringFocus?focusGraph(full):full;
+  const graph=focused!==full&&selectedAccount&&!focused.nodes.some(node=>node.id===selectedAccount)?full:focused, key=selectedRing+(graph===full?'':'|focus');
   GRAPH=graphShape();
-  if(ringLayoutShape[selectedRing]!==GRAPH.width) {delete ringLayouts[selectedRing];ringLayoutShape[selectedRing]=GRAPH.width;}
-  const layout=ringLayouts[selectedRing]||(ringLayouts[selectedRing]=layoutRing(graph));
+  if(ringLayoutShape[key]!==GRAPH.width) {delete ringLayouts[key];ringLayoutShape[key]=GRAPH.width;}
+  const layout=ringLayouts[key]||(ringLayouts[key]=layoutRing(graph));
+  ringFocusButton(full,graph);
   const roles=flowRoles(graph), hasHub=graph.nodes.some(node=>node.role==='hub'), {width,height,margin}=GRAPH, cx=width/2, cy=height/2;
   const byId=new Map(graph.nodes.map(node=>[node.id,node]));
   const maxTxns=Math.max(1,...graph.links.map(link=>link.txns)), maxUsd=Math.max(1,...graph.nodes.map(node=>node.in_usd+node.out_usd)), maxLinkUsd=Math.max(1,...graph.links.map(link=>link.usd));
@@ -1911,18 +1932,28 @@ function renderRing() {
   const hitMarkup=graph.links.map((link,i)=>`<path data-hit="${i}" class="ring-hit"/>`).join('');
   const dotMarkup=dots.map((dot,i)=>`<circle data-dot="${i}" class="ring-dot ring-dot-${tone(graph.links[dot.link])}" r="${dot.r.toFixed(1)}" fill="${RING_TONE[tone(graph.links[dot.link])]}"/>`).join('');
   const hubRank=new Map(graph.nodes.filter(node=>node.role==='hub').map((node,i)=>[node.id,i]));
-  const nodeMarkup=graph.nodes.map(node=>{const role=roles[node.id], r=radius[node.id], minor=node.role==='counterparty'||(hubRank.get(node.id)??0)>=3;
+  const nodeMarkup=graph.nodes.map(node=>{const role=roles[node.id], r=radius[node.id], minor=node.role==='counterparty'||(hubRank.get(node.id)??0)>=(graph.focusOf||graph.nodes.length>RING_BIG?1:3);
     return `<g class="ring-node ring-node-${role}${node.id===selectedAccount?' ring-node-selected':''}" data-node="${escapeText(node.id)}" tabindex="0" role="button" aria-label="${escapeText(ROLE[role].label)} ${escapeText(node.id)}, ${integer(node.fan_in)} senders, ${integer(node.fan_out)} receivers">${node.role==='hub'?`<circle class="ring-halo" r="${(r+3).toFixed(1)}"/>`:''}<circle class="ring-grab" r="${(r+7).toFixed(1)}"/><circle class="ring-core" r="${r.toFixed(1)}" fill="${RING_GLOW[role]}" filter="url(#ring-glow)"/><text class="ring-label${minor?' ring-label-minor':''}" y="${(node.role==='hub'?r+17:-r-7).toFixed(1)}" text-anchor="middle">${escapeText(shortAccount(node.id))}</text></g>`;}).join('');
   const lanes=hasHub?`<text class="ring-lane" x="${margin-10}" y="${height-16}">← MONEY IN</text><text class="ring-lane" x="${width-margin+10}" y="${height-16}" text-anchor="end">MONEY OUT →</text>`:'';
   const crowded=graph.nodes.filter(node=>node.role==='loop').length>8, busy=graph.nodes.length>RING_BIG||graph.links.length>80;
   element('ring-graph').innerHTML=`<svg id="ring-svg" class="${[crowded&&'ring-crowded',busy&&'ring-busy',!animate&&'ring-static',ringFlowPaused&&'ring-paused'].filter(Boolean).join(' ')}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Money flows between ${graph.shown_accounts} accounts of the selected ring"><defs><filter id="ring-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="3.2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>${gradients}${['in','out','other','loop'].map(marker).join('')}</defs><rect class="ring-backdrop" width="${width}" height="${height}"/>${lanes}<g id="ring-viewport"><g class="ring-links">${linkMarkup}</g><g class="ring-hits">${hitMarkup}</g><g class="ring-dots" filter="url(#ring-glow)">${dotMarkup}</g><g class="ring-accounts">${nodeMarkup}</g></g></svg>`;
-  element('ring-graph-note').textContent=`${graph.truncated?`Showing ${graph.shown_accounts} of ${graph.total_accounts} accounts: every hub and loop account, then counterparties by payment volume. `:''}${animate?'Moving dots are payments, travelling the way the money went; more dots means more payments, bigger dots more USD.':'Arrows show the direction of the money.'} Larger accounts moved more money. ${crowded?'Loop-account names appear on hover. ':''}Hover to trace an account, ${animate?'drag one to pull on its links':'drag to rearrange'}, drag the background to pan.`;
+  element('ring-graph-note').textContent=`${graph.focusOf?`Focus view: ${integer(graph.nodes.length)} of ${integer(graph.total_accounts??graph.focusOf)} accounts, every hub and loop account plus the ${RING_FOCUS_KEEP} counterparties that moved the most money. Show all draws ${integer(graph.focusOf)}. Hover a hub for its name. `:''}${graph.truncated&&!graph.focusOf?`Showing ${graph.shown_accounts} of ${graph.total_accounts} accounts: every hub and loop account, then counterparties by payment volume. `:''}${animate?'Moving dots are payments, travelling the way the money went; more dots means more payments, bigger dots more USD.':'Arrows show the direction of the money.'} Larger accounts moved more money. ${crowded?'Loop-account names appear on hover. ':''}Hover to trace an account, ${animate?'drag one to pull on its links':'drag to rearrange'}, drag the background to pan.`;
   element('ring-flow').hidden=!animate;element('ring-legend-flow').hidden=!animate;
   bindRingScene(scene);
   if(selectedAccount&&byId.has(selectedAccount)) showAccount(selectedAccount);
   else element('ring-node').innerHTML='<h3>Account details</h3><p>Select an account in the graph.</p>';
 }
 
+// The Focus / Show all toggle sits in the graph's HUD and only appears for big rings.
+function ringFocusButton(full,graph) {
+  let button=element('ring-focus');
+  if(!button) {const hud=element('ring-fit')?.parentElement;if(!hud?.insertAdjacentHTML) return;
+    hud.insertAdjacentHTML('afterbegin','<button id="ring-focus" type="button" aria-pressed="true"></button>');button=element('ring-focus');
+    button.onclick=()=>{ringFocus=!ringFocus;renderRing();};}
+  button.hidden=full.nodes.length<=RING_BIG;button.setAttribute('aria-pressed',String(graph!==full));
+  button.textContent=graph!==full?`Show all ${integer(full.nodes.length)}`:'Focus view';
+  button.title=graph!==full?'Draw every account in this ring':'Draw hubs, loop accounts and the counterparties that moved the most money';
+}
 function stopRingScene() {
   if(ringScene?.raf!=null&&typeof cancelAnimationFrame==='function') cancelAnimationFrame(ringScene.raf);
   if(ringScene) ringScene.raf=null;
@@ -2213,12 +2244,16 @@ function presenterAvailable(net) {
 // links [from, to, payments, usd], pays [link, minute, usd, laundering 0/1], tri [a, b, c].
 function presenterData(net) {
   const rings=net.ring_list.filter(row=>net.graphs[row.ring_id]?.payments).map(row=>{
-    const graph=net.graphs[row.ring_id], roles=flowRoles(graph), index=new Map(graph.nodes.map((node,i)=>[node.id,i]));
+    // Big rings replay in focus view: payments on links to left-out accounts are dropped and the rest re-indexed.
+    const whole=net.graphs[row.ring_id], graph=focusGraph(whole), roles=flowRoles(graph), index=new Map(graph.nodes.map((node,i)=>[node.id,i]));
+    const linkAt=new Map(graph.links.map((link,i)=>[link,i])), remap=whole.links.map(link=>linkAt.get(link)??-1);
+    const pays=graph===whole?whole.payments:whole.payments.filter(pay=>remap[pay[0]]>=0).map(pay=>[remap[pay[0]],...pay.slice(1)]);
     return {rank:row.rank,id:row.ring_id,hubs:row.hubs,loops:row.loops,usd:row.usd,rate:row.laundering_rate??0,graph,
-      start:Date.parse(String(graph.payment_start)+'Z'),total:graph.payments_total??graph.payments.length,
+      start:Date.parse(String(whole.payment_start)+'Z'),total:whole.payments_total??whole.payments.length,
+      focus:graph!==whole,accounts:whole.total_accounts??whole.nodes.length,
       nodes:graph.nodes.map(node=>[node.id,roles[node.id],node.touches_laundering?1:0]),
       links:graph.links.map(link=>[index.get(link.source),index.get(link.target),link.txns,link.usd]),
-      pays:graph.payments,tri:(graph.loops||[]).map(loop=>loop.map(id=>index.get(id))).filter(loop=>loop.every(i=>i!=null))};
+      pays,tri:(whole.loops||[]).map(loop=>loop.map(id=>index.get(id))).filter(loop=>loop.every(i=>i!=null))};
   });
   const low=net.thresholds.reduce((a,b)=>a.threshold<=b.threshold?a:b), head=net.thresholds.find(row=>row.headline)||net.thresholds[0];
   return {rings,totals:net.totals,summary:net.rings,low,head,candidates:low.hubs.accounts+low.high_volume.accounts,
@@ -2293,9 +2328,9 @@ function presStoryHTML(step=PRES.step,data=PRES.data,ring=PRES.ring,revealed=0) 
     case 0:return `<div class="pres-eyebrow">This release · ${integer(t.rows)} payments</div><h2>${integer(t.accounts)} accounts. A few hundred of them are working together.</h2><p>Every dot is one real account. Where it sits means nothing yet. The job: find the ones that move money as a team.</p>`;
     case 1:return `<div class="pres-eyebrow">Step 1 · fan-in and fan-out</div><h2><em>${integer(data.candidates)}</em> accounts collect from ${data.low.threshold}+ senders and pay ${data.low.threshold}+ receivers.</h2><p>Counted over ${integer(t.links)} account-to-account links. Pooling money from many and passing it on to many is what a mule does.</p>`;
     case 2:return `<div class="pres-eyebrow">Step 2 · hubs, loops, rings</div><h2>${integer(s.accounts)} accounts fall into <em>${integer(s.rings)} rings</em>.</h2><p>Hubs with ${data.headline}+ senders and ${data.headline}+ receivers, timed loops (A → B → C → A within ${data.loopDays} days), and the accounts they deal with. Each cluster is one case to review. Ring #1 sits in the middle.</p>`;
-    case 3:return `<div class="pres-eyebrow">Ring #${ring.rank} · lead account ${escapeText(ring.nodes[0]?.[0]||ring.id)}</div><h2>${ring.hubs?`${ring.hubs===1?'One hub':`${ring.hubs} hubs`}, ${integer(n-ring.hubs)} other accounts, <em>${presUsd(ring.usd)}</em> moved.`:`${integer(n)} accounts passing money in <em>${plural(ring.loops,'timed loop')}</em>.`}</h2><p>${integer(ring.pays.length)}${ring.total>ring.pays.length?` of ${integer(ring.total)}`:''} real payments, replayed in the order they happened. ${ring.hubs?'Senders sit on the left and receivers on the right. Watch the hub collect, then pay out.':`Each purple flash is a loop closing: money leaves an account and comes back within ${data.loopDays} days.`}</p>`;
-    case 4:return dirty?`<div class="pres-eyebrow">Ring #${ring.rank} · ground truth</div><h2><span class="pres-dirty" id="pres-count">${revealed}</span> of ${integer(n)} accounts touched a laundering payment.</h2><p>The detector never saw these labels. They come with the dataset and are only shown after the ring was found.</p>`
-      :`<div class="pres-eyebrow">Ring #${ring.rank} · ground truth</div><h2><span id="pres-count">${revealed}</span> of ${integer(n)} accounts touched a laundering payment.</h2><p>Dense structure is not proof. Payroll, payment processors and escrow accounts look like this too, so an analyst still makes the call.</p>`;
+    case 3:return `<div class="pres-eyebrow">Ring #${ring.rank} · lead account ${escapeText(ring.nodes[0]?.[0]||ring.id)}</div><h2>${ring.hubs?`${ring.hubs===1?'One hub':`${ring.hubs} hubs`}, ${integer((ring.accounts??n)-ring.hubs)} other accounts, <em>${presUsd(ring.usd)}</em> moved.`:`${integer(n)} accounts passing money in <em>${plural(ring.loops,'timed loop')}</em>.`}</h2><p>${integer(ring.pays.length)}${ring.total>ring.pays.length?` of ${integer(ring.total)}`:''} real payments, replayed in the order they happened.${ring.focus?` Shown in focus: ${integer(n)} of ${integer(ring.accounts)} accounts, every hub and loop account plus the ones that moved the most money.`:''} ${ring.hubs?'Senders sit on the left and receivers on the right. Watch the hub collect, then pay out.':`Each purple flash is a loop closing: money leaves an account and comes back within ${data.loopDays} days.`}</p>`;
+    case 4:return dirty?`<div class="pres-eyebrow">Ring #${ring.rank} · ground truth</div><h2><span class="pres-dirty" id="pres-count">${revealed}</span> of ${integer(n)}${ring.focus?' shown':''} accounts touched a laundering payment.</h2><p>The detector never saw these labels. They come with the dataset and are only shown after the ring was found.</p>`
+      :`<div class="pres-eyebrow">Ring #${ring.rank} · ground truth</div><h2><span id="pres-count">${revealed}</span> of ${integer(n)}${ring.focus?' shown':''} accounts touched a laundering payment.</h2><p>Dense structure is not proof. Payroll, payment processors and escrow accounts look like this too, so an analyst still makes the call.</p>`;
     case 5:return `<div class="pres-eyebrow">Does it hold up?</div><h2>${presPct(t.laundering_rate)} of all accounts touch laundering. Inside the rings it's <span class="pres-dirty">${presPct(s.laundering_rate)}</span>.</h2><p>That is ${s.lift==null?'well above':`${s.lift.toFixed(0)}×`} the base rate, found without using a single label.</p>`;
     default:return `<div class="pres-eyebrow">The case list</div><h2>The top ${integer(data.rings.length)} rings, ranked.</h2><p>Red accounts touched a laundering payment. Click any ring to replay it.</p>`;
   }
@@ -2304,7 +2339,7 @@ function presStoryHTML(step=PRES.step,data=PRES.data,ring=PRES.ring,revealed=0) 
 function openPresenter() {
   const net=snapshot?.network;if(!presenterAvailable(net)) return;
   PRES.data=presenterData(net);PRES.layouts={};PRES.hay=null;PRES.open=true;PRES.returnFocus=document.activeElement;
-  const pick=element('pres-ring');selectOptions('pres-ring',PRES.data.rings.map(ring=>String(ring.rank)),rank=>{const ring=PRES.data.rings.find(item=>String(item.rank)===rank);return `#${ring.rank} · ${ring.nodes.length} accounts · ${ring.hubs?plural(ring.hubs,'hub'):plural(ring.loops,'loop')} · ${presUsd(ring.usd)}`;});
+  const pick=element('pres-ring');selectOptions('pres-ring',PRES.data.rings.map(ring=>String(ring.rank)),rank=>{const ring=PRES.data.rings.find(item=>String(item.rank)===rank);return `#${ring.rank} · ${integer(ring.accounts??ring.nodes.length)} accounts · ${ring.hubs?plural(ring.hubs,'hub'):plural(ring.loops,'loop')} · ${presUsd(ring.usd)}`;});
   pick.onchange=()=>presChooseRing(+pick.value);
   const loopRing=PRES.data.rings.find(ring=>ring.loops&&!ring.hubs), clean=PRES.data.rings.find(ring=>ring.rate===0);
   element('pres-quick').innerHTML=[[PRES.data.rings[0],'biggest'],[loopRing,'loops'],[clean,'clean']].filter(([ring])=>ring)
@@ -2502,9 +2537,11 @@ function presDrawWall(ctx) {
     ctx.fillStyle=hover?'rgba(63,208,184,.08)':'rgba(13,24,36,.55)';ctx.strokeStyle=hover?'rgba(63,208,184,.7)':'rgba(31,51,70,.8)';ctx.lineWidth=1;
     ctx.beginPath();ctx.roundRect?ctx.roundRect(cell.x+3,cell.y+3,cell.w-6,cell.h-6,8):ctx.rect(cell.x+3,cell.y+3,cell.w-6,cell.h-6);ctx.fill();ctx.stroke();
     const P=presFit(presLayout(ring),{x:cell.x+10,y:cell.y+10,w:cell.w-20,h:cell.h-32},1.2).pts;
-    ctx.lineWidth=.6;ctx.strokeStyle='rgba(127,157,181,.28)';
+    // Big rings: quieter links and smaller counterparties, so the hubs and loops carry the glyph.
+    ctx.lineWidth=.6;ctx.strokeStyle=ring.focus?'rgba(127,157,181,.14)':'rgba(127,157,181,.28)';
     ring.links.forEach(link=>{ctx.beginPath();ctx.moveTo(P[link[0]][0],P[link[0]][1]);ctx.lineTo(P[link[1]][0],P[link[1]][1]);ctx.stroke();});
-    ring.nodes.forEach((node,i)=>{ctx.beginPath();ctx.arc(P[i][0],P[i][1],node[1]==='hub'?3.2:1.9,0,Math.PI*2);ctx.fillStyle=node[2]?PRES_COLOR.dirty:'#4f6a80';ctx.fill();});
+    ring.nodes.forEach((node,i)=>{ctx.beginPath();ctx.arc(P[i][0],P[i][1],node[1]==='hub'?3.2:ring.focus&&node[1]!=='loop'?1.3:1.9,0,Math.PI*2);ctx.fillStyle=node[2]?PRES_COLOR.dirty:'#4f6a80';ctx.fill();});
+    if(ring.focus) {ctx.font='500 10px ui-monospace,Menlo,monospace';ctx.fillStyle='#5f7a8e';ctx.textAlign='center';ctx.fillText(`${integer(ring.accounts)} accts`,cell.x+cell.w/2,cell.y+cell.h-10);}
     ctx.font='500 11px ui-monospace,Menlo,monospace';ctx.fillStyle='#8aa1b4';ctx.textAlign='left';ctx.fillText(`#${ring.rank}`,cell.x+10,cell.y+cell.h-10);
     ctx.fillStyle=ring.rate>=.5?PRES_COLOR.dirty:ring.rate>0?'#e7a3b1':'#5f7a8e';ctx.textAlign='right';ctx.fillText(presPct(ring.rate),cell.x+cell.w-10,cell.y+cell.h-10);
   });
