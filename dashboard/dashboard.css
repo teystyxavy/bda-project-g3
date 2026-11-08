@@ -512,3 +512,5 @@ th{font-weight:700;color:var(--text-strong);background:#15293c;font-size:12.5px;
 .flag-club{background:rgba(255,182,72,.16);color:#ffcf85}
 /* Ring explorer: the account search sits at the right edge of the heading. */
 #network .ring-explorer>.heading>.controls{flex:none;margin-left:auto}
+/* Find account is as wide as the side panel below it (the third column of the ring layout). */
+#network .ring-explorer>.heading>.controls label{width:280px}#network .ring-explorer>.heading>.controls input{width:100%}
