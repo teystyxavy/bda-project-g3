@@ -593,3 +593,18 @@ test('Medium batch cutoff uses batch wording and receiver history preserves zero
   assert.match(h.el('incoming-queue').innerHTML,/Unavailable \/ Unavailable/);
   assert.equal(vm.runInContext('receiverPayments({in_txn_count_1h:null,in_txn_count_24h:-1,in_txn_count_7d:0})',h.context),'Unavailable / Unavailable / 0');
 });
+
+test('Medium selection bounds rows, disables full runs and previews the correct subset',async()=>{
+  const h=await harness();
+  h.el('ingestion-size').value='full';
+  h.el('ingestion-subset').value='HI-Medium';h.el('ingestion-subset').onchange();
+  assert.equal(h.el('ingestion-size').value,'demo');
+  assert.equal(h.el('ingestion-train').disabled,true);
+  assert.equal(h.el('ingestion-rows').max,'1000');
+  h.el('ingestion-preview').onclick();
+  assert.match(h.el('ingestion-preview-output').textContent,/-Subset HI-Medium/);
+  h.el('ingestion-size').value='custom';h.el('ingestion-rows').value='1001';
+  await h.el('ingestion-form').onsubmit({preventDefault(){}});
+  assert.match(h.el('ingestion-message').textContent,/HI-Medium requires 1 to 1,000/);
+  assert.equal(h.calls.some(call=>call.init.method==='POST'),false);
+});

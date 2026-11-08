@@ -1,0 +1,34 @@
+{
+  "lambda_code_sha256": "8cqBPjCJ6h12cT7KmSNrjKrdb/OHrFW1wLKo4+2gT9Q=",
+  "files": [
+    {
+      "file": "index.html",
+      "sha256": "92fe9b9f0e7edecfabde850161dbcdc4f732be58d7e5c040054802367ab096ab"
+    },
+    {
+      "file": "dashboard.js",
+      "sha256": "442b5beaa5b0de03c9ca2200c2cf32fe754076c279f9cce2f1f7f09612e37ff9"
+    }
+  ],
+  "invalidation_id": "IBB7CPS34K061JZJXCJ4WPUUSV",
+  "snapshot_unchanged": true,
+  "live_auth_options_and_validation": true,
+  "public_files_verified": true,
+  "export_asset_prefix": "pipeline/deployments/dashboard-medium-35ab131825a36421c754497c01775cad525323eb45f234235e3affb3b7c5019f/dashboard",
+  "updated_export_jobs": [
+    "is459-g3-ingest-export",
+    "is459-g3-ingest-export-fallback-a8b3b9b43adf",
+    "is459-g3-ingest-export-fallback-f67a4b1a400d",
+    "is459-g3-ingest-export-recovery-20261107"
+  ],
+  "date": "2026-11-08",
+  "scope": "HI-Medium dashboard ingestion, 1\u20131,000 rows; no training or full runs",
+  "validation": {
+    "python": "52 passed",
+    "focused_dashboard": "8 passed",
+    "full_dashboard_suite": "35 passed, 1 unrelated receiver-history assertion failure"
+  },
+  "live_shell_method": "Applied ingestion-only patch to live root assets; retained existing snapshot and other live UI content",
+  "rollback_backups": "output/deploy-medium-controls-20261108 (local only)",
+  "batch_run_started": false
+}

@@ -473,7 +473,12 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
     element('ingestion-signout').hidden=!login;
     element('ingestion-signout').disabled=submitting;
     element('ingestion-fields').disabled=!login || submitting || pending || lastStatus?.status==='RUNNING';
-    const full=element('ingestion-size').value==='full';
+    const medium=element('ingestion-subset').value==='HI-Medium';
+    const fullOption=Array.from(element('ingestion-size').options).find(option=>option.value==='full');
+    if(fullOption) fullOption.disabled=medium;
+    if(medium && element('ingestion-size').value==='full') element('ingestion-size').value='demo';
+    element('ingestion-rows').max=medium?'1000':'5100000';
+    const full=!medium && element('ingestion-size').value==='full';
     element('ingestion-rows-field').hidden=element('ingestion-size').value!=='custom';
     element('ingestion-preview').disabled=!login || submitting || pending;
     element('ingestion-train').disabled=!full;
@@ -725,14 +730,17 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
     const version=element('ingestion-version').value===''?null:Number(element('ingestion-version').value);
     if(rows!==null && (!Number.isInteger(rows)||rows<1||rows>5100000)) throw new Error('Choose a transaction limit from 1 to 5,100,000.');
     if(version!==null && (!Number.isInteger(version)||version<1||version>100000)) throw new Error('Choose a positive whole-number dataset version.');
-    if(element('ingestion-subset').value!=='HI-Small') throw new Error('Cloud ingestion currently supports HI-Small only.');
-    return {subset:'HI-Small',rows,dataset_version:version,refresh:element('ingestion-refresh').checked,
+    const subset=element('ingestion-subset').value;
+    if(!['HI-Small','HI-Medium'].includes(subset)) throw new Error('Cloud ingestion supports HI-Small and HI-Medium only.');
+    if(subset==='HI-Medium' && (rows===null || rows>1000 || element('ingestion-train').checked)) throw new Error('HI-Medium requires 1 to 1,000 rows and does not support training.');
+    return {subset,rows,dataset_version:version,refresh:element('ingestion-refresh').checked,
       rerun:element('ingestion-rerun').checked,train:mode==='full'&&element('ingestion-train').checked};
   }
   element('ingestion-preview').onclick=()=>{
     try {
       const options=selectedRunOptions();
       let command='.\\scripts\\ingestion\\ingest.ps1 -NoWait';
+      if(options.subset!=='HI-Small') command+=` -Subset ${options.subset}`;
       if(options.rows!==null) command+=` -Rows ${options.rows}`;
       if(options.dataset_version!==null) command+=` -DatasetVersion ${options.dataset_version}`;
       for(const [key,flag] of [['refresh','Refresh'],['rerun','Rerun'],['train','Train']]) if(options[key]) command+=` -${flag}`;
@@ -780,6 +788,7 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
     location.assign(config.cognito_domain+'/logout?'+new URLSearchParams({client_id:config.client_id,logout_uri:config.redirect_uri}));
   };
   element('ingestion-form').onsubmit=submit;element('ingestion-size').onchange=updateControls;
+  element('ingestion-subset').onchange=updateControls;
   element('ingestion-refresh-status').onclick=()=>readOnly()?publicPoll():poll();
   element('ingestion-history-refresh').onclick=()=>readOnly()?publicPoll():refreshHistory();
   element('ingestion-results').onclick=async()=>{

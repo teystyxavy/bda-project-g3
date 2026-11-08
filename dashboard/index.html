@@ -38,8 +38,8 @@
 <div id="ingestion-layout" class="ingestion-layout">
 <article id="ingestion-new"><h3>New ingestion</h3><form id="ingestion-form">
 <fieldset id="ingestion-fields" disabled>
-<label>Dataset<select id="ingestion-subset"><option value="HI-Small">HI-Small</option><option disabled>HI-Medium — unavailable</option><option disabled>HI-Large — unavailable</option><option disabled>LI-Small — unavailable</option><option disabled>LI-Medium — unavailable</option><option disabled>LI-Large — unavailable</option></select></label>
-<p class="field-help">Cloud processing currently supports HI-Small. Other subsets need pipeline and model validation.</p>
+<label>Dataset<select id="ingestion-subset"><option value="HI-Small">HI-Small</option><option value="HI-Medium">HI-Medium · up to 1,000 rows</option><option disabled>HI-Large — unavailable</option><option disabled>LI-Small — unavailable</option><option disabled>LI-Medium — unavailable</option><option disabled>LI-Large — unavailable</option></select></label>
+<p class="field-help">Cloud processing supports HI-Small and HI-Medium. HI-Medium is limited to 1,000 transactions with the existing model; full runs and training are unavailable.</p>
 <label>Run size<select id="ingestion-size"><option value="demo">Demo · first 1,000 transactions</option><option value="custom">Custom transaction limit</option><option value="full">Full dataset · about 5.1 million transactions</option></select></label>
 <label id="ingestion-rows-field" hidden>Maximum transactions<input id="ingestion-rows" type="number" min="1" max="5100000" step="1" value="1000" inputmode="numeric"></label>
 <p class="field-help">The demo verifies the pipeline. Use the full dataset for business findings.</p>

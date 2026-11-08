@@ -96,8 +96,9 @@ def clients():
 def options():
     return {'schema_version': 1, 'subsets': [
         {'value': 'HI-Small', 'label': 'HI-Small', 'supported': True},
+        {'value': 'HI-Medium', 'label': 'HI-Medium (up to 1,000 rows)', 'supported': True},
         *[{'value': v, 'label': v + ' (not supported by cloud pipeline)', 'supported': False}
-          for v in ['HI-Medium', 'HI-Large', 'LI-Small', 'LI-Medium', 'LI-Large']]],
+          for v in ['HI-Large', 'LI-Small', 'LI-Medium', 'LI-Large']]],
         'demo_rows': 1000, 'row_bounds': {'minimum': 1, 'maximum': 5100000}, 'poll_seconds': 10,
         'notice': 'New processing can incur AWS charges. Reuse verified inputs by default. '
                   'Training creates a private candidate; it never promotes the model.'}
@@ -110,8 +111,9 @@ def validate_submission(body):
     request_id = body.get('request_id', '')
     if not isinstance(request_id, str) or not re.fullmatch('[0-9a-f]{32}', request_id):
         raise ApiError(400, 'A valid submission ID is required.')
-    if body.get('subset') != 'HI-Small':
-        raise ApiError(400, 'The cloud pipeline currently supports HI-Small only.')
+    subset = body.get('subset')
+    if subset not in ('HI-Small', 'HI-Medium'):
+        raise ApiError(400, 'The cloud pipeline supports HI-Small and HI-Medium only.')
     rows = body.get('rows')
     if rows is not None and (type(rows) is not int or not 1 <= rows <= 5100000):
         raise ApiError(400, 'Row limit must be an integer from 1 to 5,100,000, or choose the full dataset.')
@@ -125,7 +127,9 @@ def validate_submission(body):
         flags[flag] = body.get(flag, False)
     if flags['train'] and rows is not None:
         raise ApiError(400, 'Candidate training requires the full dataset.')
-    return request_id, {'rows': rows, 'dataset_version': version, **flags}
+    if subset == 'HI-Medium' and (rows is None or rows > 1000 or flags['train']):
+        raise ApiError(400, 'HI-Medium requires 1 to 1,000 rows and does not support training.')
+    return request_id, {**({'subset': subset} if subset != 'HI-Small' else {}), 'rows': rows, 'dataset_version': version, **flags}
 
 
 def describe(states, machine, run_id):
@@ -279,7 +283,7 @@ def run_status(states, machine, batch, subject, run_id, dashboard_url):
     result = {'run_id': run_id, 'status': parent['status'], 'started_at': iso(parent['startDate']),
               'finished_at': iso(stop), 'checked_at': iso(datetime.now(timezone.utc)),
               'elapsed_seconds': max(0, int(((stop or datetime.now(timezone.utc)) - parent['startDate']).total_seconds())),
-              'stages': stages, 'selection': {'subset': 'HI-Small', **{k: event.get(k) for k in
+              'stages': stages, 'selection': {'subset': event.get('subset', 'HI-Small'), **{k: event.get(k) for k in
                   ['rows', 'dataset_version', 'train', 'refresh', 'rerun']}},
               'cache_hit': False}
     if parent['status'] == 'SUCCEEDED':
