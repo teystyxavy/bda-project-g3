@@ -1708,7 +1708,7 @@ function selectRing(id,account=null) {
     button.setAttribute('aria-current',String(button.dataset.ring===id));
   });
   element('ring-title').textContent=`Ring #${row.rank} · lead account ${leadAccount(id)}`;
-  element('ring-summary').textContent=row.hubs?`${plural(row.hubs,'hub')} collecting from ${plural(senders,'sender')} and paying ${plural(receivers,'receiver')}${row.loops?`, plus ${plural(row.loops,'timed loop')}`:''}. Treat it as one case.`
+  element('ring-summary').textContent=row.hubs?`${plural(row.hubs,'hub')} collecting from ${plural(senders,'sender')} and paying ${plural(receivers,'receiver')}${row.loops?`, plus ${plural(row.loops,'timed loop')}`:''}. Treat it as one case.${presClub(graph)?' Closed club: every hub pays every other hub. Rule out payroll or group payments before acting.':''}`
     :`${plural(row.loops,'timed loop')} linking ${plural(row.accounts,'account')}: money comes back to where it started within seven days. Treat it as one case.`;
   element('ring-kpis').innerHTML=[[integer(row.accounts),graph.truncated?`accounts (${graph.shown_accounts} drawn)`:'accounts'],[integer(row.txns),'payments'],[dollars(row.usd),'USD'],
     [dateRange(row.first_seen,row.last_seen),'active'],[share(row.laundering_rate),'touch laundering (check)']].map(([value,label])=>`<span><strong>${escapeText(value)}</strong> ${escapeText(label)}</span>`).join('');
@@ -2301,6 +2301,15 @@ function showAccount(id) {
 // touches_laundering on each drawn ring graph). Labels are shown only after a
 // ring is found and never change detection or ranking.
 const PRES_STEPS=7, PRES_SCENE_START=[0,3,4,6];
+// Above PRES_LIVE_DOTS highlighted dots, the haystack stops drawing one glow per dot per frame and paints a cached layer.
+// Above PRES_MAX_SWEEP fan-in/fan-out candidates, step 1 uses the ring (headline) threshold so the sweep stays readable.
+const PRES_LIVE_DOTS=6000, PRES_MAX_SWEEP=20000;
+// A closed club: three or more hubs that nearly all pay one another. Structure only; labels are never read.
+function presClub(graph) {
+  const hubs=new Set(graph.nodes.filter(node=>node.role==='hub').map(node=>node.id));if(hubs.size<3) return false;
+  const pairs=new Set(graph.links.filter(link=>link.source!==link.target&&hubs.has(link.source)&&hubs.has(link.target)).map(link=>`${link.source}>${link.target}`));
+  return pairs.size>=.9*hubs.size*(hubs.size-1);
+}
 const PRES_COLOR={...RING_GLOW,dirty:'#ff2e55',clean:'#3d5468'};
 const PRES_ROLE_NAME={hub:'Hub',loop:'Loop account',sender:'Sender',receiver:'Receiver',both:'Sends and receives'};
 const PRES={open:false,step:0,data:null,ring:null,raf:null,last:0,W:0,H:0,DPR:1,hay:null,clusters:[],layouts:{},
@@ -2319,15 +2328,21 @@ function presenterData(net) {
     const whole=net.graphs[row.ring_id], graph=focusGraph(whole), roles=flowRoles(graph), index=new Map(graph.nodes.map((node,i)=>[node.id,i]));
     const linkAt=new Map(graph.links.map((link,i)=>[link,i])), remap=whole.links.map(link=>linkAt.get(link)??-1);
     const pays=graph===whole?whole.payments:whole.payments.filter(pay=>remap[pay[0]]>=0).map(pay=>[remap[pay[0]],...pay.slice(1)]);
-    return {rank:row.rank,id:row.ring_id,hubs:row.hubs,loops:row.loops,usd:row.usd,rate:row.laundering_rate??0,graph,
+    return {rank:row.rank,id:row.ring_id,hubs:row.hubs,loops:row.loops,usd:row.usd,rate:row.laundering_rate??0,graph,club:presClub(whole),
       start:Date.parse(String(whole.payment_start)+'Z'),total:whole.payments_total??whole.payments.length,
       focus:graph!==whole,accounts:whole.total_accounts??whole.nodes.length,
       nodes:graph.nodes.map(node=>[node.id,roles[node.id],node.touches_laundering?1:0]),
       links:graph.links.map(link=>[index.get(link.source),index.get(link.target),link.txns,link.usd]),
       pays,tri:(whole.loops||[]).map(loop=>loop.map(id=>index.get(id))).filter(loop=>loop.every(i=>i!=null))};
   });
-  const low=net.thresholds.reduce((a,b)=>a.threshold<=b.threshold?a:b), head=net.thresholds.find(row=>row.headline)||net.thresholds[0];
-  return {rings,totals:net.totals,summary:net.rings,low,head,candidates:low.hubs.accounts+low.high_volume.accounts,
+  const head=net.thresholds.find(row=>row.headline)||net.thresholds[0], count=row=>row.hubs.accounts+row.high_volume.accounts;
+  let low=net.thresholds.reduce((a,b)=>a.threshold<=b.threshold?a:b);if(count(low)>PRES_MAX_SWEEP&&count(head)<count(low)) low=head;
+  // Accounts-weighted laundering share of the drawn closed-club rings versus the other drawn rings (checked after detection).
+  const share=list=>{const accounts=list.reduce((sum,ring)=>sum+ring.accounts,0);return {rings:list.length,accounts,rate:accounts?list.reduce((sum,ring)=>sum+ring.rate*ring.accounts,0)/accounts:null};};
+  const clubs=rings.some(ring=>ring.club)?{club:share(rings.filter(ring=>ring.club)),open:share(rings.filter(ring=>!ring.club))}:null;
+  // The replay leads with the top-ranked ring, unless that is a closed club: then with the first ring that is not.
+  const lead=rings[0]?.club?rings.find(ring=>!ring.club)||rings[0]:rings[0];
+  return {rings,lead,clubs,totals:net.totals,summary:net.rings,low,head,candidates:count(low),
     sizes:net.ring_sizes||net.ring_list.map(row=>row.accounts),loopDays:net.parameters.loop_window_days,headline:net.parameters.headline_threshold};
 }
 
@@ -2395,15 +2410,24 @@ function presRevealP(i) {const v=PRES.reveal;if(!v.on) return 0;return presClamp
 // Story text for the current step (also used by tests).
 function presStoryHTML(step=PRES.step,data=PRES.data,ring=PRES.ring,revealed=0) {
   const t=data.totals, s=data.summary, n=ring.nodes.length, dirty=ring.nodes.filter(node=>node[2]).length;
+  const skipped=ring===data.lead&&data.lead!==data.rings[0]?data.rings.indexOf(ring):0, times=x=>`${x.toFixed(x<10?1:0)}×`;
   switch(step) {
-    case 0:return `<div class="pres-eyebrow">This release · ${integer(t.rows)} payments</div><h2>${integer(t.accounts)} accounts. A few hundred of them are working together.</h2><p>Every dot is one real account. Where it sits means nothing yet. The job: find the ones that move money as a team.</p>`;
+    case 0:return `<div class="pres-eyebrow">This release · ${integer(t.rows)} payments</div><h2>${integer(t.accounts)} accounts. A small share of them are working together.</h2><p>Every dot is one real account. Where it sits means nothing yet. The job: find the ones that move money as a team.</p>`;
     case 1:return `<div class="pres-eyebrow">Step 1 · fan-in and fan-out</div><h2><em>${integer(data.candidates)}</em> accounts collect from ${data.low.threshold}+ senders and pay ${data.low.threshold}+ receivers.</h2><p>Counted over ${integer(t.links)} account-to-account links. Pooling money from many and passing it on to many is what a mule does.</p>`;
     case 2:return `<div class="pres-eyebrow">Step 2 · hubs, loops, rings</div><h2>${integer(s.accounts)} accounts fall into <em>${integer(s.rings)} rings</em>.</h2><p>Hubs with ${data.headline}+ senders and ${data.headline}+ receivers, timed loops (A → B → C → A within ${data.loopDays} days), and the accounts they deal with. Each cluster is one case to review. Ring #1 sits in the middle.</p>`;
-    case 3:return `<div class="pres-eyebrow">Ring #${ring.rank} · lead account ${escapeText(ring.nodes[0]?.[0]||ring.id)}</div><h2>${ring.hubs?`${ring.hubs===1?'One hub':`${ring.hubs} hubs`}, ${integer((ring.accounts??n)-ring.hubs)} other accounts, <em>${presUsd(ring.usd)}</em> moved.`:`${integer(n)} accounts passing money in <em>${plural(ring.loops,'timed loop')}</em>.`}</h2><p>${integer(ring.pays.length)}${ring.total>ring.pays.length?` of ${integer(ring.total)}`:''} real payments, replayed in the order they happened.${ring.focus?` Shown in focus: ${integer(n)} of ${integer(ring.accounts)} accounts, every hub and loop account, the accounts shared between hubs and the ones that moved the most money.`:''} ${ring.hubs===1?'Senders sit on the left and receivers on the right. Watch the hub collect, then pay out.':ring.hubs?'Each hub is its own star: accounts only it deals with fan out around it, shared accounts sit in the middle.':`Each purple flash is a loop closing: money leaves an account and comes back within ${data.loopDays} days.`}</p>`;
+    case 3:return `<div class="pres-eyebrow">Ring #${ring.rank} · ${skipped?'the top-ranked open ring':`lead account ${escapeText(ring.nodes[0]?.[0]||ring.id)}`}</div><h2>${ring.hubs?`${ring.hubs===1?'One hub':`${ring.hubs} hubs`}, ${integer((ring.accounts??n)-ring.hubs)} other accounts, <em>${presUsd(ring.usd)}</em> moved.`:`${integer(n)} accounts passing money in <em>${plural(ring.loops,'timed loop')}</em>.`}</h2><p>${integer(ring.pays.length)}${ring.total>ring.pays.length?` of ${integer(ring.total)}`:''} real payments, replayed in the order they happened.${ring.focus?` Shown in focus: ${integer(n)} of ${integer(ring.accounts)} accounts, every hub and loop account, the accounts shared between hubs and the ones that moved the most money.`:''} ${ring.hubs===1?'Senders sit on the left and receivers on the right. Watch the hub collect, then pay out.':ring.hubs?'Each hub is its own star: accounts only it deals with fan out around it, shared accounts sit in the middle.':`Each purple flash is a loop closing: money leaves an account and comes back within ${data.loopDays} days.`}${skipped?` The ${plural(skipped,'ring')} ranked above it ${skipped===1?'is a closed club':'are closed clubs'}: every hub pays every other hub. The case list at the end shows them.`:ring.club?' Every hub here pays every other hub: a closed club.':''}</p>`;
     case 4:return dirty?`<div class="pres-eyebrow">Ring #${ring.rank} · ground truth</div><h2><span class="pres-dirty" id="pres-count">${revealed}</span> of ${integer(n)}${ring.focus?' shown':''} accounts touched a laundering payment.</h2><p>The detector never saw these labels. They come with the dataset and are only shown after the ring was found.</p>`
-      :`<div class="pres-eyebrow">Ring #${ring.rank} · ground truth</div><h2><span id="pres-count">${revealed}</span> of ${integer(n)}${ring.focus?' shown':''} accounts touched a laundering payment.</h2><p>Dense structure is not proof. Payroll, payment processors and escrow accounts look like this too, so an analyst still makes the call.</p>`;
-    case 5:return `<div class="pres-eyebrow">Does it hold up?</div><h2>${presPct(t.laundering_rate)} of all accounts touch laundering. Inside the rings it's <span class="pres-dirty">${presPct(s.laundering_rate)}</span>.</h2><p>That is ${s.lift==null?'well above':`${s.lift.toFixed(0)}×`} the base rate, found without using a single label.</p>`;
-    default:return `<div class="pres-eyebrow">The case list</div><h2>The top ${integer(data.rings.length)} rings, ranked.</h2><p>Red accounts touched a laundering payment. Click any ring to replay it.</p>`;
+      :`<div class="pres-eyebrow">Ring #${ring.rank} · ground truth</div><h2><span id="pres-count">${revealed}</span> of ${integer(n)}${ring.focus?' shown':''} accounts touched a laundering payment.</h2><p>${ring.club?'Every hub pays every other hub, a payment or two each, spread over months: a closed club rather than a funnel. ':''}Dense structure is not proof. Payroll, payment processors and escrow accounts look like this too, so an analyst still makes the call.</p>`;
+    case 5: {
+      const h=data.head.hubs, hubLift=t.laundering_rate?h.laundering_rate/t.laundering_rate:null;
+      return `<div class="pres-eyebrow">Does it hold up?</div><h2>${presPct(t.laundering_rate)} of all accounts touch laundering. Inside the rings it's <span class="pres-dirty">${presPct(s.laundering_rate)}</span>; among hubs, <span class="pres-dirty">${presPct(h.laundering_rate)}</span>.</h2><p>That is ${s.lift==null?'well above':times(s.lift)} and ${hubLift==null?'far above':times(hubLift)} the base rate, found without using a single label.</p>`;
+    }
+    default:{
+      const c=data.clubs;
+      if(!c) return `<div class="pres-eyebrow">The case list</div><h2>The top ${integer(data.rings.length)} rings, ranked.</h2><p>Red accounts touched a laundering payment. Click any ring to replay it.</p>`;
+      const pct=x=>`${Math.round(x*100)}%`;
+      return `<div class="pres-eyebrow">The top ${integer(data.rings.length)} rings · two shapes</div><h2>Open rings: <span class="pres-dirty">${pct(c.open.rate)}</span> laundering. Closed clubs: ${pct(c.club.rate)}.</h2><p>Share of accounts that touched a laundering payment. Faded tiles are the ${integer(c.club.rings)} closed clubs, where every hub pays every other hub. We spotted this split only after checking the labels, so it is the next rule to test, not a result. Click any ring to replay it.</p>`;
+    }
   }
 }
 
@@ -2412,11 +2436,12 @@ function openPresenter() {
   PRES.data=presenterData(net);PRES.layouts={};PRES.hay=null;PRES.open=true;PRES.returnFocus=document.activeElement;
   const pick=element('pres-ring');selectOptions('pres-ring',PRES.data.rings.map(ring=>String(ring.rank)),rank=>{const ring=PRES.data.rings.find(item=>String(item.rank)===rank);return `#${ring.rank} · ${integer(ring.accounts??ring.nodes.length)} accounts · ${ring.hubs?plural(ring.hubs,'hub'):plural(ring.loops,'loop')} · ${presUsd(ring.usd)}`;});
   pick.onchange=()=>presChooseRing(+pick.value);
-  const loopRing=PRES.data.rings.find(ring=>ring.loops&&!ring.hubs), clean=PRES.data.rings.find(ring=>ring.rate===0);
-  element('pres-quick').innerHTML=[[PRES.data.rings[0],'biggest'],[loopRing,'loops'],[clean,'clean']].filter(([ring])=>ring)
+  const {rings,lead}=PRES.data, loopRing=rings.find(ring=>ring.loops&&!ring.hubs), clean=rings.find(ring=>ring.rate===0);
+  const quick=lead!==rings[0]?[[lead,'top open'],[rings[0],'top club'],[loopRing,'loops']]:[[rings[0],'biggest'],[loopRing,'loops'],[clean,'clean']];
+  element('pres-quick').innerHTML=quick.filter(([ring],i,all)=>ring&&all.findIndex(([other])=>other===ring)===i)
     .map(([ring,label])=>`<button type="button" data-rank="${ring.rank}">#${ring.rank} ${label}</button>`).join('');
   element('pres-quick').onclick=event=>{const button=event.target.closest('[data-rank]');if(button) presChooseRing(+button.dataset.rank);};
-  presSetRing(PRES.data.rings[0]);pick.value=String(PRES.data.rings[0].rank);
+  presSetRing(lead);pick.value=String(lead.rank);
   element('presenter').hidden=false;document.body?.classList?.add('pres-lock');
   presResize();presGo(0,true);
   element('pres-next').focus?.();
@@ -2511,7 +2536,11 @@ function presBuildHaystack() {
     const [x,y]=xy(i), X=x*DPR|0, Y=y*DPR|0;if(X<0||Y<0||X>=w||Y>=h) continue;
     const k=(Y*w+X)*4, b=P.pb[i];pixels[k]=Math.min(255,pixels[k]+b*.55);pixels[k+1]=Math.min(255,pixels[k+1]+b*.8);pixels[k+2]=Math.min(255,pixels[k+2]+b);pixels[k+3]=255;
   }
-  hc.putImageData(image,0,0);PRES.hay=hay;
+  hc.putImageData(image,0,0);PRES.hay=hay;PRES.gatherLayer=null;
+  // Many candidates: paint them once; each frame then draws one image instead of one glow per account.
+  PRES.candLayer=P.cand.length>PRES_LIVE_DOTS?presLayer(lc=>{lc.globalCompositeOperation='lighter';const glow=presGlow(PRES_COLOR.receiver);
+    P.cand.forEach(i=>{const [x,y]=xy(i);lc.drawImage(glow,x-5,y-5,10,10);});lc.globalCompositeOperation='source-over';lc.fillStyle=PRES_COLOR.receiver;
+    const dots=new Path2D();P.cand.forEach(i=>{const [x,y]=xy(i);dots.rect(x-1.1,y-1.1,2.2,2.2);});lc.fill(dots);}):null;
   // Rings as a sunflower in rank order, ring #1 in the centre.
   const sizes=data.sizes, golden=Math.PI*(3-Math.sqrt(5)), step=Math.min(d.ry*.96/Math.sqrt(sizes.length),d.rx*.96/Math.sqrt(sizes.length)/1.15), clusters=[];
   let at=0;
@@ -2520,6 +2549,19 @@ function presBuildHaystack() {
     for(let j=0;j<size&&at<P.ringDots.length;j++) {const q=Math.sqrt((j+.5)/size)*spread;clusters[at++]=[cx+Math.cos(j*golden)*q,cy+Math.sin(j*golden)*q];}
   });
   PRES.clusters=clusters;PRES.clusterCenter=[d.cx,d.cy];
+}
+// An offscreen canvas the size of the stage, drawn in CSS pixels.
+function presLayer(draw) {
+  const {W,H,DPR}=PRES, layer=document.createElement('canvas');layer.width=Math.round(W*DPR);layer.height=Math.round(H*DPR);
+  const lc=layer.getContext('2d');lc.setTransform(DPR,0,0,DPR,0,0);draw(lc);return layer;
+}
+// Many ring accounts: one path per colour, with glows on ring #1 and an even sample of about 1,500 others.
+function presRingDots(ctx,count,first,at) {
+  const stride=Math.ceil(count/1500), hub=new Path2D(), rest=new Path2D(), glowHub=presGlow(PRES_COLOR.hub), glowRest=presGlow('#9fd6ff');
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  for(let k=0;k<count;k++) {const p=at(k);if(!p) continue;const [x,y]=p;(k<first?hub:rest).rect(x-1.25,y-1.25,2.5,2.5);
+    if(k<first||k%stride===0) ctx.drawImage(k<first?glowHub:glowRest,x-4.5,y-4.5,9,9);}
+  ctx.restore();ctx.fillStyle='#9fd6ff';ctx.fill(rest);ctx.fillStyle=PRES_COLOR.hub;ctx.fill(hub);
 }
 const presSprites=new Map();
 function presGlow(color) {
@@ -2567,11 +2609,16 @@ function presDrawHaystack(ctx,t) {
   if(A.zoom>0) {const z=1+presEase(A.zoom)*14, [cx,cy]=PRES.clusterCenter;ctx.translate(cx,cy);ctx.scale(z,z);ctx.translate(-cx,-cy);}
   ctx.globalAlpha=alpha*A.bg;ctx.drawImage(PRES.hay,0,0,PRES.W,PRES.H);ctx.globalAlpha=alpha;
   const P=PRES.points, xy=PRES.hayXY;
-  if(A.cand>.01) P.cand.forEach((i,k)=>{const [x,y]=xy(i);presDot(ctx,x,y,1.3+A.cand*.9,PRES_COLOR.receiver,A.cand*(5+2*Math.sin(t/400+k)));});
+  if(A.cand>.01) {
+    if(PRES.candLayer) {ctx.globalAlpha=alpha*A.cand*(.8+.2*Math.sin(t/400));ctx.drawImage(PRES.candLayer,0,0,PRES.W,PRES.H);ctx.globalAlpha=alpha;}
+    else P.cand.forEach((i,k)=>{const [x,y]=xy(i);presDot(ctx,x,y,1.3+A.cand*.9,PRES_COLOR.receiver,A.cand*(5+2*Math.sin(t/400+k)));});
+  }
   if(A.gather>.01) {
-    const g=presEase(A.gather), first=PRES.data.sizes[0]||0;
-    P.ringDots.forEach((i,k)=>{const target=PRES.clusters[k];if(!target) return;const [x0,y0]=xy(i), u=presEase(presClamp(g*1.6-(k%97)/97*.6));
-      presDot(ctx,x0+(target[0]-x0)*u,y0+(target[1]-y0)*u,1.5,k<first?PRES_COLOR.hub:'#9fd6ff',4.5);});
+    const g=presEase(A.gather), first=PRES.data.sizes[0]||0, count=P.ringDots.length;
+    const at=k=>{const target=PRES.clusters[k];if(!target) return null;const [x0,y0]=xy(P.ringDots[k]), u=presEase(presClamp(g*1.6-(k%97)/97*.6));return [x0+(target[0]-x0)*u,y0+(target[1]-y0)*u];};
+    if(count<=PRES_LIVE_DOTS) P.ringDots.forEach((i,k)=>{const p=at(k);if(p) presDot(ctx,p[0],p[1],1.5,k<first?PRES_COLOR.hub:'#9fd6ff',4.5);});
+    else if(A.gather<1) presRingDots(ctx,count,first,at);
+    else {PRES.gatherLayer||=presLayer(lc=>presRingDots(lc,count,first,k=>PRES.clusters[k]||null));ctx.drawImage(PRES.gatherLayer,0,0,PRES.W,PRES.H);}
   }
   ctx.restore();
 }
@@ -2607,7 +2654,9 @@ function presDrawGraph(ctx,t,alpha) {
   ctx.restore();
 }
 function presWallLayout() {
-  const {W,H}=PRES, cols=W<820?5:10, rows=Math.ceil(PRES.data.rings.length/cols), top=150, cw=(W-40)/cols, ch=(H-top-20)/rows;
+  // The grid starts below the story text, so a longer case-list caption never sits on the first row.
+  const {W,H}=PRES, cols=W<820?5:10, rows=Math.ceil(PRES.data.rings.length/cols), story=element('pres-story')?.getBoundingClientRect?.(), stage=element('pres-canvas')?.getBoundingClientRect?.();
+  const top=presClamp(story&&stage&&story.height?story.bottom-stage.top+14:150,150,H*.45), cw=(W-40)/cols, ch=(H-top-20)/rows;
   return PRES.data.rings.map((ring,k)=>({ring,x:20+(k%cols)*cw,y:top+Math.floor(k/cols)*ch,w:cw,h:ch}));
 }
 function presDrawWall(ctx) {
@@ -2615,9 +2664,10 @@ function presDrawWall(ctx) {
   PRES.wallCells=presWallLayout();const now=performance.now();ctx.save();
   PRES.wallCells.forEach((cell,k)=>{
     const a=PRES.anim.wall*presClamp((now-PRES.wallAt-k*22)/350);if(a<=0) return;
-    const ring=cell.ring, hover=k===PRES.wallHover;ctx.globalAlpha=a;
-    ctx.fillStyle=hover?'rgba(63,208,184,.08)':'rgba(13,24,36,.55)';ctx.strokeStyle=hover?'rgba(63,208,184,.7)':'rgba(31,51,70,.8)';ctx.lineWidth=1;
-    ctx.beginPath();ctx.roundRect?ctx.roundRect(cell.x+3,cell.y+3,cell.w-6,cell.h-6,8):ctx.rect(cell.x+3,cell.y+3,cell.w-6,cell.h-6);ctx.fill();ctx.stroke();
+    const ring=cell.ring, hover=k===PRES.wallHover;ctx.globalAlpha=a*(ring.club&&!hover?.4:1);
+    ctx.fillStyle=hover?'rgba(63,208,184,.08)':'rgba(13,24,36,.55)';ctx.strokeStyle=hover?'rgba(63,208,184,.7)':'rgba(31,51,70,.8)';ctx.lineWidth=1;ctx.setLineDash(ring.club?[4,3]:[]);
+    ctx.beginPath();ctx.roundRect?ctx.roundRect(cell.x+3,cell.y+3,cell.w-6,cell.h-6,8):ctx.rect(cell.x+3,cell.y+3,cell.w-6,cell.h-6);ctx.fill();ctx.stroke();ctx.setLineDash([]);
+    if(ring.club) {ctx.font='500 10px ui-monospace,Menlo,monospace';ctx.fillStyle='#8aa1b4';ctx.textAlign='right';ctx.fillText('club',cell.x+cell.w-10,cell.y+18);}
     const P=presFit(presLayout(ring),{x:cell.x+10,y:cell.y+10,w:cell.w-20,h:cell.h-32},1.2).pts;
     // Big rings: quieter links and smaller counterparties, so the hubs and loops carry the glyph.
     ctx.lineWidth=.6;ctx.strokeStyle=ring.focus?'rgba(127,157,181,.14)':'rgba(127,157,181,.28)';
@@ -2748,9 +2798,11 @@ function bq1PresenterData(snap) {
   queue.forEach(row=>{row.ringRank=row.ring?ranks.get(row.ring)??null:null;});
   const rulesQueue=scope.rules.queue.map(record).filter(Boolean).map(row=>({...row,ring:ringFor(row)}));
   const first=scope.model.metrics_by_k[ks[0]];
+  // No top alert touches a drawn ring (e.g. a release whose drawn rings miss the queue): end on the plain queue instead of an empty cross-check.
+  const linked=ringOf.size&&queue.slice(0,Number(ks.at(-1)||0)).some(row=>row.ring);
   return {ks,model:pick(scope.model),rules:pick(scope.rules),hist:scope.model.histogram.map(bin=>Number(bin.transactions)||0),
     rows:first.rows,positives:first.positives,queue,rulesQueue,histories:aml.histories||{},ringOf,
-    rings:ringOf.size?{accounts:ringOf.size,drawn:Object.keys(net.graphs).length,population:net.totals?.accounts??null,graphs:net.graphs,ranks}:null,
+    rings:linked?{accounts:ringOf.size,drawn:Object.keys(net.graphs).length,population:net.totals?.accounts??null,graphs:net.graphs,ranks}:null,
     period:evaluationPeriodLabel('test')};
 }
 
