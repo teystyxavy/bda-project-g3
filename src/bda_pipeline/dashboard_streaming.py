@@ -273,6 +273,15 @@ def progress(times, processed, now):
     return points
 
 
+def cohort_text(events, receivers):
+    """Describe the replay, naming the dataset its transaction IDs ('<subset>:<source row>') come from."""
+    dataset = next(iter(events)).split(':')[0] if events else 'unknown'
+    text = f'Replay of complete sender histories from the verified {dataset} batch'
+    if receivers:
+        text += ', with each receiver’s other incoming payments preloaded from the same data'
+    return text + '; synthetic data'
+
+
 def build_snapshot(items, run_id, events, senders, *, now, consumer_enabled, alarm, committed, model_sha256):
     """``committed`` maps audit object names to their S3 write times (see ``commit_times``)."""
     if model_sha256 not in MODEL_FEATURES:
@@ -300,9 +309,7 @@ def build_snapshot(items, run_id, events, senders, *, now, consumer_enabled, ala
     points = progress(times, len(rows), now)
     return {'schema_version': SCHEMA_VERSION, 'run_id': run_id, 'generated_at': now, 'state': state,
             'reconciled': reconciled, 'consumer_enabled': consumer_enabled,
-            'cohort': ('Replay of complete sender histories from the verified HI-Small batch, with each receiver’s '
-                       'other incoming payments preloaded from the same data; synthetic data') if receivers else
-                      'Replay of complete sender histories from the verified HI-Small batch; synthetic data',
+            'cohort': cohort_text(events, receivers),
             'expected': len(events), 'processed': len(rows),
             'senders': {'expected': len(senders), 'started': len(versions),
                         'complete': sum(versions.get(key) == final for key, final in senders.items())},

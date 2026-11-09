@@ -291,6 +291,14 @@ def test_recorded_delta1_parity_matches_the_committed_evidence():
     assert evidence['reconciliation']['max_absolute_score_difference'] == recorded['max_absolute_score_difference']
 
 
+def test_cohort_names_the_dataset_the_replay_came_from():
+    assert publisher.cohort_text({'HI-Medium:7': {}}, {'receiver': 1}) == (
+        'Replay of complete sender histories from the verified HI-Medium batch, with each receiver’s '
+        'other incoming payments preloaded from the same data; synthetic data')
+    assert publisher.cohort_text({'HI-Small:1': {}}, {}) == (
+        'Replay of complete sender histories from the verified HI-Small batch; synthetic data')
+
+
 def test_waiting_paused_and_failed_states(aws):
     assert published(aws)[0]['state'] == 'waiting'
     consume(aws, aws.events[:2])
