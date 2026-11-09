@@ -3,7 +3,7 @@
 **Later revision:** the launcher now defaults to a dedicated AWS acquisition Lambda
 and wrapper workflow. These nine additions are deployed; smoke and full runs passed
 reconciliation/publication, recorded in [deployment evidence](../evidence/cloud-ingestion-deployment-result-20261006.json).
-See [review](../archive/reviews/cloud-ingestion-review.md). This document describes the completed
+See review (archived). This document describes the completed
 33-resource predecessor. Use `-LocalAcquisition` for that currently deployed flow.
 
 ## Requested outcome
@@ -17,7 +17,7 @@ verified inputs, and runs the batch pipeline through a refreshed dashboard:
 
 This command is **deployed and verified through a 1,000-row AWS release**.
 The full 5,078,345-row run with SageMaker training passed and published.
-See the [implementation review](../archive/reviews/ingestion-implementation-review-20261006.md) for
+See the implementation review (archived) for
 the exact 33 additions and the [runbook](../runbooks/ingestion-runbook.md) for working commands.
 Kaggle and FX acquisition
 run locally; after upload and acceptance, AWS completes processing independently
@@ -91,7 +91,7 @@ Existing batch, hosting and streaming stacks retain their separate state.
 
 State and the saved SageMaker plan remain outside OneDrive under
 `%LOCALAPPDATA%/IS459-G3/terraform-sagemaker/`. See the
-[SageMaker review](../archive/reviews/sagemaker-implementation-review-20261006.md) and
+SageMaker review (archived) and
 [runbook](../../sagemaker/README.md) for the prepared request and deployment commands.
 
 After authorized deployment: push the tested image, verify its ECR digest and

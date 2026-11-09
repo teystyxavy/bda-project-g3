@@ -1,5 +1,14 @@
 # HI-Large export fallback, 8 November 2026
 
+> **Outcome:** the lean export `jr_d84e1e93` on
+> `is459-g3-ingest-export-fallback-a8b3b9b43adf` succeeded at 21:22 SGT (1h34m,
+> about USD 11) and was published at 21:33. The original Step Functions run then
+> finished `SUCCEEDED` through a resume execution, and the improved export became the
+> production export job at 22:49. See the [HI-Large runbook](hi-large-delta1.md#outcome-8-november-2026).
+> The sections below are the working log from the day, newest first. The controllers
+> and watchers it describes are no longer needed, and the fallback Glue jobs and roles
+> it created are still in AWS outside Terraform.
+
 ## Speed improvements and handover, 13:07 SGT
 
 The speed-aware controller in `output/speed-hardened-export-20261108/`

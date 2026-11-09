@@ -1,5 +1,31 @@
 # Big Data Pipeline Plan — IBM AML Transactions
 
+> **Current status, 9 November 2026.** This plan began as the October design and
+> keeps its dated milestone notes below. What is true now:
+>
+> - **BQ2 is mule networks** (hubs, three-account loops, back-and-forth pairs and
+>   rings), not treasury corridors. The team replaced it on 25 Oct and the Glue
+>   network job went live on 7 Nov. See [BQ2 mule networks](runbooks/bq2-mule-networks.md).
+>   The original treasury BQ2 text in §1 is kept for the record.
+> - **Model:** XGBoost `hist-depth5-delta1` (weights `0170bef6…`), promoted 7 Nov after
+>   training on an HI-Large date subset. Runs that don't train read its windows: train
+>   1–10 Sep, validation 11–14 Sep, test from 15 Sep 2022. Under those windows an
+>   HI-Small run has almost no validation rows (982), so its metrics are not meaningful.
+> - **Datasets:** HI-Small, HI-Medium (31,898,238 rows) and HI-Large (179,702,229 rows)
+>   have all run on AWS. HI-Large is the data on the live dashboard; see the
+>   [HI-Large runbook](runbooks/hi-large-delta1.md).
+> - **Batch:** `is459-g3-cloud-ingest` (acquire, result-cache check) starts
+>   `is459-g3-ingest` (curate → baseline / score / network in parallel → export → publish).
+>   The stage cache is off above 50M rows; the whole-result cache still works. The
+>   export job runs the improved lean export since 8 Nov.
+> - **Streaming** is parked (no Kinesis shard). The delta1 replay of 7 Nov (984 events,
+>   all 15 features exact) is shown on the dashboard's **Incoming AML** tab.
+> - **Dashboard:** BQ1, BQ2, Incoming AML and Ingestion tabs. Since 9 Nov the Ingestion
+>   tab can run HI-Large cache-only (returns the published result, no Glue).
+>
+> Live resources, drift and open items: [deployment status](aws-deployment-status.md).
+> Current diagram: [`docs/is459-g3-aml-pipeline-aws.drawio`](../docs/is459-g3-aml-pipeline-aws.drawio).
+
 **1 November AWS cleanup:** the predecessor standalone scoring/orchestration
 stacks were retired through Terraform; the current ingestion stack owns these
 functions. Failed runs and obsolete deployment objects were removed (4.54 GB),
@@ -68,13 +94,13 @@ Lambda container and a Standard Step Functions wrapper before the verified batch
 The nine-resource addition is deployed; smoke and full source-to-dashboard runs
 passed reconciliation and public hashes. Full acquisition took 53 seconds and
 the complete run took about 25 minutes; see [deployment evidence](evidence/cloud-ingestion-deployment-result-20261006.json)
-and [review](archive/reviews/cloud-ingestion-review.md). The previous verified path remains available with
+and review (archived). The previous verified path remains available with
 `-LocalAcquisition`; its recorded results remain valid.
 
 Implementation update, 6 October 2026: command-driven Kaggle/FX acquisition,
 per-run cloud orchestration, verification/publication and optional SageMaker candidate
 training are implemented and their 33 Terraform additions are deployed.
-Both the 1,000-row AWS smoke and full 5,078,345-row training/publication run succeeded. See [the current review](archive/reviews/ingestion-implementation-review-20261006.md)
+Both the 1,000-row AWS smoke and full 5,078,345-row training/publication run succeeded. See the current review (archived)
 and [runbook](runbooks/ingestion-runbook.md); earlier proposed architecture/cost discussion
 below is historical planning and does not establish live deployment success.
 
@@ -97,9 +123,27 @@ on false positives.
 
 **Method shape:** per-transaction, supervised/rule-based classification, near-real-time.
 
-## frrom the discussion: use the score to rank the laundering attempts in order of priority.
+From the team discussion: use the score to **rank** transactions so investigators
+review the likeliest laundering first. The dashboard shows a ranked review queue
+rather than a yes/no flag.
 
-### BQ2 — Where is our transaction volume concentrated, and are we too dependent on a few banks or currencies? (Treasury / Risk Management)
+### BQ2 (current, from 25 Oct 2026) — Which accounts act like mule networks?
+
+**Question:** Which accounts collect money from many sources and quickly pass it on,
+or move it in loops, so we know which accounts to restrict and which alerts belong to
+the same case?
+
+**Who benefits and why:** the mule-account and network investigations team. BQ1 scores
+single payments; BQ2 groups accounts into cases (one ring = one case), so related alerts
+are worked together.
+
+**Method shape:** graph analytics over who paid whom, batch. A Glue Spark job
+(`jobs/network_mules.py`) finds hubs (fan-in and fan-out ≥ 10), three-account loops and
+back-and-forth pairs within 7 days, and joins them into rings with connected components.
+Labels are only used afterwards to measure results. Details and results:
+[BQ2 mule networks](runbooks/bq2-mule-networks.md).
+
+### BQ2 (original, replaced) — Where is our transaction volume concentrated, and are we too dependent on a few banks or currencies? (Treasury / Risk Management)
 
 **Question:** When we add up transaction volume (converted to a common currency)
 between every pair of banks, which handful of bank-to-bank or currency corridors
@@ -113,12 +157,13 @@ correspondent-banking relationships in.
 
 **Method shape:** aggregate/network analytics, descriptive, batch.
 
-These two are deliberately non-overlapping: BQ1 is predictive and row-level
+*The treasury-corridor BQ2 above was the original proposal. Its Athena corridor
+queries were replaced by the network job; Athena remains for ad hoc SQL.*
+
+These two were deliberately non-overlapping: BQ1 is predictive and row-level
 (compliance use case); BQ2 is descriptive and network/aggregate-level (treasury use
 case) — different stakeholders, different analytical technique, different pipeline
 branch.
-
-## benefits the risk teams
 
 ### Data augmentation
 
@@ -133,7 +178,13 @@ during ETL to compute an `amount_usd` field.
 
 ## 2. Pipeline architecture
 
-**Implemented status, 6 October 2026:** AWS curation, frozen-model scoring,
+**Implemented status, 9 November 2026:** every stage now runs in AWS:
+acquisition (Lambda), curation, rule baseline, frozen scoring, mule-network analysis
+and export (Glue), optional training (SageMaker), and publication (Lambda), all
+coordinated by Step Functions. See the opening status note and the
+[current diagram](../docs/is459-g3-aml-pipeline-aws.drawio).
+
+**Earlier status, 6 October 2026:** AWS curation, frozen-model scoring,
 Athena treasury queries and public static hosting are verified. Model training,
 explanation reconstruction, output reconciliation and dashboard export run
 locally. The first Step Functions workflow now coordinates guarded scoring and
@@ -517,7 +568,7 @@ publication cadence and measured freshness acceptance; see the
 The bounded implementation has fourteen deployed resources. **The single replay
 passed all 884 cloud result comparisons and 32 exact sender-history checks;
 consumption is Disabled and the retained stack has no drift.** See the
-[completed streaming result](archive/reviews/streaming-demo-result-20261006.md). See [the streaming deployment review](archive/reviews/streaming-demo-review-20261006.md)
+completed streaming result (archived). See the streaming deployment review (archived)
 for exact image/data hashes, costs, permission exceptions and approval scope.
 
 - Replay all 884 transactions from 32 label-independently selected senders,
@@ -559,7 +610,7 @@ Training, ingestion, curation and dashboard export remain outside this version.
 No daily replay is needed for a static dataset. An optional one-off EventBridge
 Scheduler is implemented but absent from the reviewed plan and disabled by
 default; activation needs a separately approved fresh run and UTC time.
-See [the concrete orchestration review](archive/reviews/orchestration-review-20261006.md) for
+See the concrete orchestration review (archived) for
 the three additions, two existing updates, successful full execution, all-row
 score/corridor reconciliation, tests, execution limits and costs.
 
@@ -720,3 +771,13 @@ recovered by imports. No application deployment or paid job was started. See
 [the shared-backend guide](../infra/tfstate-bootstrap/README.md) for current keys,
 teammate setup and recovery, and [the final state report](../handoff/terraform-state/shared-backend-verification-20261031.json)
 for readback evidence and the three still-pending application updates.
+
+### HI-Large and delta1 — 7 to 9 November 2026
+
+delta1 was promoted on 7 Nov and scores every run. HI-Medium ran with it the same
+day. HI-Large (179,702,229 rows) failed at export on 7 Nov; a lean recovery export
+succeeded on 8 Nov, was published, and the original Step Functions run then finished
+through a resume execution. The improved export is now the production export job. See
+the [HI-Large runbook](runbooks/hi-large-delta1.md) and the
+[deployment status](aws-deployment-status.md) for costs, drift and open items.
+

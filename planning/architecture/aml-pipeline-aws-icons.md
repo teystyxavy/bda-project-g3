@@ -1,10 +1,14 @@
 # Implemented additional enhancements
 
+> **Superseded, 9 November 2026.** This guide records an October milestone. For the
+> current architecture see [`docs/is459-g3-aml-pipeline-aws.drawio`](../../docs/is459-g3-aml-pipeline-aws.drawio)
+> and the [architecture guide](README.md).
+
 Editable source: [aml-pipeline-aws-icons.drawio](aml-pipeline-aws-icons.drawio).
 The two pages separate guarded orchestration and bounded streaming from the
 [core batch paths](aml-pipeline-architecture.drawio). The batch backbone answers
 both business questions independently. Sources reflect verified 6 October
-milestones. Original proposal sources are archived separately.
+milestones. Original proposal sources were removed from the repository.
 
 ## Page 1: guarded batch orchestration
 
@@ -71,5 +75,5 @@ configured failure routes that remained untriggered in the successful runs.
 
 Evidence: [orchestration result](../evidence/orchestration-result-20261006.json),
 [streaming result](../evidence/streaming-deployment-result-20261006.json), and
-[streaming acceptance review](../archive/reviews/streaming-demo-result-20261006.md).
+streaming acceptance review (archived).
 Rebuild instructions are in [the core diagram guide](aml-pipeline-architecture.md).

@@ -1,0 +1,67 @@
+{
+  "run_id": "hi-large-delta1-20261107-batch",
+  "recorded_on": "2026-11-09",
+  "status": "SUCCEEDED",
+  "summary": "The 7 Nov Step Functions execution failed at export. A lean recovery export on a separate fallback Glue job succeeded on 8 Nov, was published, and the original run then finished SUCCEEDED through a Step Functions resume execution that adopted it.",
+  "subset": "HI-Large",
+  "rows_scored": 179702229,
+  "model": "hist-depth5-delta1",
+  "model_sha256": "0170bef63f4cd257cbcda8c4748cea0dcf90f202134105fb8226d6dde6a0646f",
+  "deployment_sha256": "47ce337e104c704632c571c28fca2c5d47a8afe9457792f7897239f004889a2d",
+  "training_requested": false,
+  "lean_export": {
+    "glue_job": "is459-g3-ingest-export-fallback-a8b3b9b43adf",
+    "job_run_id_prefix": "jr_d84e1e93",
+    "started_sgt": "2026-11-08T19:48:09+08:00",
+    "finished_sgt": "2026-11-08T21:22:27+08:00",
+    "duration": "1h34m",
+    "approx_cost_usd": 11,
+    "workers": "2 x G.8X",
+    "peak_driver_memory_gb": 27.2,
+    "slowest_substage": "stage 9 account_histories, 40.5 min",
+    "output_objects": 18,
+    "output_gb": 1.47
+  },
+  "verification": {
+    "score_parity": "exact, max absolute difference 0.0",
+    "dashboard_parity": "exact on all 4 substages",
+    "success_marker_written_last": true
+  },
+  "bq2_network": {
+    "accounts": 1927631,
+    "rings": 9732,
+    "largest_ring": 173,
+    "loops": 16315,
+    "pairs": 156128,
+    "oversized_components_withheld": 1,
+    "withheld_component_accounts": 26370,
+    "withheld_policy": "oversized-components-withheld-v1 (kept as private evidence, not split or tuned)"
+  },
+  "publication": {
+    "published_sgt": "2026-11-08T21:33:00+08:00",
+    "release_id": "hi-large-lean-20261108",
+    "dashboard_json_sha256_prefix": "998be7fb",
+    "previous_release_for_rollback": "20261108-084200-b2b4b30f"
+  },
+  "step_functions_resume": {
+    "execution": "hi-large-delta1-20261107-batch-resume1",
+    "window_sgt": "2026-11-08 22:28-22:33",
+    "duration": "5m26s",
+    "approx_glue_cost_usd": 0.32,
+    "baseline": "verify-only, 102 s",
+    "export": "adopted the lean export with the live UI shell, 113 s",
+    "publish": "unchanged; status published with identical dashboard.json bytes",
+    "result_cache": "pipeline/cache/4d2827bf....json",
+    "restored_afterwards": "Lambda code and baseline/export Glue jobs restored to backups (CodeSha256 verified)",
+    "code_location": "output/sfn-hi-large-resume-20261108/ready/ (not in src/)"
+  },
+  "usage_reported_by_publish_usd": 83.66,
+  "usage_note": "Sums every Glue run with this run ID, including the 7 Nov baseline and the failed exports.",
+  "sources": [
+    "planning/runbooks/hi-large-delta1.md",
+    "planning/runbooks/export-fallback-20261108.md",
+    "output/lean-exploration-20261108/",
+    "output/lean-publish-20261108/publish-evidence/",
+    "output/sfn-hi-large-resume-20261108/ready/run-report.json"
+  ]
+}

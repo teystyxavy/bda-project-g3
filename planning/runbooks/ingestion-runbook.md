@@ -1,5 +1,22 @@
 # Automated ingestion runbook
 
+> **Current, 9 November 2026.** The commands below still work. What changed since
+> this runbook was written:
+>
+> - The batch runs **HI-Small, HI-Medium and HI-Large**. Large requests get bigger
+>   Glue workers and skip the per-stage cache (above 50M rows); see the
+>   [HI-Large runbook](hi-large-delta1.md).
+> - BQ2 is the Glue **mule-network** job (`is459-g3-ingest-network`), which replaced the
+>   Athena corridor branch. Read "corridor analysis" below as the network branch.
+> - Runs without `-Train` use the deployed delta1 model's split windows (train
+>   1–10 Sep, validation 11–14 Sep, test from 15 Sep 2022).
+> - The export job runs the improved lean export (8 Nov). Any `infra/ingestion` apply
+>   must pass `export_deployment`, or it reverts that swap; see the
+>   [deployment status](../aws-deployment-status.md#export-swap-and-step-functions-resume-8-november).
+> - `Begin` has a resume mode that reuses verified stages after a failed export. Don't
+>   redrive a failed execution: its error goes to the Fail state.
+> - The failure email topic currently has no subscriber; check before relying on alerts.
+
 **1 November 2026 deployment verified:** baseline verification,
 rule scoring and dashboard export now use Glue jobs `is459-g3-ingest-baseline`
 and `is459-g3-ingest-export`. SageMaker is used only for optional candidate
@@ -18,7 +35,7 @@ and [measured results](../evidence/pipeline-optimisation-result-20261006.json).
 
 **Cloud acquisition revision is deployed and verified through smoke/full publication.** The default command now
 targets `is459-g3-cloud-ingest`, which will run Kaggle/FX acquisition in Lambda before
-the existing batch workflow. Review the [nine-resource deployment](../archive/reviews/cloud-ingestion-review.md).
+the existing batch workflow. Review the nine-resource deployment (archived).
 Add `-LocalAcquisition` to the run examples below to use the previous verified flow.
 See [current deployment evidence](../evidence/cloud-ingestion-deployment-result-20261006.json).
 
@@ -51,7 +68,7 @@ to select your own environment. Account and region are checked before AWS work.
 ## Run after cloud acquisition deployment
 
 ```powershell
-# Complete HI-Small acquisition â†’ Glue â†’ Athena/model verification â†’ dashboard.
+# Complete HI-Small acquisition → Glue → Athena/model verification → dashboard.
 .\scripts\ingestion\ingest.ps1
 
 # Same flow, additionally train a private candidate in SageMaker.

@@ -1,5 +1,11 @@
 # HI-Medium batch run
 
+> **Current, 9 November 2026.** Full HI-Medium runs work from the dashboard's Ingestion
+> tab since 8 Nov ([evidence](../evidence/full-medium-dashboard-deployment-20261108.json)).
+> HI-Medium was also scored with the delta1 model on 7 Nov as isolated release
+> `medium-delta1-20261107-183216` ([run](../evidence/hi-medium-delta1-run-20261107.json)).
+> The live dashboard now shows HI-Large; see the [HI-Large runbook](hi-large-delta1.md).
+
 **1 November 2026 deployment update:** baseline and export now
 run as separate Glue G.2X jobs; SageMaker is reserved for optional Small training.
 See [migration validation and deployment](glue-stage-migration.md). A 1,000-row HI-Small smoke passed; previous Medium AWS/public-snapshot evidence

@@ -97,11 +97,81 @@ def options():
     return {'schema_version': 1, 'subsets': [
         {'value': 'HI-Small', 'label': 'HI-Small', 'supported': True},
         {'value': 'HI-Medium', 'label': 'HI-Medium', 'supported': True},
-        *[{'value': v, 'label': v + ' (not supported by cloud pipeline)', 'supported': False}
-          for v in ['HI-Large', 'LI-Small', 'LI-Medium', 'LI-Large']]],
+        # Cache-only: the workflow reuses the verified run (Acquire -> ExistingRelease)
+        # and fails instead of reprocessing if the cache no longer applies.
+        {'value': 'HI-Large', 'label': 'HI-Large · reuse verified run (cache only)', 'supported': True, 'cache_only': True}],
+        # LI-* subsets are not offered at all; validate_submission rejects them.
         'demo_rows': 1000, 'row_bounds': {'minimum': 1, 'maximum': 32000000}, 'poll_seconds': 10,
         'notice': 'New processing can incur AWS charges. Reuse verified inputs by default. '
                   'Training creates a private candidate; it never promotes the model.'}
+
+
+BUCKET = 'is459-g3-588738581042-ap-southeast-1'
+INVENTORY_RESULTS = 30
+
+
+@lru_cache(maxsize=1)
+def storage():
+    config = Config(connect_timeout=3, read_timeout=8,
+                    retries={'mode': 'standard', 'total_max_attempts': 2},
+                    user_agent_appid='IS459-Dashboard')
+    return boto3.Session().client('s3', config=config)
+
+
+def read_small_json(s3, key):
+    """Read a small control document, or None when it is absent or unreadable."""
+    try:
+        with s3.get_object(Bucket=BUCKET, Key=key)['Body'] as body:
+            data = body.read(100_001)
+        return json.loads(data) if len(data) <= 100_000 else None
+    except (ClientError, ValueError):
+        return None
+
+
+def inventory(s3):
+    """What already exists, read-only: cached Kaggle versions and published results.
+
+    A published result is reused by an identical new request only while its
+    deployment is the one that is live now (``reusable``). Returns summary
+    fields only: no file hashes, payloads or raw data.
+    """
+    config = read_small_json(s3, 'pipeline/deployment.json')
+    live = hashlib.sha256(canonical(config).encode()).hexdigest() if isinstance(config, dict) else None
+    datasets = {}
+    for subset in ['HI-Small', 'HI-Medium']:
+        prefix = 'pipeline/acquisition' + ('' if subset == 'HI-Small' else '/' + subset)
+        listing = s3.list_objects_v2(Bucket=BUCKET, Prefix=prefix + '/versions/', Delimiter='/', MaxKeys=100)
+        versions = sorted(int(part) for item in listing.get('CommonPrefixes', [])
+                          if (part := item['Prefix'].rstrip('/').rsplit('/', 1)[-1]).isdigit())
+        latest = (read_small_json(s3, prefix + '/latest.json') or {}).get('dataset_version')
+        datasets[subset] = {'cached_versions': versions, 'latest': latest if type(latest) is int else None}
+    listing = s3.list_objects_v2(Bucket=BUCKET, Prefix='pipeline/cache/', MaxKeys=1000)
+    entries = sorted((item for item in listing.get('Contents', []) if item['Key'].endswith('.json')),
+                     key=lambda item: item['LastModified'], reverse=True)[:INVENTORY_RESULTS]
+    results = []
+    for item in entries:
+        cached = read_small_json(s3, item['Key'])
+        run_id = cached.get('run_id') if isinstance(cached, dict) else None
+        if not cached or cached.get('status') != 'published' or not isinstance(run_id, str) \
+                or not re.fullmatch('[a-z0-9][a-z0-9-]{2,62}', run_id):
+            continue
+        manifest = read_small_json(s3, f'pipeline/runs/{run_id}/raw/manifest.json') or {}
+        results.append({'run_id': run_id, 'subset': manifest.get('subset', 'HI-Small'),
+                        'rows': manifest.get('rows'), 'dataset_version': manifest.get('dataset_version'),
+                        'train': bool(manifest.get('train')), 'selection': manifest.get('selection') is not None,
+                        'published_at': iso(item['LastModified']),
+                        'reusable': bool(live) and manifest.get('deployment_sha256') == live})
+    return {'datasets': datasets, 'results': results}
+
+
+def options_with_inventory():
+    value = options()
+    try:
+        value['inventory'] = inventory(storage())
+    except (BotoCoreError, ClientError, KeyError, TypeError):
+        # The dropdown must still work when the inventory cannot be read.
+        value['inventory'] = None
+    return value
 
 
 def validate_submission(body):
@@ -112,8 +182,14 @@ def validate_submission(body):
     if not isinstance(request_id, str) or not re.fullmatch('[0-9a-f]{32}', request_id):
         raise ApiError(400, 'A valid submission ID is required.')
     subset = body.get('subset')
+    if subset == 'HI-Large':
+        # Cache-only: anything that could mean new processing is refused here and again in Acquire.
+        if any(body.get(key) not in (None, False) for key in ['rows', 'dataset_version', 'train', 'refresh', 'rerun']):
+            raise ApiError(400, 'HI-Large only reuses its verified run. Clear the row limit, version and switches.')
+        return request_id, {'subset': subset, 'rows': None, 'dataset_version': None,
+                            'train': False, 'refresh': False, 'rerun': False}
     if subset not in ('HI-Small', 'HI-Medium'):
-        raise ApiError(400, 'The cloud pipeline supports HI-Small and HI-Medium only.')
+        raise ApiError(400, 'The cloud pipeline supports HI-Small, HI-Medium and cached HI-Large only.')
     rows = body.get('rows')
     maximum = 32_000_000 if subset == 'HI-Medium' else 5_100_000
     if rows is not None and (type(rows) is not int or not 1 <= rows <= maximum):
@@ -337,7 +413,7 @@ def handler(event, context):
             revoke(table, token)
             return response(200, {'status': 'signed-out'})
         if method == 'GET' and path == '/options':
-            return response(200, options())
+            return response(200, options_with_inventory())
         machine, batch = os.environ['ACQUISITION_MACHINE'], os.environ['BATCH_MACHINE']
         if method == 'GET' and path == '/runs':
             return response(200, list_runs(states, machine, subject))

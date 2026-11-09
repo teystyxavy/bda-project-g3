@@ -1,9 +1,13 @@
 # Implemented batch architecture
 
+> **Superseded, 9 November 2026.** This guide records an October milestone. For the
+> current architecture see [`docs/is459-g3-aml-pipeline-aws.drawio`](../../docs/is459-g3-aml-pipeline-aws.drawio)
+> and the [architecture guide](README.md).
+
 Editable source: [aml-pipeline-architecture.drawio](aml-pipeline-architecture.drawio).
 The two pages cover the two core business questions. Status reflects the verified
 6 October 2026 milestones, not a new live cloud check. Original proposal sources
-are retained under `../archive/architecture-proposal/`.
+were removed from the repository (see the archive note in `../README.md`).
 
 ## Page 1: BQ1 investigation ranking
 

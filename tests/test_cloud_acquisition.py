@@ -178,3 +178,60 @@ def test_full_medium_acquisition_prepares_all_rows(tmp_path):
     assert manifest['source_scope'] == 'selected-subset'
     assert manifest['subset'] == 'HI-Medium'
     assert manifest['train'] is False
+
+
+# --- HI-Large cache-only runs ------------------------------------------------
+from bda_pipeline import cloud_acquisition as cloud
+
+
+class ReadOnlyS3(S3):
+    def put_object(self, *args, **kwargs): raise AssertionError('cache-only runs must not write')
+    def upload_file(self, *args, **kwargs): raise AssertionError('cache-only runs must not upload')
+    def download_file(self, *args, **kwargs): raise AssertionError('cache-only runs must not download')
+
+
+def pinned_store(monkeypatch, **manifest_changes):
+    s3 = ReadOnlyS3()
+    config = json.loads(s3.data[CONFIG_KEY])
+    manifest = {'subset': 'HI-Large', 'run_id': 'hi-large-delta1-20261107-batch', 'rows': 179702229,
+                'files': {'transactions.csv': {'sha256': 'f'*64}}, 'start_date': '2022-09-01', 'end_date': '2022-11-05',
+                'dataset_version': 8, 'deployment_sha256': sha(config), 'train': False, 'export_dates': None, **manifest_changes}
+    identity = {k: manifest[k] for k in ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train']}
+    identity['export_dates'] = manifest['export_dates']
+    manifest['processing_sha256'] = sha(identity)
+    monkeypatch.setitem(cloud.CACHE_ONLY_RUNS, 'HI-Large', {'run_id': manifest['run_id'], 'processing_sha256': manifest['processing_sha256']})
+    manifest_key, cache_key = cloud.cache_only_keys('HI-Large')
+    s3.data[manifest_key] = json.dumps(manifest).encode()
+    s3.data[cache_key] = json.dumps({'status': 'published', 'run_id': manifest['run_id'],
+                                     'processing_sha256': manifest['processing_sha256'], 'release_url': 'x'}).encode()
+    return s3
+
+
+def test_hi_large_reuses_pinned_published_run_without_writing(tmp_path, monkeypatch):
+    s3 = pinned_store(monkeypatch)
+    result = acquire({'run_id': 'ui-aaaaaaaaaaaa-bbbbbbbbbbbb', 'subset': 'HI-Large'}, {'s3': s3}, tmp_path)
+    assert result['cache_hit'] is True
+    assert result['result']['run_id'] == 'hi-large-delta1-20261107-batch'
+    assert result['result']['requested_run_id'] == 'ui-aaaaaaaaaaaa-bbbbbbbbbbbb'
+    assert not any('ui-aaaaaaaaaaaa' in key for key in s3.data)
+
+
+@pytest.mark.parametrize('tamper', ['deployment', 'identity', 'unpublished', 'missing_cache', 'missing_manifest'])
+def test_hi_large_fails_instead_of_reprocessing(tmp_path, monkeypatch, tamper):
+    s3 = pinned_store(monkeypatch)
+    manifest_key, cache_key = cloud.cache_only_keys('HI-Large')
+    if tamper == 'deployment': s3.data[CONFIG_KEY] = json.dumps({'model_manifest_sha256': 'c'*64}).encode()
+    if tamper == 'identity':
+        m = json.loads(s3.data[manifest_key]); m['rows'] = 1; s3.data[manifest_key] = json.dumps(m).encode()
+    if tamper == 'unpublished':
+        c = json.loads(s3.data[cache_key]); c['status'] = 'failed'; s3.data[cache_key] = json.dumps(c).encode()
+    if tamper == 'missing_cache': del s3.data[cache_key]
+    if tamper == 'missing_manifest': del s3.data[manifest_key]
+    with pytest.raises(ValueError):
+        acquire({'run_id': 'ui-aaaaaaaaaaaa-bbbbbbbbbbbb', 'subset': 'HI-Large'}, {'s3': s3}, tmp_path)
+
+
+@pytest.mark.parametrize('changes', [{'rows': 10}, {'rerun': True}, {'refresh': True}, {'train': True}, {'dataset_version': 8}])
+def test_hi_large_refuses_processing_options(changes):
+    with pytest.raises(ValueError):
+        request({'run_id': 'ui-aaaaaaaaaaaa-bbbbbbbbbbbb', 'subset': 'HI-Large', **changes})

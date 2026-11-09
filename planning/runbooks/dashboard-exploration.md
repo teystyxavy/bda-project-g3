@@ -1,5 +1,12 @@
 # Dashboard exploration and read-only pipeline status
 
+> **Current, 9 November 2026.** The live dashboard is UI release
+> `ui-main-20261109-janelle` with HI-Large data (179,702,229 rows scored by delta1).
+> Tabs: BQ1 review queue, BQ2 mule networks (rings, hubs, loops; one oversized
+> 26,370-account component is withheld with a notice), **Incoming AML** (streaming
+> replay snapshot) and **Ingestion** (status and run controls, including cache-only HI-Large). The
+> coverage numbers below describe the 30 Oct HI-Medium release.
+
 The 30 October coverage update uses UI release `medium-coverage-20261030` and
 source pipeline run `medium-full-20261030-v2`. Its fixed coverage summary shows
 **31,898,238 scored = 18,893,741 evaluated + 13,004,497 excluded from evaluation**.

@@ -1,5 +1,9 @@
 # Automated source-to-dashboard architecture
 
+> **Superseded, 9 November 2026.** This guide records an October milestone. For the
+> current architecture see [`docs/is459-g3-aml-pipeline-aws.drawio`](../../docs/is459-g3-aml-pipeline-aws.drawio)
+> and the [architecture guide](README.md).
+
 **1 November 2026 deployment verified:** baseline verification,
 rule scoring and dashboard export now use Glue jobs `is459-g3-ingest-baseline`
 and `is459-g3-ingest-export`. SageMaker is used only for optional candidate
@@ -16,7 +20,7 @@ diagram described below is retained as the local-acquisition predecessor.
 
 This diagram records the verified local-acquisition predecessor. The new revision
 moves Kaggle and FX retrieval to Lambda and adds a wrapper workflow; see
-[cloud acquisition flow and deployment review](../archive/reviews/cloud-ingestion-review.md). That
+cloud acquisition flow and deployment review (archived). That
 revision is deployed; successful smoke/full acceptance is recorded in
 `../evidence/cloud-ingestion-deployment-result-20261006.json`. The local path now requires
 `-LocalAcquisition` when launching a run.

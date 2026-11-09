@@ -280,3 +280,106 @@ def test_medium_rejects_invalid_runs_before_aws(control, changes):
     response = api.handler(event(payload=body(subset='HI-Medium', **changes)), None)
     assert response['statusCode'] == 400
     assert not control[0].starts
+
+
+def test_hi_large_is_offered_as_cache_only():
+    option = next(item for item in api.options()['subsets'] if item['value'] == 'HI-Large')
+    assert option['supported'] and option['cache_only']
+
+
+def test_hi_large_starts_the_cloud_workflow_with_no_processing_options(control):
+    response = api.handler(event(payload={'request_id': 'c' * 32, 'subset': 'HI-Large', 'rows': None}), None)
+    assert response['statusCode'] == 202
+    started = control[0].starts[0]
+    assert started['stateMachineArn'] == MACHINE
+    assert json.loads(started['input']) == {'subset': 'HI-Large', 'rows': None, 'dataset_version': None, 'train': False,
+                                            'refresh': False, 'rerun': False, 'run_id': json.loads(response['body'])['run_id']}
+
+
+@pytest.mark.parametrize('changes', [{'rows': 1000}, {'rerun': True}, {'refresh': True}, {'train': True}, {'dataset_version': 8}])
+def test_hi_large_rejects_processing_options_before_aws(control, changes):
+    response = api.handler(event(payload={'request_id': 'c' * 32, 'subset': 'HI-Large', 'rows': None, **changes}), None)
+    assert response['statusCode'] == 400
+    assert not control[0].starts
+
+
+def test_cached_hi_large_status_shows_reused_stages(control):
+    states, _ = control
+    response = api.handler(event(payload={'request_id': 'c' * 32, 'subset': 'HI-Large', 'rows': None}), None)
+    run_id = json.loads(response['body'])['run_id']
+    arn = api.execution_arn(MACHINE, run_id)
+    states.executions[arn].update(status='SUCCEEDED', stopDate=NOW,
+        output=json.dumps({'status': 'published', 'run_id': 'hi-large-delta1-20261107-batch', 'cache_hit': True}))
+    states.events[arn] = [{'id': 1, 'type': 'TaskStateEntered', 'timestamp': NOW, 'stateEnteredEventDetails': {'name': 'Acquire'}},
+                          {'id': 2, 'type': 'TaskStateExited', 'timestamp': NOW, 'previousEventId': 1, 'stateExitedEventDetails': {'name': 'Acquire'}},
+                          {'id': 3, 'type': 'PassStateEntered', 'timestamp': NOW, 'stateEnteredEventDetails': {'name': 'ExistingRelease'}}]
+    status = json.loads(api.handler(event(method='GET', path='/runs/' + run_id), None)['body'])
+    assert status['cache_hit'] is True and status['selection']['subset'] == 'HI-Large'
+    assert status['release_url'].endswith('releases/hi-large-delta1-20261107-batch/index.html')
+    assert {s['id']: s['status'] for s in status['stages']}['score'] == 'reused'
+    assert BATCH.replace(':stateMachine:', ':execution:') + ':' + run_id not in states.executions
+
+
+def test_li_subsets_are_not_offered_and_are_rejected(control):
+    assert [item['value'] for item in api.options()['subsets']] == ['HI-Small', 'HI-Medium', 'HI-Large']
+    for subset in ['LI-Small', 'LI-Medium', 'LI-Large']:
+        assert api.handler(event(payload=body(subset=subset)), None)['statusCode'] == 400
+    assert not control[0].starts
+
+
+class InventoryS3:
+    def __init__(self, objects, listings=None):
+        self.objects, self.listings, self.writes = objects, listings or {}, []
+
+    def get_object(self, Bucket, Key):
+        if Key not in self.objects:
+            from botocore.exceptions import ClientError
+            raise ClientError({'Error': {'Code': 'NoSuchKey'}}, 'GetObject')
+        import io
+        return {'Body': io.BytesIO(json.dumps(self.objects[Key]).encode())}
+
+    def list_objects_v2(self, Bucket, Prefix, **kwargs):
+        if kwargs.get('Delimiter'):
+            return {'CommonPrefixes': [{'Prefix': p} for p in self.listings.get(Prefix, [])]}
+        return {'Contents': [{'Key': k, 'LastModified': NOW - timedelta(minutes=i)}
+                             for i, k in enumerate(sorted(self.objects)) if k.startswith(Prefix)]}
+
+    def __getattr__(self, name):
+        raise AssertionError(f'inventory must not call s3.{name}')
+
+
+def test_options_include_cached_versions_and_reusable_results(control, monkeypatch):
+    config = {'artifact_prefix': 'x'}
+    live = api.hashlib.sha256(api.canonical(config).encode()).hexdigest()
+    s3 = InventoryS3({
+        'pipeline/deployment.json': config,
+        'pipeline/acquisition/latest.json': {'dataset_version': 8},
+        'pipeline/cache/aaa.json': {'status': 'published', 'run_id': 'hi-large-delta1-20261107-batch'},
+        'pipeline/cache/bbb.json': {'status': 'published', 'run_id': 'old-medium-run'},
+        'pipeline/cache/ccc.json': {'status': 'failed', 'run_id': 'broken'},
+        'pipeline/runs/hi-large-delta1-20261107-batch/raw/manifest.json': {'subset': 'HI-Large', 'rows': 179702229, 'dataset_version': 8, 'train': False, 'deployment_sha256': live},
+        'pipeline/runs/old-medium-run/raw/manifest.json': {'subset': 'HI-Medium', 'rows': None, 'dataset_version': 8, 'train': False, 'deployment_sha256': 'old'},
+    }, {'pipeline/acquisition/versions/': ['pipeline/acquisition/versions/7/', 'pipeline/acquisition/versions/8/'],
+        'pipeline/acquisition/HI-Medium/versions/': ['pipeline/acquisition/HI-Medium/versions/8/']})
+    monkeypatch.setattr(api, 'storage', lambda: s3)
+    value = json.loads(api.handler(event(method='GET', path='/options'), None)['body'])
+    assert value['inventory']['datasets'] == {'HI-Small': {'cached_versions': [7, 8], 'latest': 8},
+                                              'HI-Medium': {'cached_versions': [8], 'latest': None}}
+    results = {r['run_id']: r for r in value['inventory']['results']}
+    assert set(results) == {'hi-large-delta1-20261107-batch', 'old-medium-run'}
+    assert results['hi-large-delta1-20261107-batch']['reusable'] is True
+    assert results['old-medium-run']['reusable'] is False
+    assert 'files' not in json.dumps(value['inventory'])
+    assert not control[0].starts
+
+
+def test_options_still_load_when_inventory_is_unavailable(control, monkeypatch):
+    from botocore.exceptions import ClientError
+    class Denied:
+        def get_object(self, **kw): raise ClientError({'Error': {'Code': 'AccessDenied'}}, 'GetObject')
+        def list_objects_v2(self, **kw): raise ClientError({'Error': {'Code': 'AccessDenied'}}, 'ListObjectsV2')
+    monkeypatch.setattr(api, 'storage', lambda: Denied())
+    response = api.handler(event(method='GET', path='/options'), None)
+    assert response['statusCode'] == 200
+    value = json.loads(response['body'])
+    assert value['inventory'] is None and value['subsets'][0]['value'] == 'HI-Small'

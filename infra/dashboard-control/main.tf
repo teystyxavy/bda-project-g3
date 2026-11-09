@@ -11,11 +11,12 @@ variable "dashboard_url" {
   }
 }
 locals {
-  account = "588738581042"
-  region  = "ap-southeast-1"
-  origin  = trimsuffix(var.dashboard_url, "/")
-  machine = "arn:aws:states:${local.region}:${local.account}:stateMachine:is459-g3-cloud-ingest"
-  batch   = "arn:aws:states:${local.region}:${local.account}:stateMachine:is459-g3-ingest"
+  account         = "588738581042"
+  region          = "ap-southeast-1"
+  origin          = trimsuffix(var.dashboard_url, "/")
+  machine         = "arn:aws:states:${local.region}:${local.account}:stateMachine:is459-g3-cloud-ingest"
+  batch           = "arn:aws:states:${local.region}:${local.account}:stateMachine:is459-g3-ingest"
+  pipeline_bucket = "is459-g3-${local.account}-${local.region}"
   executions = [for name in ["is459-g3-cloud-ingest", "is459-g3-ingest"] :
   "arn:aws:states:${local.region}:${local.account}:execution:${name}:*"]
 }
@@ -49,7 +50,11 @@ resource "aws_iam_role_policy" "function" {
     { Effect = "Allow", Action = ["states:StartExecution"], Resource = local.machine },
     { Effect = "Allow", Action = ["states:ListExecutions"], Resource = [local.machine, local.batch] },
     { Effect = "Allow", Action = ["states:DescribeExecution", "states:GetExecutionHistory"], Resource = local.executions },
-    { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"], Resource = aws_dynamodb_table.launch.arn }
+    { Effect = "Allow", Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"], Resource = aws_dynamodb_table.launch.arn },
+    # Read-only "what already exists" inventory for the Ingestion tab: cached Kaggle
+    # versions, published result-cache entries and their run manifests. No raw data.
+    { Effect = "Allow", Action = ["s3:ListBucket"], Resource = "arn:aws:s3:::${local.pipeline_bucket}", Condition = { StringLike = { "s3:prefix" = ["pipeline/acquisition/versions/", "pipeline/acquisition/HI-Medium/versions/", "pipeline/cache/"] } } },
+    { Effect = "Allow", Action = ["s3:GetObject"], Resource = [for key in ["pipeline/deployment.json", "pipeline/acquisition/latest.json", "pipeline/acquisition/HI-Medium/latest.json", "pipeline/cache/*", "pipeline/runs/*/raw/manifest.json"] : "arn:aws:s3:::${local.pipeline_bucket}/${key}"] }
   ] })
 }
 resource "aws_lambda_function" "control" {

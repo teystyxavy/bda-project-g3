@@ -1,4 +1,124 @@
-# AWS foundation deployment â€” 2026-10-05
+# AWS deployment status
+
+Account `588738581042`, region `ap-southeast-1` (Singapore). Last reviewed
+**9 November 2026**. The "Current state" section below is the summary to read
+first. Everything under [History](#history) is the original
+milestone log (October to early November), kept unchanged apart from encoding fixes.
+
+## Current state — 9 November 2026
+
+### What is live
+
+| Area | Live resource | State |
+|---|---|---|
+| Dashboard | CloudFront `d1n61tlw9pcrog.cloudfront.net` (`EU1WB6XM4GKHQ`) over private bucket `is459-g3-dashboard-588738581042-ap-southeast-1` | Live. `current.json` points at UI release `ui-main-20261109-janelle`, whose data is the HI-Large run `hi-large-delta1-20261107-batch` (dashboard.json `998be7fb…`) |
+| Run control | `is459-g3-dashboard-control` Lambda + HTTP API, DynamoDB `is459-g3-dashboard-launch` | Live. Ingestion tab runs HI-Small and HI-Medium, plus HI-Large as a cache-only run (deployed 9 Nov). Its Lambda had an out-of-band code change on 8 Nov and was applied again on 9 Nov; re-run the drift check to confirm it now matches Terraform |
+| Status feed | `is459-g3-dashboard-status` (public read-only `GET /status`) | Live |
+| Acquisition | Step Functions `is459-g3-cloud-ingest`: `Acquire` (container Lambda `is459-g3-acquire`) → `Cached?` → `ExistingRelease` or `Batch` | Live, image `e6d971d0…` (9 Nov, adds the cache-only HI-Large path) |
+| Batch | Step Functions `is459-g3-ingest`: `Begin` → `Curate` → parallel `Baseline` (+ optional SageMaker training) / `Score` / `Network` → `Export` → `Publish` | Live, deployment `47ce337e…` |
+| Export job | Glue `is459-g3-ingest-export` | Runs the improved (lean) export since 8 Nov 22:49 SGT (`export-improved-e31cd65b…`), see [export swap](#export-swap-and-step-functions-resume-8-november) |
+| Upload trigger | EventBridge rule `is459-g3-raw-upload-trigger` → `is459-g3-raw-trigger` | Live, opt-in, tested 7 Oct |
+| Streaming | ECR image, consumer Lambda, DynamoDB state, S3 audit, publisher Lambda | Kinesis stream **parked** (no shard). The publisher's last snapshot for `stream-delta1-20261107` (984/984 scored, reconciled) is what the dashboard's **Incoming AML** tab shows |
+| Model | XGBoost `hist-depth5-delta1`, weights `0170bef6…` | Promoted 7 Nov; scores every run without retraining |
+| Foundation | Data bucket `is459-g3-588738581042-ap-southeast-1`, Glue catalog, Athena `is459-g3-analysis`, SNS `is459-g3-failures`, budget alert USD 10/month | Live. The SNS topic currently has **no email subscriber** |
+
+### Recent milestones
+
+| Date | What happened | Record |
+|---|---|---|
+| 7 Nov | delta1 promoted (trained on an HI-Large date subset). HI-Medium scored with it as isolated release `medium-delta1-20261107-183216` | [promotion](evidence/delta1-shared-promotion-20261107.json), [run](evidence/hi-medium-delta1-run-20261107.json) |
+| 7 Nov | Streaming rebuilt for delta1 (all 15 behaviour features, receiver state preloaded). One replay of 984 events reconciled exactly; Incoming tab switched to it; stream parked again | [evidence](evidence/streaming-delta1-result-20261107.json), [streaming README](../streaming/README.md) |
+| 7 Nov | HI-Large run `hi-large-delta1-20261107-batch` started on all 179,702,229 rows. Curate, baseline, score and network passed; the export failed, and a retry stopped on one 26,370-account connected component above the 19,277-account case limit | [run](evidence/hi-large-delta1-run-20261107.json), [runbook](runbooks/hi-large-delta1.md) |
+| 8 Nov | Recovery exports on a separate fallback Glue job. The lean run `jr_d84e1e93` succeeded in 1h34m (about USD 11) with exact score and dashboard parity | [fallback log](runbooks/export-fallback-20261108.md), [result](evidence/hi-large-delta1-result-20261108.json) |
+| 8 Nov | HI-Large published to the live dashboard (21:33 SGT), then the original Step Functions run finished `SUCCEEDED` through a resume execution | [result](evidence/hi-large-delta1-result-20261108.json) |
+| 8 Nov | Export job swapped to the improved export package (22:49 SGT) | below |
+| 8 Nov | Full HI-Medium dashboard ingestion deployed to the Ingestion tab | [evidence](evidence/full-medium-dashboard-deployment-20261108.json) |
+| 9 Nov | Read-only Terraform drift check of every stack | below |
+| 9 Nov | Cache-only HI-Large run deployed: test execution `hi-large-cached-test-202611090223` succeeded in about 10 s through `ExistingRelease`, with no Glue | below |
+| 9 Nov | An AWS cost panel (Cost Explorer → `cost.json`) was deployed, then hidden, and is being removed at thad's request | below |
+
+### Export swap and Step Functions resume (8 November)
+
+- **Resume.** Execution `hi-large-delta1-20261107-batch-resume1` (22:28–22:33 SGT,
+  5m26s, about USD 0.32 of Glue) used `Begin`'s resume mode to skip curate, score and
+  network. Baseline ran verify-only (102 s) and Export adopted the verified lean export
+  (113 s). Publish was unchanged. The published result cache
+  `pipeline/cache/4d2827bf….json` now returns this release instantly for an identical
+  request while the deployment hash stays `47ce337e…`. The Lambda and the baseline and
+  export jobs were restored to their backups afterwards. The resume code is not in
+  `src/`; it is in `output/sfn-hi-large-resume-20261108/ready/`.
+- **Export swap.** `is459-g3-ingest-export` now uses
+  `pipeline/deployments/export-improved-e31cd65b…/` (lean export, oversized-component
+  review, network checkpoints) with `--NETWORK_CHECKPOINTS=true`,
+  `--OVERSIZED_COMPONENT_REVIEW=true`, `--CHECKPOINT_READ_ONLY=false`. Step Functions sets
+  the worker size per run (HI-Large: two G.8X, 360 min). Undo steps are in
+  `output/export-swap-20261108/work/undo.md`. Terraform pins this with the
+  `export_deployment` variable on branch `export-improved-deployment`; **any ingestion
+  apply must pass it, or the swap is reverted.**
+- The publish step's usage figure (USD 83.66) adds up every Glue run with this run ID,
+  including the failed 7 Nov exports.
+
+### Terraform drift (read-only check, 9 November)
+
+`terraform plan` only, no apply. Full report:
+`output/terraform-drift-20261109/SUMMARY.md`.
+
+| Stack | Result |
+|---|---|
+| foundation | **Real drift.** The SNS email subscription was deleted in AWS. The `full_transactions` table and `curate_transactions.py` in the repo are ahead of AWS (5 receiver/corridor columns) |
+| dashboard-control | **Real drift** before the 9 Nov apply: Lambda code changed outside Terraform on 8 Nov 07:13 UTC |
+| ingestion | Matches AWS only with `export_deployment` set; otherwise cosmetic path changes |
+| cloud-ingestion, eventbridge-trigger, hosting, sagemaker, tfstate-bootstrap, archive | In sync (cloud-ingestion was updated again on 9 Nov) |
+| dashboard-status, streaming, streaming-delta1-20261107 | Cosmetic only (local file paths) |
+
+Not in any Terraform state: Glue jobs `is459-g3-ingest-export-fallback-a8b3b9b43adf`,
+`…-fallback-f67a4b1a400d`, `is459-g3-ingest-export-recovery-20261107` and
+`is459-g3-medium-delta1-20261107-183216`; IAM roles `is459-g3-export-concurrent-20261108`,
+`is459-g3-export-recovery-20261107` and `is459-g3-medium-delta1-20261107-183216`; and the
+EventBridge rule and SNS topic `is459-g3-hi-large-delta1-complete-20261107`. The
+handoff inputs in `s3://is459-g3-tfstate-588738581042/handoff/current` are stale, and
+the `streaming-delta1-20261107` state key is not yet in `init-terraform.ps1`.
+
+### Cache-only HI-Large run (9 November)
+
+From the Ingestion tab, HI-Large is offered as cache-only. `Acquire` loads the pinned
+7 Nov manifest, checks identity, deployment and the published cache, and returns a
+cache hit, so the run ends at `ExistingRelease` without starting `is459-g3-ingest` or
+any Glue. It writes nothing and fails at `Acquire` on any mismatch. Package and deploy
+notes: `output/hi-large-cached-run-20261109/`. The matching live UI publish was still
+in progress on 9 Nov; hash-check the live UI before any publish, because it is
+sometimes re-uploaded by teammates.
+
+### Removed: AWS cost panel (9 November)
+
+A twice-daily Lambda (`is459-g3-dashboard-cost`) wrote Cost Explorer spend to
+`dashboard/cost.json` for a panel on the Ingestion tab. It was deployed on 9 Nov,
+hidden from the UI the same day, and is being torn down at thad's request. The code is still
+in the working tree (`infra/dashboard-cost`, `dashboard/cost.*`), uncommitted.
+
+### Not yet done
+
+- **Lean export code in `src/`.** The improved export is live as a deployment package,
+  but 12 of 36 files still differ from `src/bda_pipeline`.
+
+### Spend
+
+On 9 Nov Cost Explorer reported about USD 246 of AWS spend since the project started
+(1 Aug 2026), most of it from the HI-Large runs. The account also has about USD 725 of
+older, pre-project spend. Idle run rate is roughly USD 0.30 to 0.36 per day. The course
+budget is USD 250; the USD 10 AWS budget is an alert, not a cap.
+
+### Open items
+
+1. Re-subscribe an email to `is459-g3-failures`, or failure alerts go nowhere.
+2. Bring the foundation catalog back in line with Terraform, and re-check `dashboard-control` after the 9 Nov apply.
+3. Import or delete the unmanaged recovery Glue jobs, roles and the completion rule.
+4. Port the lean export into `src/bda_pipeline` and merge branch `export-improved-deployment`.
+5. Refresh the handoff inputs and add the `streaming-delta1-20261107` state to the init script.
+
+## History
+
+### AWS foundation deployment — 2026-10-05
 
 **1 November coursework archive:** 278 checksum-verified files (84.74 MB) from
 six older lab buckets were consolidated into one private archive; originals
@@ -113,7 +233,7 @@ execution seconds / 361 DPU-seconds; all 5,078,345 rows passed score, feature,
 identity and partition checks. The treasury query scanned 86,039,814 bytes;
 all 1,082,185 directed daily corridor rows passed local count/volume/share/HHI
 reconciliation. No scheduling or dashboard changes. See
-[orchestration review](archive/reviews/orchestration-review-20261006.md) and
+orchestration review (archived) and
 [result metadata](evidence/orchestration-result-20261006.json).
 See `archive/reviews/scoring-infrastructure-review.md` for run evidence, retained private state
 and retry review. Foundation resources and verified curation remain unchanged.
@@ -140,7 +260,7 @@ month; its configured notices are 50%, 80% and 100%, not an automatic spending c
 The SNS subscription was subsequently confirmed (`PendingConfirmation=false`).
 The failure route has not been exercised with a job failure.
 
-## Approved cloud smoke verification
+### Approved cloud smoke verification
 
 The user subsequently approved the 1,000-row smoke run. All three small inputs
 were uploaded. Glue run
@@ -162,7 +282,7 @@ Evidence is under `output/aws-smoke-cloud/`: downloaded curated Parquet,
 `parity.json`, `reconciliation.csv`, and `corridors.csv`. Re-run field comparison
 using `python scripts/validation/verify-aws-smoke.py --curated output/aws-smoke-cloud/curated`.
 
-Estimated Glue compute: 130 / 3600 Ã— 2 Ã— USD 0.44 = USD 0.03178, using the
+Estimated Glue compute: 130 / 3600 × 2 × USD 0.44 = USD 0.03178, using the
 [Singapore AWS Glue price list](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSGlue/current/ap-southeast-1/index.json).
 This is an estimate, not a billed total; Athena minimum query charges, S3,
 logs, tax and any other account activity are separate.
@@ -172,7 +292,7 @@ Spark, verify parity with the local baseline, then prepare full-data execution
 and dashboard export. Do not use this first-rows sample to evaluate model quality
 or history-dependent behaviour.
 
-## Full-run preparation â€” 2026-10-05 08:00 Singapore
+### Full-run preparation — 2026-10-05 08:00 Singapore
 
 The user requested the next run. Local job changes add physical source-row IDs
 (`HI-Small:<zero-based-row>`) from a single immutable, one-record-per-line CSV,
@@ -186,7 +306,7 @@ an inaccessible `sailor-ingest.sock` socket before the Glue container could run.
 Do not deploy or launch full-data execution until the Spark parity tests pass.
 No new cloud uploads, Terraform changes or paid job runs were performed this turn.
 
-### Retry â€” 2026-10-05 19:31 Singapore
+#### Retry — 2026-10-05 19:31 Singapore
 
 Docker recovered. The official Glue 5 container completed all **23 tests**
 successfully, including source-row ID stability, duplicate preservation and
@@ -208,7 +328,7 @@ Terraform state remains outside the repository at
 The reviewed plan has been applied; create a fresh plan for future changes.
 No credentials, Terraform state or private variables are committed.
 
-## Authorized full-data attempt â€” TIMEOUT
+### Authorized full-data attempt — TIMEOUT
 
 After renewed login as `g1team3` in account `588738581042`, the budget reported
 USD 0.743 actual and USD 5.87 forecast (updated 2026-10-05 18:50 Singapore).
@@ -238,7 +358,7 @@ Next: profile and optimize the history calculation and repeated validation
 passes locally before proposing another paid run. A retry requires a fresh
 output prefix and reviewed catalog-location change; never append to this one.
 
-Estimated Glue compute is 600 / 3600 Ã— 2 Ã— USD 0.44 = **USD 0.14667**,
+Estimated Glue compute is 600 / 3600 × 2 × USD 0.44 = **USD 0.14667**,
 excluding S3 requests/storage, logs, taxes and other account activity. This is
 not an invoice or a guarantee of total account spending.
 
@@ -253,7 +373,7 @@ The local request is recorded in `output/full-20261005/run-request.json`.
 validated this incomplete output.
 
 Subsequent local-only optimization and benchmark evidence is recorded in
-[Glue performance validation](archive/reviews/glue-performance-validation.md). The queue-based
+Glue performance validation (archived). The queue-based
 version passes 30 container tests and exact full-history/cohort comparison, but
 is not deployed. The initial local launch was blocked by approval-service
 capacity; the user-authorized retry then succeeded in 162.992 processing
@@ -261,7 +381,7 @@ seconds. Complete local write/read-back and separate full ID/corridor plus
 cohort-feature reconciliation passed. Evidence is in
 `output/full-local-optimized-20261005/`. No additional cloud run occurred.
 
-## Optimized cloud retry â€” SUCCEEDED and reconciled
+### Optimized cloud retry — SUCCEEDED and reconciled
 
 The user subsequently approved one bounded retry. Before it started, AWS still
 reported USD 0.743 actual and USD 5.87 forecast (billing update 18:50 Singapore,
@@ -284,7 +404,7 @@ seconds include additional runtime overhead.
 Athena query `27e82bce-0ed2-4616-80e4-243855b0a12b` ran
 `sql/reconcile-full.sql` successfully, scanning 179,353,781 bytes. Results:
 
-- 5,078,345 rows and distinct transaction IDs; source index range 0â€“5,078,344.
+- 5,078,345 rows and distinct transaction IDs; source index range 0–5,078,344.
 - 5,177 positive labels; zero missing metadata, FX or behaviour values.
 - USD totals: 1,747,869,572,934.3848 same-day and
   1,748,564,754,800.0552 prior-day (distributed floating summation).
@@ -298,7 +418,7 @@ The reference same-day USD total is 1,747,869,572,934.3916.
 Evidence under `output/full-cloud-optimized-20261005/`: `run-request.json`,
 downloaded `curated/`, `reconciliation.csv`, and `parity.json`.
 
-Estimated Glue compute: 386 / 3600 Ã— 2 Ã— USD 0.44 = USD 0.09436. This excludes
+Estimated Glue compute: 386 / 3600 × 2 × USD 0.44 = USD 0.09436. This excludes
 Athena, S3 storage/requests, logs, taxes and other account activity; it is not
 an invoice. No additional run, schedule or automatic retry was started.
 
@@ -306,7 +426,7 @@ Subsequent work consumed the verified data for local ML training/analytics,
 verified full AWS frozen-model scoring and public dashboard hosting. Orchestration
 is now verified; streaming is prepared locally and awaits cloud approval. Partial-output cleanup still requires explicit approval.
 
-## Full-population local insight export
+### Full-population local insight export
 
 Consumed the verified optimized-cloud Parquet locally and exported all 5,078,345
 rule scores, period-specific review queues, treasury aggregates and both static
@@ -317,42 +437,42 @@ drilldown and full-population scope with no captured console errors.
 
 The rule baseline achieves 2/100 positives in validation but 0/100 in the main
 test queue. No test-set retuning was performed. See
-[insight validation](archive/reviews/cloud-insights-validation.md) for metrics and limitations.
+insight validation (archived) for metrics and limitations.
 This step ran locally and started no additional AWS jobs. ML comparison, cloud
 scoring, dashboard hosting and X-factor layers remain pending.
 
-## Local ML comparison â€” no AWS mutation
+### Local ML comparison — no AWS mutation
 
-Two bounded XGBoost candidates trained locally on September 1â€“6 only. Validation
+Two bounded XGBoost candidates trained locally on September 1–6 only. Validation
 selected depth 5; the choice was saved before loading the test period. It finds
 44/100 positives on the main test queue versus 0/100 for rules; average precision
 is 0.135546 versus 0.006758. Models, schema, hashes and label-free explained queues
 are under `output/model-comparison-20261005/`. 24 local ML-environment tests pass
-with the native Spark module skipped. See [model validation](archive/reviews/local-model-validation.md).
+with the native Spark module skipped. See model validation (archived).
 No additional AWS job, deployment, upload or automatic promotion occurred.
 
-## Local model dashboard integration
+### Local model dashboard integration
 
 The saved model reloads with artifact/source hash checks and reproduces all three
 period results. A separate local build at `output/model-dashboard-20261005/`
 adds model/rule queue switching, side-by-side metrics and readable model-margin
 evidence while preserving treasury and rule data. Native tests: 24 passed with
-one Spark module skipped. See [dashboard checks](archive/reviews/model-dashboard-validation.md)
+one Spark module skipped. See dashboard checks (archived)
 for rendered checks and the unverified browser download-event check.
 No retraining, AWS calls, paid jobs, hosting deployment or production promotion.
 
-## Local streaming preparation â€” no deployment
+### Local streaming preparation — no deployment
 
 The 884-event, 32-sender replay reproduces frozen batch features/scores
 in the final Linux Lambda image. Transactional state, durable-result redelivery,
 SDK serialization and acceptance guards are tested. Sixty-four targeted Python
 tests pass with one environment-dependent skip; eleven core/SDK tests pass in
 the final Lambda image. Five mocked streaming infrastructure tests pass.
-See [the streaming review](archive/reviews/streaming-demo-review-20261006.md) for approval gates,
+See the streaming review (archived) for approval gates,
 exact evidence, permission exceptions, costed resource scope and limitations.
 This records local preparation, not verified Kinesis/Lambda/DynamoDB operation.
 
-## Partial streaming deployment â€” no replay
+### Partial streaming deployment — no replay
 
 The approved scope deployed ten streaming resources and uploaded the exact
 reviewed Lambda image. Frozen model initialization passed in AWS. ECR needed
@@ -364,13 +484,13 @@ A safer isolated failure bucket is prepared, not deployed: the authenticated
 plan shows four creates (three bucket/security resources and the already-approved
 mapping), one execution-policy update, zero deletes. Six mocked tests pass and
 the revised identity policy has no Access Analyzer findings. See the
-[revised review](archive/reviews/streaming-failure-isolation-review-20261006.md) and
+revised review (archived) and
 [partial result](evidence/streaming-deployment-result-20261006.json).
 The image scan has 8 high, 6 medium and 1 low OS-package findings, documented
 with the bounded-use assessment; do not claim a clean scan.
 The shard continues charging USD 0.0184/hour. No cleanup was performed.
 
-## Completed streaming acceptance â€” consumer disabled
+### Completed streaming acceptance — consumer disabled
 
 The later approved isolated failure bucket and mapping brought the streaming
 stack to fourteen deployed resources. The single approved replay acknowledged
@@ -389,14 +509,14 @@ AWS confirmed Disabled and the final Terraform plan had no differences.
 All resources/evidence remain retained; no second replay or cleanup occurred.
 The provisioned shard remains billable at USD 0.0184/hour. ECR's known 8 HIGH,
 6 MEDIUM and 1 LOW findings remain unresolved; broader image reuse requires a
-patch/rebuild and fresh review. See the [completed result](archive/reviews/streaming-demo-result-20261006.md)
+patch/rebuild and fresh review. See the completed result (archived)
 and [machine-readable evidence](evidence/streaming-deployment-result-20261006.json).
 
-## Final demonstration preparation
+### Final demonstration preparation
 
-The [demo runbook](delivery/final-demo-runbook.md) now maps verified results to the
+The demo runbook (retired) now maps verified results to the
 instructor's 15-minute presentation plus 5-minute Q&A slot. The
-[slide content outline](delivery/final-presentation-outline.md) identifies proposal claims
+slide content outline (retired) identifies proposal claims
 that must change for the final implementation. Local validation checked all four
 published-release file hashes, both recorded screenshot hashes, the full-score
 verification hash and thirteen document links. This step used retained local
@@ -407,7 +527,7 @@ the final deck, updated editable architecture, actual member contributions,
 narrated setup/run videos and links, final access/submission checks, and approved
 post-presentation cleanup outstanding. It does not claim those artefacts exist.
 
-## Implemented architecture diagrams
+### Implemented architecture diagrams
 
 Both editable diagrams now reflect the verified implementation: two core BQ1/BQ2
 pages in `architecture/aml-pipeline-architecture.drawio`, and separate orchestration/streaming

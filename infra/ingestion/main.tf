@@ -39,6 +39,32 @@
 
 variable "artifact_directory" { type = string }
 variable "model_file" { type = string }
+# variable "export_deployment": optional pinned export runtime for the export
+# job only. null (default) = the export job runs this deployment's own
+# pipeline_stage.py, bda_pipeline.zip and dashboard shell like baseline does.
+# When set, the export job runs <prefix>/pipeline_stage.py with
+# <prefix>/bda_pipeline.zip and <prefix>/dashboard/{index.html,dashboard.js,
+# dashboard.css}, all uploaded beforehand to a content-addressed
+# pipeline/deployments/export-improved-<zip sha256> prefix (uploaded out of
+# band; Terraform does not upload them; set via
+# scripts/aws/prepare-ingestion.py --export-deployment). It
+# also enables S3 network checkpoints (tmp/ingest/export-checkpoints/) and the
+# oversized-component review on the canonical export. Wheels, model inputs and
+# deployment.json still come from pipeline_config, so run identity is unchanged.
+variable "export_deployment" {
+  type = object({ prefix = string, network_checkpoints = optional(bool, true),
+  oversized_component_review = optional(bool, true), checkpoint_read_only = optional(bool, false) })
+  default = null
+  validation {
+    condition     = var.export_deployment == null ? true : can(regex("^pipeline/deployments/export-improved-[0-9a-f]{64}$", var.export_deployment.prefix))
+    error_message = "Pin the export runtime to a content-addressed pipeline/deployments/export-improved-<sha256> prefix."
+  }
+  validation {
+    # glue_compute.run_stage rejects component review without checkpoints.
+    condition     = var.export_deployment == null ? true : (!var.export_deployment.oversized_component_review || var.export_deployment.network_checkpoints)
+    error_message = "Oversized-component review requires network checkpoints."
+  }
+}
 # variable "pipeline_config": runtime configuration written to
 # pipeline/deployment.json and to the control Lambda's environment: artefact
 # and model S3 prefixes, model manifest hash, the digest-pinned SageMaker image
@@ -78,6 +104,17 @@ locals {
   files         = toset(concat(["control.zip", "bda_pipeline.zip", "runtime.gluewheels.zip", "curate_transactions.py", "score_transactions.py", "pipeline_stage.py", "network_mules.py", "dashboard/index.html", "dashboard/dashboard.js", "dashboard/dashboard.css"], [for name in ["comparison.json", "selection.json", "features.json", "model-manifest.json", "deployment.json", var.model_file] : "model/${name}"]))
   ecr           = "arn:aws:ecr:${local.region}:${local.account}:repository/is459-g3-training"
   failure_topic = "arn:aws:sns:${local.region}:${local.account}:is459-g3-failures"
+  # Where each reference stage's script, package and dashboard shell live.
+  stage_prefix = {
+    baseline = var.pipeline_config.artifact_prefix
+    export   = var.export_deployment == null ? var.pipeline_config.artifact_prefix : var.export_deployment.prefix
+  }
+  # Export-only switches read by jobs/pipeline_stage.py (absent = disabled).
+  export_arguments = var.export_deployment == null ? {} : {
+    "--NETWORK_CHECKPOINTS"        = tostring(var.export_deployment.network_checkpoints)
+    "--OVERSIZED_COMPONENT_REVIEW" = tostring(var.export_deployment.oversized_component_review)
+    "--CHECKPOINT_READ_ONLY"       = tostring(var.export_deployment.checkpoint_read_only)
+  }
 }
 # `removed` block (Terraform 1.7+): an older version of this stack managed the
 # uploads as aws_s3_object.artifact. This forgets that resource from state
@@ -161,7 +198,7 @@ resource "aws_glue_job" "job" {
   command {
     name            = "glueetl"
     python_version  = "3"
-    script_location = "s3://${local.bucket}/${var.pipeline_config.artifact_prefix}/${contains(["baseline", "export"], each.key) ? "pipeline_stage.py" : each.key == "network" ? "network_mules.py" : "${each.key}_transactions.py"}"
+    script_location = contains(["baseline", "export"], each.key) ? "s3://${local.bucket}/${local.stage_prefix[each.key]}/pipeline_stage.py" : "s3://${local.bucket}/${var.pipeline_config.artifact_prefix}/${each.key == "network" ? "network_mules.py" : "${each.key}_transactions.py"}"
   }
   # Arguments callers cannot override. Common: no bookmarks, custom log group,
   # and write a _SUCCESS marker so the control Lambda can confirm completion.
@@ -181,13 +218,15 @@ resource "aws_glue_job" "job" {
     "--extra-files"                            = join(",", [for name in ["comparison.json", "selection.json", "features.json", "model-manifest.json", var.model_file] : "s3://${local.bucket}/${var.pipeline_config.model_prefix}/${name}"])
     "--additional-python-modules"              = "s3://${local.bucket}/${var.pipeline_config.artifact_prefix}/runtime.gluewheels.zip"
     "--python-modules-installer-option"        = "--no-index"
-    } : each.key == "curate" ? { "--behaviour" = "true" } : each.key == "network" ? {} : {
+    # Baseline/export: package and dashboard shell from local.stage_prefix
+    # (export may be pinned via var.export_deployment), plus export switches.
+    } : each.key == "curate" ? { "--behaviour" = "true" } : each.key == "network" ? {} : merge({
     "--STAGE"                                  = each.key
-    "--extra-py-files"                         = "s3://${local.bucket}/${var.pipeline_config.artifact_prefix}/bda_pipeline.zip"
-    "--extra-files"                            = join(",", [for name in ["index.html", "dashboard.js", "dashboard.css"] : "s3://${local.bucket}/${var.pipeline_config.artifact_prefix}/dashboard/${name}"])
+    "--extra-py-files"                         = "s3://${local.bucket}/${local.stage_prefix[each.key]}/bda_pipeline.zip"
+    "--extra-files"                            = join(",", [for name in ["index.html", "dashboard.js", "dashboard.css"] : "s3://${local.bucket}/${local.stage_prefix[each.key]}/dashboard/${name}"])
     "--additional-python-modules"              = "s3://${local.bucket}/${var.pipeline_config.artifact_prefix}/runtime.gluewheels.zip"
     "--python-modules-installer-option"        = "--no-index"
-  })
+  }, each.key == "export" ? local.export_arguments : {}))
   depends_on = [aws_iam_role_policy.glue, aws_s3_object.deployment_artifact, aws_cloudwatch_log_group.glue]
 }
 # Role of the control Lambda (the pipeline's "brain"; code in
