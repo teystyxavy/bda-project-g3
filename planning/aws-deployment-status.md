@@ -11,7 +11,7 @@ milestone log (October to early November), kept unchanged apart from encoding fi
 
 | Area | Live resource | State |
 |---|---|---|
-| Dashboard | CloudFront `d1n61tlw9pcrog.cloudfront.net` (`EU1WB6XM4GKHQ`) over private bucket `is459-g3-dashboard-588738581042-ap-southeast-1` | Live. `current.json` points at UI release `ui-main-20261109-janelle`, whose data is the HI-Large run `hi-large-delta1-20261107-batch` (dashboard.json `998be7fb…`) |
+| Dashboard | CloudFront `d1n61tlw9pcrog.cloudfront.net` (`EU1WB6XM4GKHQ`) over private bucket `is459-g3-dashboard-588738581042-ap-southeast-1` | Live. `current.json` points at a UI-only release (`ui-kpi-single-column-202611091717` on the evening of 9 Nov), whose data is the HI-Large run `hi-large-delta1-20261107-batch` (dashboard.json `998be7fb…`) |
 | Run control | `is459-g3-dashboard-control` Lambda + HTTP API, DynamoDB `is459-g3-dashboard-launch` | Live. Ingestion tab runs HI-Small and HI-Medium, plus HI-Large as a cache-only run (deployed 9 Nov). Its Lambda had an out-of-band code change on 8 Nov and was applied again on 9 Nov; re-run the drift check to confirm it now matches Terraform |
 | Status feed | `is459-g3-dashboard-status` (public read-only `GET /status`) | Live |
 | Acquisition | Step Functions `is459-g3-cloud-ingest`: `Acquire` (container Lambda `is459-g3-acquire`) → `Cached?` → `ExistingRelease` or `Batch` | Live, image `e6d971d0…` (9 Nov, adds the cache-only HI-Large path) |
@@ -35,7 +35,7 @@ milestone log (October to early November), kept unchanged apart from encoding fi
 | 8 Nov | Full HI-Medium dashboard ingestion deployed to the Ingestion tab | [evidence](evidence/full-medium-dashboard-deployment-20261108.json) |
 | 9 Nov | Read-only Terraform drift check of every stack | below |
 | 9 Nov | Cache-only HI-Large run deployed: test execution `hi-large-cached-test-202611090223` succeeded in about 10 s through `ExistingRelease`, with no Glue | below |
-| 9 Nov | An AWS cost panel (Cost Explorer → `cost.json`) was deployed, then hidden, and is being removed at thad's request | below |
+| 9 Nov | An AWS cost panel (Cost Explorer → `cost.json`) was deployed, then hidden and removed at thad's request | below |
 
 ### Export swap and Step Functions resume (8 November)
 
@@ -93,8 +93,8 @@ sometimes re-uploaded by teammates.
 
 A twice-daily Lambda (`is459-g3-dashboard-cost`) wrote Cost Explorer spend to
 `dashboard/cost.json` for a panel on the Ingestion tab. It was deployed on 9 Nov,
-hidden from the UI the same day, and is being torn down at thad's request. The code is still
-in the working tree (`infra/dashboard-cost`, `dashboard/cost.*`), uncommitted.
+hidden from the UI the same day, and its stack (7 resources) was destroyed at thad's request.
+The code was never committed to this repository; nothing in `main` deploys or shows it.
 
 ### Not yet done
 

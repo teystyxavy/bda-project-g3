@@ -1,7 +1,9 @@
 # Dashboard exploration and read-only pipeline status
 
-> **Current, 9 November 2026.** The live dashboard is UI release
-> `ui-main-20261109-janelle` with HI-Large data (179,702,229 rows scored by delta1).
+> **Current, 9 November 2026.** The live dashboard shows HI-Large data from run
+> `hi-large-delta1-20261107-batch` (179,702,229 rows scored by delta1). Teammates publish
+> UI-only releases over that run, so `dashboard/current.json` names the current one
+> (`ui-kpi-single-column-202611091717` on the evening of 9 Nov).
 > Tabs: BQ1 review queue, BQ2 mule networks (rings, hubs, loops; one oversized
 > 26,370-account component is withheld with a notice), **Incoming AML** (streaming
 > replay snapshot) and **Ingestion** (status and run controls, including cache-only HI-Large). The
