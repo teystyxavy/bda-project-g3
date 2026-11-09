@@ -1154,9 +1154,7 @@ function renderAml() {
   const sizes=Object.keys(data.metrics_by_k).map(Number).sort((a,b)=>a-b), reviewSizes=sizes.map(size=>data.metrics_by_k[size].k);
   cards('aml-kpis',[['Transactions in population',integer(metrics.rows),`${population.label} · ${evaluationPeriodLabel(period)}`],['Ranking quality · average precision',metrics.average_precision==null?'Unavailable':metrics.average_precision.toFixed(4),`${otherName} ${other.average_precision==null?'unavailable':other.average_precision.toFixed(4)} · whole ranking, not one cut-off`],
     [`Laundering in top ${integer(metrics.k)}`,percent(metrics.precision_at_k),`${integer(metrics.hits)} of ${integer(metrics.k)} · ${otherName} ${percent(other.precision_at_k)}`,true,
-      {values:sizes.map(size=>data.metrics_by_k[size].precision_at_k),color:'#3fd0b8',label:`Share that is laundering at ${reviewSizes.join(', ')} reviews`,caption:`At ${reviewSizes[0]} → ${reviewSizes.at(-1)} reviews`}],
-    ['Share of all laundering caught',percent(metrics.recall_at_k),`of ${integer(metrics.positives)} laundering cases · ${otherName} ${percent(other.recall_at_k)}`,false,
-      {values:sizes.map(size=>data.metrics_by_k[size].recall_at_k),color:'#4fa8ff',label:`Share of all laundering caught at ${reviewSizes.join(', ')} reviews`,caption:`At ${reviewSizes[0]} → ${reviewSizes.at(-1)} reviews`}]]);
+      {values:sizes.map(size=>data.metrics_by_k[size].precision_at_k),color:'#3fd0b8',label:`Share that is laundering at ${reviewSizes.join(', ')} reviews`,caption:`At ${reviewSizes[0]} → ${reviewSizes.at(-1)} reviews`}]]);
   const capture=['model','rules'].map((kind,i)=>({name:kind==='model'?'Frozen model':'Rules',color:i?'#ffb648':'#3fd0b8',
     rows:Object.entries(population[kind].metrics_by_k).map(([capacity,m])=>({x:m.k,y:m.hits,label:String(m.k)}))}));
   element('capture-card').hidden=amlMode==='evaluation';

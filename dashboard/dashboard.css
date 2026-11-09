@@ -120,6 +120,10 @@ nav{flex-wrap:wrap}.ingestion-layout{display:grid;grid-template-columns:minmax(2
 .aml-summary{display:grid;gap:16px;margin:20px 0}.aml-summary .kpis{margin:0}
 .aml-summary:has(>.capture-card:not([hidden])){grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .aml-summary:has(>.capture-card:not([hidden])) .kpis{grid-template-columns:1fr 1fr}
+/* 3 KPI cards now (Transactions, Average precision, Laundering in top K): stack them in one
+   column, higher specificity than .kpis so it wins over both the capture-chart split above and
+   the @media(max-width:760px) .kpis rule below. */
+#aml-kpis{grid-template-columns:1fr}
 .capture-card{margin:0}.capture-card p{margin:0 0 6px;font-size:13px}
 .bar-mark{margin:6px 0 0;padding:6px 0 0;border-top:2px dashed #c43426;color:#9c2a1f;font-size:12px;font-weight:600}
 @media(max-width:760px){.aml-summary:has(>.capture-card:not([hidden])){grid-template-columns:1fr}}
