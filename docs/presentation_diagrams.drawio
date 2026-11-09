@@ -265,7 +265,7 @@
         <mxCell id="ov-cdn-view" edge="1" parent="1" source="cdn" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;endFill=1;endSize=10;jumpStyle=arc;jumpSize=8;strokeColor=#9AA4B2;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#9AA4B2;fontFamily=Helvetica;labelBackgroundColor=#0B1220;" target="view" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="strm" parent="1" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#9AA4B2;strokeWidth=1.5;dashed=1;dashPattern=8 4;verticalAlign=top;align=left;spacingLeft=10;spacingRight=10;spacingTop=4;fontSize=13;fontStyle=1;fontColor=#9AA4B2;fontFamily=Helvetica;" value="Optional streaming extension (parked) · reuses the frozen BQ1 model to score one transaction at a time" vertex="1">
+        <mxCell id="strm" parent="1" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#9AA4B2;strokeWidth=1.5;dashed=1;dashPattern=8 4;verticalAlign=top;align=left;spacingLeft=10;spacingRight=10;spacingTop=4;fontSize=13;fontStyle=1;fontColor=#9AA4B2;fontFamily=Helvetica;" value="Streaming replay (stream parked · last replay on the live Incoming AML tab) · reuses the frozen BQ1 model to score one transaction at a time" vertex="1">
           <mxGeometry height="140" width="1520" x="40" y="672" as="geometry" />
         </mxCell>
         <mxCell id="s-rep" parent="1" style="rounded=1;arcSize=5;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#111A2B;strokeColor=#9AA4B2;strokeWidth=1.5;" value="" vertex="1">
@@ -274,7 +274,7 @@
         <mxCell id="s-rep-t" parent="s-rep" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="&lt;font style=&quot;font-size:10px;font-weight:normal&quot; color=&quot;#9AA4B2&quot;&gt;Outside AWS&lt;/font&gt;&lt;br&gt;Replay script" vertex="1">
           <mxGeometry height="32" width="186" x="8" y="6" as="geometry" />
         </mxCell>
-        <mxCell id="s-rep-b" parent="s-rep" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=top;fontSize=11;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="884 past transactions, in time order" vertex="1">
+        <mxCell id="s-rep-b" parent="s-rep" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=top;fontSize=11;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="984 past transactions, in time order" vertex="1">
           <mxGeometry height="34" width="184" x="8" y="42" as="geometry" />
         </mxCell>
         <mxCell id="s-kin" parent="1" style="rounded=1;arcSize=5;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#111A2B;strokeColor=#9D6BFF;strokeWidth=1.5;" value="" vertex="1">
@@ -298,7 +298,7 @@
         <mxCell id="s-con-t" parent="s-con" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="&lt;font style=&quot;font-size:10px;font-weight:normal&quot; color=&quot;#9AA4B2&quot;&gt;AWS Lambda&lt;/font&gt;&lt;br&gt;Score consumer" vertex="1">
           <mxGeometry height="32" width="212" x="42" y="6" as="geometry" />
         </mxCell>
-        <mxCell id="s-con-b" parent="s-con" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=top;fontSize=11;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="Rebuilds sender history · frozen XGBoost score" vertex="1">
+        <mxCell id="s-con-b" parent="s-con" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=top;fontSize=11;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="Sender + receiver state · all 15 features · frozen XGBoost score" vertex="1">
           <mxGeometry height="34" width="244" x="8" y="42" as="geometry" />
         </mxCell>
         <mxCell id="s-ddb" parent="1" style="rounded=1;arcSize=5;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#111A2B;strokeColor=#D452DB;strokeWidth=1.5;" value="" vertex="1">
@@ -310,7 +310,7 @@
         <mxCell id="s-ddb-t" parent="s-ddb" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="&lt;font style=&quot;font-size:10px;font-weight:normal&quot; color=&quot;#9AA4B2&quot;&gt;Amazon DynamoDB&lt;/font&gt;&lt;br&gt;DynamoDB + S3 audit" vertex="1">
           <mxGeometry height="32" width="172" x="42" y="6" as="geometry" />
         </mxCell>
-        <mxCell id="s-ddb-b" parent="s-ddb" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=top;fontSize=11;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="state, results, audit copy" vertex="1">
+        <mxCell id="s-ddb-b" parent="s-ddb" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=top;fontSize=11;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="sender + receiver state, results, audit copy" vertex="1">
           <mxGeometry height="34" width="204" x="8" y="42" as="geometry" />
         </mxCell>
         <mxCell id="s-pub" parent="1" style="rounded=1;arcSize=5;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#111A2B;strokeColor=#ED7100;strokeWidth=1.5;" value="" vertex="1">
@@ -1240,7 +1240,7 @@
         <mxCell id="subtitle" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=15;fontColor=#9AA4B2;fontFamily=Helvetica;fontStyle=0;spacing=0;" value="A separate, optional path. It reuses the same frozen BQ1 model, so it changes WHEN a transaction is scored, not HOW well. The batch pipeline does not depend on it." vertex="1">
           <mxGeometry height="24" width="1520" x="40" y="62" as="geometry" />
         </mxCell>
-        <mxCell id="status" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#2A2418;strokeColor=#FF9900;strokeWidth=1.5;fontSize=12;fontColor=#E6EAF0;fontFamily=Helvetica;align=left;verticalAlign=middle;spacingLeft=12;spacingRight=12;" value="&lt;b&gt;Status:&lt;/b&gt; verified once on 6 Oct 2026 (884 of 884 scores matched batch). Now &lt;b&gt;parked&lt;/b&gt; to save cost: the Kinesis shard is deleted and the consumer is off. Terraform can restore it in one apply. Input is a &lt;b&gt;replay&lt;/b&gt; of past transactions, not a live bank feed." vertex="1">
+        <mxCell id="status" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#2A2418;strokeColor=#FF9900;strokeWidth=1.5;fontSize=12;fontColor=#E6EAF0;fontFamily=Helvetica;align=left;verticalAlign=middle;spacingLeft=12;spacingRight=12;" value="&lt;b&gt;Status:&lt;/b&gt; the delta1 replay of 7 Nov 2026 (984 of 984 transactions, all 15 behaviour features matched batch) is reconciled and shown on the live &lt;b&gt;Incoming AML&lt;/b&gt; tab. The stream is now &lt;b&gt;parked&lt;/b&gt; to save cost: the Kinesis shard is deleted and the consumer is off. Terraform can restore it in one apply. Input is a &lt;b&gt;replay&lt;/b&gt; of past transactions, not a live bank feed." vertex="1">
           <mxGeometry height="44" width="1520" x="40" y="104" as="geometry" />
         </mxCell>
         <mxCell id="replay" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;container=1;collapsible=0;fillColor=none;strokeColor=#9AA4B2;dashed=1;" value="" vertex="1">
@@ -1249,7 +1249,7 @@
         <mxCell id="replay-icon" parent="replay" style="sketch=0;outlineConnect=0;fontColor=#E6EAF0;fillColor=#9AA4B2;strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.user;" value="" vertex="1">
           <mxGeometry height="34" width="34" x="68" y="8" as="geometry" />
         </mxCell>
-        <mxCell id="replay-txt" parent="replay" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=top;fontSize=11;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="&lt;b&gt;Replay script&lt;/b&gt;&lt;br&gt;&lt;i&gt;sends 884 past transactions in time order&lt;/i&gt;" vertex="1">
+        <mxCell id="replay-txt" parent="replay" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=top;fontSize=11;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="&lt;b&gt;Replay script&lt;/b&gt;&lt;br&gt;&lt;i&gt;sends 984 past transactions in time order&lt;/i&gt;" vertex="1">
           <mxGeometry height="52" width="162" x="4" y="46" as="geometry" />
         </mxCell>
         <mxCell id="kin" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#111A2B;strokeColor=#9D6BFF;strokeWidth=1.5;verticalAlign=top;spacingTop=2;fontStyle=1;fontSize=11;fontColor=#9D6BFF;fontFamily=Helvetica;" value="Amazon Kinesis Data Streams" vertex="1">
@@ -1300,10 +1300,10 @@
         <mxCell id="c2-icon" parent="c2" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#E6EAF0;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" value="" vertex="1">
           <mxGeometry height="28" width="28" x="8" y="8" as="geometry" />
         </mxCell>
-        <mxCell id="c2-t" parent="c2" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="&lt;font style=&quot;font-size:10px;font-weight:normal&quot; color=&quot;#9AA4B2&quot;&gt;AWS Lambda&lt;/font&gt;&lt;br&gt;3 · Sender history" vertex="1">
+        <mxCell id="c2-t" parent="c2" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="&lt;font style=&quot;font-size:10px;font-weight:normal&quot; color=&quot;#9AA4B2&quot;&gt;AWS Lambda&lt;/font&gt;&lt;br&gt;3 · Sender + receiver" vertex="1">
           <mxGeometry height="32" width="174" x="42" y="6" as="geometry" />
         </mxCell>
-        <mxCell id="c2-b" parent="c2" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=top;fontSize=11;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="Reads recent payments; builds 5 sender behaviour features." vertex="1">
+        <mxCell id="c2-b" parent="c2" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=top;fontSize=11;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="Reads the sender's and receiver's earlier payments; builds all 15 behaviour features." vertex="1">
           <mxGeometry height="70" width="206" x="8" y="42" as="geometry" />
         </mxCell>
         <mxCell id="e-c2" edge="1" parent="1" source="c1" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;endFill=1;endSize=10;jumpStyle=arc;jumpSize=8;strokeColor=#F0509A;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#F0509A;fontFamily=Helvetica;labelBackgroundColor=#0B1220;" target="c2" value="">
@@ -1333,7 +1333,7 @@
         <mxCell id="ddb-icon" parent="ddb" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#E6EAF0;fillColor=#C925D1;strokeColor=#ffffff;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.dynamodb;" value="" vertex="1">
           <mxGeometry height="44" width="44" x="78" y="22" as="geometry" />
         </mxCell>
-        <mxCell id="ddb-txt" parent="ddb" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=top;fontSize=11;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="&lt;b&gt;Stream state&lt;/b&gt;&lt;br&gt;&lt;i&gt;sender history + every score&lt;/i&gt;" vertex="1">
+        <mxCell id="ddb-txt" parent="ddb" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=top;fontSize=11;fontColor=#E6EAF0;fontFamily=Helvetica;spacing=0;" value="&lt;b&gt;Stream state&lt;/b&gt;&lt;br&gt;&lt;i&gt;sender + receiver state, every score&lt;/i&gt;" vertex="1">
           <mxGeometry height="48" width="192" x="4" y="70" as="geometry" />
         </mxCell>
         <mxCell id="audit" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#111A2B;strokeColor=#7AA116;strokeWidth=1.5;verticalAlign=top;spacingTop=2;fontStyle=1;fontSize=11;fontColor=#7AA116;fontFamily=Helvetica;" value="Amazon S3" vertex="1">
@@ -1375,7 +1375,7 @@
         <mxCell id="e-fail-cw" edge="1" parent="1" source="fails" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;endFill=1;endSize=10;jumpStyle=arc;jumpSize=8;strokeColor=#E8543F;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#E8543F;fontFamily=Helvetica;labelBackgroundColor=#0B1220;dashed=1;" target="cw" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="pubrow" parent="1" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#9AA4B2;strokeWidth=1.5;dashed=1;dashPattern=8 4;verticalAlign=top;align=left;spacingLeft=10;spacingRight=10;spacingTop=4;fontSize=13;fontStyle=1;fontColor=#9AA4B2;fontFamily=Helvetica;" value="Dashboard view (publisher deployed; live tab not public)" vertex="1">
+        <mxCell id="pubrow" parent="1" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#9AA4B2;strokeWidth=1.5;dashed=1;dashPattern=8 4;verticalAlign=top;align=left;spacingLeft=10;spacingRight=10;spacingTop=4;fontSize=13;fontStyle=1;fontColor=#9AA4B2;fontFamily=Helvetica;" value="Dashboard view (Incoming AML tab is live, showing the 7 Nov replay)" vertex="1">
           <mxGeometry height="190" width="1520" x="40" y="560" as="geometry" />
         </mxCell>
         <mxCell id="sched" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=#111A2B;strokeColor=#F0509A;strokeWidth=1.5;verticalAlign=top;spacingTop=2;fontStyle=1;fontSize=11;fontColor=#F0509A;fontFamily=Helvetica;" value="EventBridge Scheduler" vertex="1">
@@ -1458,7 +1458,7 @@
         <mxCell id="leg-b1" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#232F3E;strokeColor=#FF9900;strokeWidth=2;fontColor=#FFFFFF;fontStyle=1;fontSize=13;fontFamily=Helvetica;" value="2" vertex="1">
           <mxGeometry height="28" width="28" x="40" y="827" as="geometry" />
         </mxCell>
-        <mxCell id="leg-t1" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=12;fontColor=#E6EAF0;fontFamily=Helvetica;fontStyle=0;spacing=0;" value="&lt;b&gt;Lambda consumer&lt;/b&gt; – validates, rebuilds sender history, scores with the frozen BQ1 model; DynamoDB stops double-counting, S3 keeps an audit copy." vertex="1">
+        <mxCell id="leg-t1" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=12;fontColor=#E6EAF0;fontFamily=Helvetica;fontStyle=0;spacing=0;" value="&lt;b&gt;Lambda consumer&lt;/b&gt; – validates, rebuilds sender and receiver history (all 15 features), scores with the frozen BQ1 model; DynamoDB stops double-counting, S3 keeps an audit copy." vertex="1">
           <mxGeometry height="32" width="1062" x="78" y="826" as="geometry" />
         </mxCell>
         <mxCell id="leg-b2" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#232F3E;strokeColor=#FF9900;strokeWidth=2;fontColor=#FFFFFF;fontStyle=1;fontSize=13;fontFamily=Helvetica;" value="3" vertex="1">
