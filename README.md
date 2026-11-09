@@ -100,15 +100,16 @@ AWS identity; see the [control stack](infra/dashboard-control/README.md).
    trigger starts it through EventBridge.
 2. **Acquire.** `is459-g3-cloud-ingest` runs a container Lambda that downloads the
    Kaggle files and historical FX into S3. If the same request was already published,
-   the run stops here and returns that release.
+   the run stops here, re-checks that release and shows it on the matching page.
 3. **Curate.** Glue converts amounts to USD and builds earlier-event-only behaviour
    features, written as date-partitioned Parquet in the Glue Data Catalog.
 4. **Analyse in parallel.** Glue runs the rule baseline (with optional SageMaker
    candidate training), BQ1 frozen scoring and BQ2 network detection at the same time.
 5. **Verify and export.** A checkpointed Glue export recomputes everything
    independently and builds the release. Nothing ships unless every check passes.
-6. **Publish.** A Lambda verifies hashes and publishes to a private S3 origin behind
-   CloudFront. Failures alert SNS.
+6. **Publish.** A Lambda verifies hashes, saves the release to a private S3 origin behind
+   CloudFront and moves a pointer: HI-Large runs go to the main dashboard, every other
+   run to the demo page (`?view=demo`). Failures alert SNS.
 
 The editable diagram ([`docs/is459-g3-aml-pipeline-aws.drawio`](docs/is459-g3-aml-pipeline-aws.drawio))
 has five pages: overview, pipeline run, BQ1, BQ2 and streaming.
