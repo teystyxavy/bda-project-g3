@@ -16,6 +16,13 @@
 > - `Begin` has a resume mode that reuses verified stages after a failed export. Don't
 >   redrive a failed execution: its error goes to the Fail state.
 > - The failure email topic currently has no subscriber; check before relying on alerts.
+> - **HI-Large is cache-only from the dashboard.** It replays the verified 7 Nov run in
+>   about 10 seconds with no Glue and switches the dashboard to that release; see
+>   [Run HI-Large from the cache](#run-hi-large-from-the-cache-free).
+> - Any cache hit, not only HI-Large, now makes the reused release live: `ExistingRelease`
+>   switches `dashboard/current.json` to it.
+> - The LI- datasets are no longer offered for cloud runs (dashboard or API). They remain
+>   available only through `-DownloadOnly`.
 
 **1 November 2026 deployment verified:** baseline verification,
 rule scoring and dashboard export now use Glue jobs `is459-g3-ingest-baseline`
@@ -109,8 +116,9 @@ claim about the version of your existing files. A fresh download resolves the Ka
 cache version and pins both files to it. Cloud mode reuses verified versioned files
 from S3; `-Refresh` requests a fresh Kaggle download. Legacy local files without a
 recorded version remain honestly unversioned in the compatibility path.
-Only HI-Small and the reviewed September 2022 model/schema contract are supported by
-the cloud entry point. Use `-DownloadOnly` for all six subsets, optional pattern
+The cloud entry point supports HI-Small, HI-Medium and cache-only HI-Large under the
+reviewed September 2022 model/schema contract. LI- subsets are rejected. Use
+`-DownloadOnly` for all six subsets, optional pattern
 descriptions or individual files. `-Size Medium` or `-Variant LI` without
 `-DownloadOnly` is rejected before AWS calls. See the
 [Kaggle download options](kaggle-download-options.md) for examples and costs.
@@ -126,7 +134,43 @@ in the project bucket; local preparation remains under ignored `output/ingest/<r
 You can also start `is459-g3-cloud-ingest` directly in the AWS console with
 `{"run_id":"cloud-demo-unique-id"}`. Optional input fields are `rows`,
 `dataset_version`, `train`, `refresh` and `rerun`; credentials are never input fields.
-The default is full HI-Small with frozen scoring. Use a new run ID for each attempt.
+The default is full HI-Small with frozen scoring. Add `"subset":"HI-Medium"` or
+`"subset":"HI-Large"` to choose another dataset; HI-Large accepts no other optional
+field. Use a new run ID for each attempt.
+
+## Run HI-Large from the cache (free)
+
+This is the recommended way to show HI-Large. It costs nothing in Glue or SageMaker
+and finishes in about 10 seconds.
+
+1. Sign in to the [Ingestion tab](https://d1n61tlw9pcrog.cloudfront.net/) as described in
+   [Live dashboard operator controls](#live-dashboard-operator-controls).
+2. Under **Dataset**, choose **HI-Large · reuse verified run (cache only)**. Row limits,
+   dataset version, refresh, rebuild and training are locked for this choice. The
+   **Already available for this dataset** list shows the published result it will reuse.
+3. Start the run. `is459-g3-cloud-ingest` runs `Acquire`, then `Cached?`, then
+   `ExistingRelease`, and ends `SUCCEEDED`. No `is459-g3-ingest` execution and no Glue job
+   starts.
+4. `ExistingRelease` verifies the published result, the release manifest and its
+   `dashboard.json`, then switches `dashboard/current.json` to
+   `hi-large-delta1-20261107-batch`. Reload the main dashboard (hard refresh if it
+   still shows the previous run) and the header reads 179,702,229 transactions.
+
+How it stays free: `Acquire` does not download or prepare HI-Large. It reads the pinned
+manifest `pipeline/runs/hi-large-delta1-20261107-batch/raw/manifest.json`, checks that
+its processing hash still matches, that `pipeline/deployment.json` is unchanged, and that
+the result cache entry is published. On any mismatch the run fails at `Acquire` and can
+never reach the paid batch. It writes nothing to S3 apart from the pointer switch.
+
+Redeploying `infra/ingestion` with a new `prepare-ingestion` package changes
+`pipeline/deployment.json`, which breaks every result cache including this one. After
+such a redeploy the cached HI-Large run fails safely at `Acquire` until the pin is
+updated; it does not start a full reprocess.
+
+To open HI-Large without changing what the main address shows, use the permanent
+release link: <https://d1n61tlw9pcrog.cloudfront.net/releases/hi-large-delta1-20261107-batch/index.html>.
+Keep `index.html` on the end. That page shows the UI as published on 8 Nov; its
+Ingestion, status and stream tabs still read the live configuration.
 
 ## Start a run by uploading to S3 (EventBridge, opt-in)
 
@@ -302,4 +346,4 @@ python scripts/aws/dashboard-signin.py --profile is459-g3-tools
 
 The helper verifies g1team3 and opens a single-use sign-in link; no email invitation or separate dashboard password is needed. If expired, restore the AWS session with `aws login --profile is459-g3` first. See the [control deployment and security guide](../../infra/dashboard-control/README.md).
 
-The dashboard exposes HI-Small demo/custom/full row selection, latest or pinned dataset version, refresh, stage rebuild, full-run candidate training, configuration preview and real workflow progress. Local download-only choices and administrative recovery remain script operations. Starting new processing can incur AWS charges. Signing out revokes dashboard access but does not stop a running workflow.
+The dashboard offers HI-Small, HI-Medium and cache-only HI-Large (LI- datasets are not listed). It exposes demo/custom/full row selection, latest or pinned dataset version (with the versions already cached in S3), an "Already available for this dataset" list of reusable results, refresh, stage rebuild, full-run candidate training for HI-Small, configuration preview and real workflow progress. A run that hits the result cache, including cached HI-Large, switches the main dashboard to the reused release. Local download-only choices and administrative recovery remain script operations. Starting new processing can incur AWS charges. Signing out revokes dashboard access but does not stop a running workflow.

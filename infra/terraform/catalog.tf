@@ -9,7 +9,7 @@
 # partition folders from a date range instead of needing MSCK REPAIR / Glue
 # crawlers, so new data is queryable without any extra step or crawler cost.
 # It also stores two Athena "named queries" (saved SQL from ../../sql/) that
-# reconcile the smoke output and compute BQ2 bank-to-bank corridors.
+# reconcile the smoke output and (legacy) sum bank-to-bank volume on it.
 
 locals {
   # Column schema shared by both tables, built as one map {column => Hive type}.
@@ -87,8 +87,9 @@ resource "aws_athena_named_query" "reconcile" {
   query     = file("${path.module}/../../sql/reconcile-smoke.sql")
 }
 
-# Saved Athena query: ../../sql/smoke-corridors.sql -- BQ2 daily bank-to-bank
-# corridor volume, share and HHI concentration on the smoke data.
+# Saved Athena query: ../../sql/smoke-corridors.sql -- legacy smoke check of
+# daily bank-to-bank volume, share and HHI. BQ2 itself is now the Glue
+# mule-network job; the resource name is kept to avoid replacing it.
 resource "aws_athena_named_query" "corridors" {
   name      = "${var.project_name}-smoke-corridors"
   database  = aws_glue_catalog_database.curated.name
