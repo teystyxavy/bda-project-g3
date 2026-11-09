@@ -239,10 +239,10 @@ resource "aws_iam_role" "control" {
 resource "aws_iam_role_policy" "control" {
   role = aws_iam_role.control.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
-    # - check whether dashboard/current.json exists in the dashboard bucket;
+    # - check whether the dashboard pointers (current.json, demo.json) exist in the dashboard bucket;
     # - read curated and network output (to verify markers);
     # - read catalog metadata.
-    { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.site, Condition = { StringEquals = { "s3:prefix" = "dashboard/current.json" } } },
+    { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.site, Condition = { StringEquals = { "s3:prefix" = ["dashboard/current.json", "dashboard/demo.json"] } } },
     { Effect = "Allow", Action = ["s3:GetBucketLocation"], Resource = local.s3 },
     { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = ["pipeline/runs/*/curated/*", "pipeline/runs/*/network/*"] } } },
     { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/runs/*/curated/*", "${local.s3}/pipeline/runs/*/network/*"] },
@@ -251,12 +251,12 @@ resource "aws_iam_role_policy" "control" {
     #   current dashboard pointer, and published release snapshots (the
     #   'activate' op verifies a release's dashboard.json before pointing at it).
     { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = "pipeline/*" } } },
-    { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/*", "${local.site}/dashboard/current.json", "${local.site}/dashboard/releases/*/dashboard.json"] },
+    { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/*", "${local.site}/dashboard/current.json", "${local.site}/dashboard/demo.json", "${local.site}/dashboard/releases/*/dashboard.json"] },
     # - write: the run lock, run/stage cache receipts, curated/scored/network cache copies,
     #   run evidence, SageMaker training inputs, the dashboard release files and
-    #   current.json. (The shell files stay writable for compatibility, but the
+    #   the pointers (current.json for HI-Large, demo.json for every other run). (The shell files stay writable for compatibility, but the
     #   control code no longer writes them.)
-    { Effect = "Allow", Action = ["s3:PutObject"], Resource = ["${local.s3}/pipeline/lock.json", "${local.s3}/pipeline/cache/*", "${local.s3}/pipeline/stage-cache/*", "${local.s3}/pipeline/runs/*/curated/*", "${local.s3}/pipeline/runs/*/scored/*", "${local.s3}/pipeline/runs/*/network/*", "${local.s3}/pipeline/runs/*/evidence/*", "${local.s3}/sagemaker/inputs/is459-g3-train-*/*", "${local.site}/dashboard/releases/*/*", "${local.site}/dashboard/current.json", "${local.site}/dashboard/index.html", "${local.site}/dashboard/dashboard.js", "${local.site}/dashboard/dashboard.css"] },
+    { Effect = "Allow", Action = ["s3:PutObject"], Resource = ["${local.s3}/pipeline/lock.json", "${local.s3}/pipeline/cache/*", "${local.s3}/pipeline/stage-cache/*", "${local.s3}/pipeline/runs/*/curated/*", "${local.s3}/pipeline/runs/*/scored/*", "${local.s3}/pipeline/runs/*/network/*", "${local.s3}/pipeline/runs/*/evidence/*", "${local.s3}/sagemaker/inputs/is459-g3-train-*/*", "${local.site}/dashboard/releases/*/*", "${local.site}/dashboard/current.json", "${local.site}/dashboard/demo.json", "${local.site}/dashboard/index.html", "${local.site}/dashboard/dashboard.js", "${local.site}/dashboard/dashboard.css"] },
     # - delete only the lock file (releasing the lock at the end of a run);
     # - create/read the per-run Athena table;
     # - see and stop this pipeline's Glue runs (cleanup after a failure);

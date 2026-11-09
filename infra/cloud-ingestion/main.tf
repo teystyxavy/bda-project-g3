@@ -121,7 +121,8 @@ resource "aws_iam_role" "workflow" {
 }
 # Workflow permissions:
 # - invoke the acquisition Lambda, and the control Lambda (cache hit: activate
-#   the reused release, i.e. switch dashboard/current.json);
+#   the reused release, i.e. switch dashboard/current.json for HI-Large or
+#   dashboard/demo.json for any other run);
 # - start the main ingestion workflow, then poll/stop its executions
 #   (DescribeExecution/StopExecution) while waiting for it to finish;
 # - manage the managed EventBridge rule Step Functions uses to learn when a

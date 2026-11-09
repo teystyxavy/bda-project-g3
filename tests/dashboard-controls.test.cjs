@@ -681,3 +681,46 @@ test('the tab shows cached versions and published results for the selected datas
   assert.match(h.el('ingestion-existing-list').children[0].textContent,/179,702,229 transactions.*hi-large-delta1/);
   assert.equal(h.calls.some(call=>call.init.method==='POST'),false);
 });
+
+const pointerTo=async(data,run_id='verified-run')=>{
+  const bytes=new TextEncoder().encode(JSON.stringify(data));
+  const sha256=Buffer.from(await webcrypto.subtle.digest('SHA-256',bytes)).toString('hex');
+  return {schema_version:1,run_id,snapshot:`releases/${run_id}/dashboard.json`,sha256};
+};
+
+test('the main page follows current.json and hides the demo banner',async()=>{
+  const data=snapshot(),pointer=await pointerTo(data);
+  const h=await harness({fetchHook:async url=>{
+    if(url==='current.json') return respond(pointer);
+    if(url==='releases/verified-run/dashboard.json') return respond(data);
+  }});
+  assert.equal(h.calls.some(call=>call.url==='demo.json'),false);
+  assert.equal(h.el('demo-banner').hidden,true);
+  assert.match(h.el('status').textContent,/Run verified-run/);
+});
+
+test('?view=demo follows demo.json, shows the banner and never reads current.json',async()=>{
+  const data=snapshot(),pointer=await pointerTo(data);
+  const h=await harness({search:'?view=demo',fetchHook:async url=>{
+    if(url==='demo.json') return respond(pointer);
+    if(url==='releases/verified-run/dashboard.json') return respond(data);
+  }});
+  assert.equal(h.calls.some(call=>call.url==='current.json'),false);
+  assert.equal(h.el('demo-banner').hidden,false);
+  assert.match(h.el('status').textContent,/Run verified-run/);
+});
+
+test('the demo page says so when no demo run exists, instead of showing other results',async()=>{
+  const h=await harness({search:'?view=demo'});
+  assert.equal(h.calls.some(call=>call.url==='dashboard.json'),false);
+  assert.match(h.el('status').textContent,/No demo run has been published yet/);
+});
+
+test('the ingestion tab links the demo page and says where a demo run went',async()=>{
+  assert.match(html,/id="ingestion-demo-link" href="\.\/\?view=demo"/);
+  const h=await harness({stored:{active:RUN_ID},fetchHook:async url=>{
+    if(url===CONFIG.api_url+'/runs/'+RUN_ID) return respond(run('SUCCEEDED'));
+    if(url==='/releases/verified-run/dashboard.json') return respond(snapshot());
+  }});
+  assert.match(h.el('ingestion-run-note').textContent,/demo page; the main dashboard still shows the HI-Large release/);
+});

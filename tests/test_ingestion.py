@@ -41,14 +41,19 @@ def config():
         distribution_id='EU1WB6XM4GKHQ', dashboard_url='https://d1n61tlw9pcrog.cloudfront.net/')
 
 
-def manifest():
+def manifest(**updates):
     value = dict(schema_version=1, run_id='test-run', subset='HI-Small', rows=320, train=False, rerun=False,
         start_date='2022-09-01', end_date='2022-09-12', dataset_version=1,
         files={name: dict(bytes=1, sha256='c'*64) for name in ['transactions.csv', 'accounts.csv', 'fx.csv']},
         deployment_sha256=sha(config()), model_manifest_sha256='b'*64, export_dates=None,
-        currencies=['US Dollar'], source_scope='synthetic-fixture')
+        currencies=['US Dollar'], source_scope='synthetic-fixture') | updates
     value['processing_sha256'] = sha({key: value[key] for key in ['subset', 'rows', 'files', 'start_date', 'end_date', 'dataset_version', 'deployment_sha256', 'train', 'export_dates']})
     return value
+
+
+def live_manifest():
+    """A run that goes live: HI-Large without candidate training moves current.json."""
+    return manifest(subset='HI-Large')
 
 
 def raw_fixture(directory):
@@ -219,17 +224,17 @@ def test_workflow_never_retries_compute_and_has_failure_path():
     assert json.loads((ROOT / 'infra/ingestion/workflow.asl.json').read_text()) == workflow
 
 
-def publication_inputs():
+def publication_inputs(live_manifest=live_manifest):
     s3 = MemoryS3()
     p = paths('test-run')
     s3.put_object(Bucket=BUCKET, Key='pipeline/lock.json', Body=canonical({'run_id': 'test-run'}))
-    s3.put_object(Bucket=BUCKET, Key=p['raw']+'/manifest.json', Body=canonical(manifest()))
+    s3.put_object(Bucket=BUCKET, Key=p['raw']+'/manifest.json', Body=canonical(live_manifest()))
     old = canonical({'schema_version': 1, 'run_id': 'previous-run', 'snapshot': 'releases/previous-run/dashboard.json', 'sha256': 'd'*64})
     s3.put_object(Bucket=SITE_BUCKET, Key='dashboard/current.json', Body=old)
     assets = {'index.html': b'<html>fixture</html>', 'dashboard.js': b'console.log(1);', 'dashboard.css': b'body {}',
               'dashboard.json': canonical({'pipeline': {'run_id': 'test-run'}, 'buildStatus': 'complete'})}
-    release = dict(pipeline_run_id='test-run', processing_sha256=manifest()['processing_sha256'],
-        verification={'scores': {'status': 'passed'}, 'network': {'status': 'passed'}},
+    release = dict(pipeline_run_id='test-run', processing_sha256=live_manifest()['processing_sha256'],
+        verification={'scores': {'status': 'passed'}, 'network': {'status': 'passed'}, 'training': {'status': 'passed'}},
         files=[dict(file=name, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()) for name, data in assets.items()])
     s3.put_object(Bucket=BUCKET, Key=p['export']+'/release/manifest.json', Body=canonical(release))
     for name, data in assets.items(): s3.put_object(Bucket=BUCKET, Key=p['export']+'/release/site/'+name, Body=data)
@@ -247,7 +252,7 @@ def test_publication_pointer_commit_and_cache():
     assert json.loads(s3.data[SITE_BUCKET, 'dashboard/current.json'])['previous_run_id'] == 'previous-run'
     assert result['status'] == 'published'
     assert invalidations[0]['InvalidationBatch']['CallerReference'] == 'ingest-test-run'
-    assert json.loads(s3.data[BUCKET, 'pipeline/cache/'+manifest()['processing_sha256']+'.json']) == result
+    assert json.loads(s3.data[BUCKET, 'pipeline/cache/'+live_manifest()['processing_sha256']+'.json']) == result
     assert 'pipeline/lock.json' in s3.deleted
 
 
@@ -275,7 +280,7 @@ def test_failed_hash_preserves_previous_release_and_lock():
 def test_duplicate_run_cannot_claim_and_failure_keeps_outputs():
     s3 = MemoryS3()
     s3.put_object(Bucket=BUCKET, Key='pipeline/lock.json', Body=canonical({'run_id': 'other-run'}))
-    s3.put_object(Bucket=BUCKET, Key=paths('test-run')['raw']+'/manifest.json', Body=canonical(manifest()))
+    s3.put_object(Bucket=BUCKET, Key=paths('test-run')['raw']+'/manifest.json', Body=canonical(live_manifest()))
     with pytest.raises(ValueError, match='own'): handle({'op': 'begin', 'run_id': 'test-run'}, config(), clients(s3))
     handle({'op': 'failed', 'run_id': 'test-run', 'failure': {'Error': 'test'}}, config(), clients(s3))
     assert json.loads(s3.data[BUCKET, 'pipeline/lock.json'])['run_id'] == 'other-run'
@@ -459,18 +464,18 @@ def test_large_reference_and_export_have_bounded_driver_memory_headroom():
     assert small['WorkerType']=='G.2X' and small['Timeout']==30
 
 
-def activation_inputs(with_release_manifest=True):
+def activation_inputs(with_release_manifest=True, live_manifest=live_manifest):
     """A published run whose release is in the dashboard bucket, with the pointer elsewhere."""
     s3 = MemoryS3()
     p = paths('test-run')
-    s3.put_object(Bucket=BUCKET, Key=p['raw']+'/manifest.json', Body=canonical(manifest()))
-    s3.put_object(Bucket=BUCKET, Key='pipeline/cache/'+manifest()['processing_sha256']+'.json',
-                  Body=canonical({'status': 'published', 'run_id': 'test-run', 'processing_sha256': manifest()['processing_sha256']}))
+    s3.put_object(Bucket=BUCKET, Key=p['raw']+'/manifest.json', Body=canonical(live_manifest()))
+    s3.put_object(Bucket=BUCKET, Key='pipeline/cache/'+live_manifest()['processing_sha256']+'.json',
+                  Body=canonical({'status': 'published', 'run_id': 'test-run', 'processing_sha256': live_manifest()['processing_sha256']}))
     snapshot = canonical({'schema_version': 1, 'buildStatus': 'complete', 'pipeline': {'run_id': 'test-run'}})
     s3.put_object(Bucket=SITE_BUCKET, Key='dashboard/releases/test-run/dashboard.json', Body=snapshot)
     if with_release_manifest:
         s3.put_object(Bucket=BUCKET, Key=p['export']+'/release/manifest.json', Body=canonical(dict(
-            pipeline_run_id='test-run', processing_sha256=manifest()['processing_sha256'],
+            pipeline_run_id='test-run', processing_sha256=live_manifest()['processing_sha256'],
             files=[dict(file='dashboard.json', bytes=len(snapshot), sha256=hashlib.sha256(snapshot).hexdigest())])))
     old = canonical({'schema_version': 1, 'run_id': 'other-run', 'snapshot': 'releases/other-run/dashboard.json', 'sha256': 'd'*64})
     s3.put_object(Bucket=SITE_BUCKET, Key='dashboard/current.json', Body=old)
@@ -521,13 +526,43 @@ def test_activate_refuses_unverified_release_and_keeps_pointer(breakage, message
     if breakage == 'corrupt-snapshot': s3.data[key] = b'{"tampered": true}'
     if breakage == 'missing-snapshot': del s3.data[key]
     if breakage == 'not-published':
-        s3.data[BUCKET, 'pipeline/cache/'+manifest()['processing_sha256']+'.json'] = canonical({'status': 'failed', 'run_id': 'test-run'})
+        s3.data[BUCKET, 'pipeline/cache/'+live_manifest()['processing_sha256']+'.json'] = canonical({'status': 'failed', 'run_id': 'test-run'})
     if breakage == 'wrong-provenance':
         bad = canonical({'schema_version': 1, 'buildStatus': 'complete', 'pipeline': {'run_id': 'someone-else'}})
         s3.data[key] = bad
         s3.data[BUCKET, paths('test-run')['export']+'/release/manifest.json'] = canonical(dict(
-            pipeline_run_id='test-run', processing_sha256=manifest()['processing_sha256'],
+            pipeline_run_id='test-run', processing_sha256=live_manifest()['processing_sha256'],
             files=[dict(file='dashboard.json', bytes=len(bad), sha256=hashlib.sha256(bad).hexdigest())]))
     if breakage == 'no-requested-run': event.pop('requested_run_id')
     with pytest.raises(ValueError, match=message): handle(event, config(), aws)
     assert s3.data[SITE_BUCKET, 'dashboard/current.json'] == old and not invalidations
+
+
+DEMO_RUNS = [lambda: manifest(), lambda: manifest(subset='HI-Medium'), lambda: manifest(subset='HI-Large', train=True)]
+
+
+@pytest.mark.parametrize('demo_manifest', DEMO_RUNS)
+def test_demo_publication_moves_only_the_demo_pointer(demo_manifest):
+    s3, aws, old, invalidations = publication_inputs(demo_manifest)
+    result = handle({'op': 'publish', 'run_id': 'test-run', 'job_run_id': 'jr-test'}, config(), aws)
+    assert result['status'] == 'published' and result['pointer'] == 'demo.json'
+    assert s3.data[SITE_BUCKET, 'dashboard/current.json'] == old
+    demo = json.loads(s3.data[SITE_BUCKET, 'dashboard/demo.json'])
+    assert demo['run_id'] == 'test-run' and demo['snapshot'] == 'releases/test-run/dashboard.json' and demo['previous_run_id'] is None
+    assert invalidations[0]['InvalidationBatch']['Paths'] == {'Quantity': 1, 'Items': ['/demo.json']}
+
+
+def test_live_publication_reports_the_live_pointer():
+    s3, aws, old, invalidations = publication_inputs()
+    assert handle({'op': 'publish', 'run_id': 'test-run', 'job_run_id': 'jr-test'}, config(), aws)['pointer'] == 'current.json'
+    assert (SITE_BUCKET, 'dashboard/demo.json') not in s3.data
+
+
+@pytest.mark.parametrize('demo_manifest', DEMO_RUNS)
+def test_cached_demo_run_moves_only_the_demo_pointer(demo_manifest):
+    s3, aws, old, snapshot, shell, invalidations = activation_inputs(live_manifest=demo_manifest)
+    result = handle(ACTIVATE, config(), aws)
+    assert result['status'] == 'activated' and result['pointer'] == 'demo.json'
+    assert s3.data[SITE_BUCKET, 'dashboard/current.json'] == old
+    assert json.loads(s3.data[SITE_BUCKET, 'dashboard/demo.json'])['run_id'] == 'test-run'
+    assert invalidations[0]['InvalidationBatch']['Paths'] == {'Quantity': 1, 'Items': ['/demo.json']}

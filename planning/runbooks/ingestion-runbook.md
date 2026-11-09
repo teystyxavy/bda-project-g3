@@ -19,8 +19,12 @@
 > - **HI-Large is cache-only from the dashboard.** It replays the verified 7 Nov run in
 >   about 10 seconds with no Glue and switches the dashboard to that release; see
 >   [Run HI-Large from the cache](#run-hi-large-from-the-cache-free).
-> - Any cache hit, not only HI-Large, now makes the reused release live: `ExistingRelease`
->   switches `dashboard/current.json` to it.
+> - **Only HI-Large moves the main dashboard.** A run's release (fresh or a cache hit via
+>   `ExistingRelease`) switches `dashboard/current.json` only for HI-Large without candidate
+>   training. Every other run (HI-Small, HI-Medium, row limits, training) switches
+>   `dashboard/demo.json` instead, shown at `/?view=demo` with a demo banner. To put another
+>   release on the main dashboard on purpose, run
+>   `python scripts/dashboard/make-live.py --run-id <release> --evidence output/make-live-<date>`.
 > - The LI- datasets are no longer offered for cloud runs (dashboard or API). They remain
 >   available only through `-DownloadOnly`.
 
@@ -81,7 +85,7 @@ to select your own environment. Account and region are checked before AWS work.
 # Same flow, additionally train a private candidate in SageMaker.
 .\scripts\ingestion\ingest.ps1 -Train
 
-# Approved small cloud smoke run; publishes a clearly labelled 1,000-row release.
+# Approved small cloud smoke run; publishes a 1,000-row release to the demo page (/?view=demo).
 .\scripts\ingestion\ingest.ps1 -Rows 1000
 
 # Return after AWS accepts the workflow; processing continues in AWS.
