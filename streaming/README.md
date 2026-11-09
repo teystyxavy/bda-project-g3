@@ -76,7 +76,7 @@ Local evidence (`output/streaming-demo-delta1-20261107/verification.json`, no AW
   rows). The check uses that folder; its digest of per-file SHA-256 values is `d1b88d99…`.
   On 200,000 sampled rows its features equal the release's `bq1_scored.parquet`
   (`f914ecb9…`).
-- **Cohort:** 32 senders with 20–40 payments each, 984 transactions from Sep 1 to 16
+- **Cohort:** 32 senders with 20–40 payments each, 984 HI-Medium transactions from Sep 1 to 16
   (158 of them inside the release's Sep 15–28 window), paying 88 receivers. The receiver
   preload holds 1,957 payments, and the largest state is 11 KB.
 - **Parity:** all 15 features are exact, USD sums included. The maximum score difference
