@@ -251,6 +251,19 @@ def test_publication_pointer_commit_and_cache():
     assert 'pipeline/lock.json' in s3.deleted
 
 
+def test_publication_keeps_live_ui_shell():
+    s3, aws, old, invalidations = publication_inputs()
+    live = {'index.html': b'<html>live</html>', 'dashboard.js': b'live();', 'dashboard.css': b'live {}'}
+    for name, data in live.items(): s3.put_object(Bucket=SITE_BUCKET, Key='dashboard/'+name, Body=data)
+    handle({'op': 'publish', 'run_id': 'test-run', 'job_run_id': 'jr-test'}, config(), aws)
+    # The run's own shell goes only into its immutable release folder.
+    for name, data in live.items():
+        assert s3.data[SITE_BUCKET, 'dashboard/'+name] == data
+        assert s3.data[SITE_BUCKET, 'dashboard/releases/test-run/'+name] != data
+    assert json.loads(s3.data[SITE_BUCKET, 'dashboard/current.json'])['run_id'] == 'test-run'
+    assert invalidations[0]['InvalidationBatch']['Paths'] == {'Quantity': 1, 'Items': ['/current.json']}
+
+
 def test_failed_hash_preserves_previous_release_and_lock():
     s3, aws, old, invalidations = publication_inputs()
     s3.data[BUCKET, paths('test-run')['export']+'/release/site/dashboard.json'] = b'corrupt'
