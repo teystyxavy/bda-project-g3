@@ -77,8 +77,9 @@ REVIEWS = {
     OCTOBER_MODEL: {'cutoff': 0.9937289953, 'capacity': 100, 'period': '2022-09-07 to 2022-09-08',
                     'days': 'HI-Small validation', 'source_run': 'opt-full-20261006-aws1',
                     'model_manifest_sha256': OCTOBER_MODEL},
-    DELTA1_MODEL: {'cutoff': 0.9953691363, 'capacity': 100, 'period': '2022-09-15 to 2022-09-28',
-                   'days': 'HI-Medium batch', 'source_run': 'medium-delta1-20261107-183216',
+    # The main dashboard's HI-Large release: lowest score in its test-period top 100.
+    DELTA1_MODEL: {'cutoff': 0.9970490336, 'capacity': 100, 'period': '2022-09-15 to 2023-01-12',
+                   'days': 'HI-Large batch', 'source_run': 'hi-large-delta1-20261107-batch',
                    'model_manifest_sha256': DELTA1_MODEL}}
 # Recorded cloud acceptance per replay run and model: every committed score was
 # compared with the frozen batch reference for the same transaction.
@@ -86,8 +87,9 @@ VERIFIED = {'stream-smoke-20261006': {
     'transactions': 884, 'features_exact': True, 'max_absolute_score_difference': 2.9103830456733704e-11,
     'verified_on': '2026-10-06', 'evidence': 'planning/evidence/streaming-deployment-result-20261006.json',
     'model_manifest_sha256': OCTOBER_MODEL},
-    # 984 is the HI-Medium replay cohort recorded in the evidence file below; on HI-Large
-    # the count is 744. Keep this value equal to the evidence (a test checks it).
+    # 984 is the HI-Medium replay cohort recorded in the evidence file below. The HI-Large
+    # replay (stream-hilarge-20261109) has 744 events. Keep this value equal to the
+    # evidence (a test checks it).
     'stream-delta1-20261107': {
     'transactions': 984, 'features_exact': True, 'max_absolute_score_difference': 9.313225746154785e-10,
     'verified_on': '2026-11-07', 'evidence': 'planning/evidence/streaming-delta1-result-20261107.json',
@@ -275,6 +277,15 @@ def progress(times, processed, now):
     return points
 
 
+def cohort_text(events, receivers):
+    """Describe the replay, naming the dataset its transaction IDs ('<subset>:<source row>') come from."""
+    dataset = next(iter(events)).split(':')[0] if events else 'unknown'
+    text = f'Replay of complete sender histories from the verified {dataset} batch'
+    if receivers:
+        text += ', with each receiver’s other incoming payments preloaded from the same data'
+    return text + '; synthetic data'
+
+
 def build_snapshot(items, run_id, events, senders, *, now, consumer_enabled, alarm, committed, model_sha256):
     """``committed`` maps audit object names to their S3 write times (see ``commit_times``)."""
     if model_sha256 not in MODEL_FEATURES:
@@ -302,9 +313,7 @@ def build_snapshot(items, run_id, events, senders, *, now, consumer_enabled, ala
     points = progress(times, len(rows), now)
     return {'schema_version': SCHEMA_VERSION, 'run_id': run_id, 'generated_at': now, 'state': state,
             'reconciled': reconciled, 'consumer_enabled': consumer_enabled,
-            'cohort': ('Replay of complete sender histories from the verified HI-Small batch, with each receiver’s '
-                       'other incoming payments preloaded from the same data; synthetic data') if receivers else
-                      'Replay of complete sender histories from the verified HI-Small batch; synthetic data',
+            'cohort': cohort_text(events, receivers),
             'expected': len(events), 'processed': len(rows),
             'senders': {'expected': len(senders), 'started': len(versions),
                         'complete': sum(versions.get(key) == final for key, final in senders.items())},
