@@ -24,6 +24,7 @@ except ImportError:  # The Lambda package places both modules at its root.
 RECENT_RUNS = 10
 CACHE_SECONDS = 15
 RUN_NAME = re.compile('[A-Za-z0-9][A-Za-z0-9_-]{0,79}')
+SUBSETS = ('HI-Small', 'HI-Medium', 'HI-Large')
 _cache = {'at': 0.0, 'body': None}
 
 
@@ -43,8 +44,9 @@ def selection(raw):
         event = {}
     if not isinstance(event, dict):
         event = {}
-    rows, version = event.get('rows'), event.get('dataset_version')
-    return {'subset': 'HI-Small', 'rows': rows if type(rows) is int else None,
+    rows, version, subset = event.get('rows'), event.get('dataset_version'), event.get('subset')
+    # Runs started without a subset are HI-Small (the control API omits it for HI-Small).
+    return {'subset': subset if subset in SUBSETS else 'HI-Small', 'rows': rows if type(rows) is int else None,
             'dataset_version': version if type(version) is int else None,
             'train': event.get('train') is True}
 
