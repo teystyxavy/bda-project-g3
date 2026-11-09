@@ -45,6 +45,7 @@ def selection(raw):
     if not isinstance(event, dict):
         event = {}
     rows, version, subset = event.get('rows'), event.get('dataset_version'), event.get('subset')
+    # Runs started without a subset are HI-Small (the control API omits it for HI-Small).
     return {'subset': subset if subset in SUBSETS else 'HI-Small', 'rows': rows if type(rows) is int else None,
             'dataset_version': version if type(version) is int else None,
             'train': event.get('train') is True}

@@ -30,7 +30,10 @@ Do **not** redrive the failed 7 Nov execution: its error routes to the Fail stat
 a redrive fails again. Use the resume package in
 `output/sfn-hi-large-resume-20261108/ready/` if a resume is ever needed again. Since 9 Nov the
 dashboard offers a **HI-Large cache-only** run: it returns this published release in
-about 10 seconds with no Glue (`output/hi-large-cached-run-20261109/`).
+about 10 seconds with no Glue and switches the main dashboard to it
+(`output/hi-large-cached-run-20261109/`). Steps are in the
+[ingestion runbook](ingestion-runbook.md#run-hi-large-from-the-cache-free). Permanent link:
+<https://d1n61tlw9pcrog.cloudfront.net/releases/hi-large-delta1-20261107-batch/index.html>.
 
 ## Original run plan
 

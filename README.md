@@ -64,7 +64,7 @@ dataset (synthetic), enriched with historical FX rates so every amount is compar
 | **Recovery** | A failed run can resume from its verified stages instead of starting over |
 | **Checks** | Every score and network table is recomputed independently before anything is published |
 | **Streaming** | Kinesis → Lambda scoring with exact batch parity, shown on the **Incoming AML** tab (stream parked to save cost) |
-| **Cost visibility** | The Ingestion tab shows real AWS spend from Cost Explorer |
+| **Free HI-Large replay** | The Ingestion tab replays the verified HI-Large run from cache in about 10 seconds, with no Glue, and makes that release live |
 
 ## The dashboard
 
@@ -73,7 +73,12 @@ dataset (synthetic), enriched with historical FX rates so every amount is compar
 - **BQ1 review queue:** ranked transactions, explanations and accuracy by period.
 - **BQ2 mule networks:** ring explorer, hubs, loops and pairs.
 - **Incoming AML:** transactions scored one at a time by the streaming replay.
-- **Ingestion:** live pipeline status, operator run controls and the AWS cost panel.
+- **Ingestion:** live pipeline status and operator run controls.
+
+The main address shows whichever release is current. To open the HI-Large release
+however the pointer moves, use its permanent link:
+[releases/hi-large-delta1-20261107-batch/index.html](https://d1n61tlw9pcrog.cloudfront.net/releases/hi-large-delta1-20261107-batch/index.html)
+(keep `index.html` on the end; the bare folder returns 403).
 
 The public view is read-only. Starting a run needs operator sign-in with the Group 3
 AWS identity; see the [control stack](infra/dashboard-control/README.md).
@@ -114,12 +119,12 @@ has five pages: overview, pipeline run, BQ1, BQ2 and streaming.
 | Layer | Services |
 |---|---|
 | Orchestration | Step Functions (`is459-g3-cloud-ingest`, `is459-g3-ingest`), EventBridge |
-| Compute | Lambda (acquisition container, control, status, publish, streaming, cost), AWS Glue |
+| Compute | Lambda (acquisition container, control, status, publish, streaming), AWS Glue |
 | ML | SageMaker training (optional candidates, never auto-promoted), XGBoost |
 | Storage and query | S3, Glue Data Catalog, Athena, DynamoDB |
 | Streaming | Kinesis Data Streams, Lambda container image, DynamoDB, EventBridge Scheduler |
 | Serving | CloudFront with Origin Access Control, API Gateway HTTP APIs |
-| Operations | CloudWatch, SNS, IAM, AWS Budgets, Cost Explorer, Terraform with a shared S3 backend |
+| Operations | CloudWatch, SNS, IAM, AWS Budgets, Terraform with a shared S3 backend |
 
 No Redshift, RDS or QuickSight, as the course requires.
 
@@ -139,6 +144,14 @@ python -m pip install -e ".[cloud]"
 
 The default run acquires HI-Small in AWS and goes all the way to the dashboard. No
 local dataset or Kaggle credentials are needed.
+
+**Fastest demo: cached HI-Large.** Sign in to the Ingestion tab, choose
+**HI-Large · reuse verified run (cache only)** and start the run. It finishes in about
+10 seconds with no Glue jobs and no new processing, then switches the main dashboard
+to the HI-Large release. See
+[Run HI-Large from the cache](planning/runbooks/ingestion-runbook.md#run-hi-large-from-the-cache-free).
+The dataset list offers HI-Small, HI-Medium and cached HI-Large. The LI- datasets are
+no longer offered for cloud runs.
 
 <details>
 <summary><b>More run options</b></summary>

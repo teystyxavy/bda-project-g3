@@ -16,7 +16,7 @@
 #   * The original "smoke" Glue curate job (jobs/curate_transactions.py) with a
 #     least-privilege IAM role and its CloudWatch log groups.
 #   * The Glue Data Catalog database (is459_g3_curated) and the Athena
-#     workgroup (is459-g3-analysis) used for ad hoc SQL.
+#     workgroup (is459-g3-analysis) used for reconciliation and verification SQL.
 #   * Failure alerting: an SNS topic (is459-g3-failures) with an e-mail
 #     subscription, plus an EventBridge rule that forwards failed Glue runs.
 #   * An AWS Budget with 50/80/100% e-mail alerts to cap student spend.
@@ -227,7 +227,8 @@ resource "aws_glue_catalog_database" "curated" {
   name = replace("${var.project_name}_curated", "-", "_")
 }
 
-# Athena workgroup used for ad hoc SQL over the curated data. enforce_workgroup_configuration stops clients overriding
+# Athena workgroup used for all project queries (reconciliation and
+# verification; BQ2 now runs as the Glue network job). enforce_workgroup_configuration stops clients overriding
 # these settings; bytes_scanned_cutoff_per_query = 8 GiB cancels any query
 # that would scan more, which caps the cost of a mistaken query (Athena bills
 # per byte scanned). 8 GiB was sized for a full scan of the curated HI-Small

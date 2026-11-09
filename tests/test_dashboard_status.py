@@ -149,3 +149,12 @@ def test_unexpected_run_names_are_not_echoed(states):
     states.add(MACHINE, '<script>', 'SUCCEEDED', NOW, stopDate=NOW)
     data = json.loads(status.handler(get(), None)['body'])
     assert data['runs'] == [] and data['latest'] is None
+
+
+@pytest.mark.parametrize('subset, shown', [('HI-Large', 'HI-Large'), ('HI-Medium', 'HI-Medium'),
+                                           ('LI-Small', 'HI-Small'), ({'x': 1}, 'HI-Small')])
+def test_selection_reports_the_run_subset_from_a_whitelist(states, subset, shown):
+    states.add(MACHINE, 'cached-run', 'SUCCEEDED', NOW, stopDate=NOW,
+               input=json.dumps({'subset': subset}), output=json.dumps({'run_id': 'hi-large-delta1-20261107-batch'}))
+    latest = json.loads(status.handler(get(), None)['body'])['latest']
+    assert latest['selection']['subset'] == shown

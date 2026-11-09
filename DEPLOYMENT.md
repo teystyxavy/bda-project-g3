@@ -75,7 +75,7 @@ cd ../..
 | `aws_s3_bucket.pipeline` | `is459-g3-<account>-<region>` | Single data-lake bucket for the whole pipeline: `raw/` (Kaggle CSV + FX inputs), `curated/` (Parquet written by Glue), `scripts/` (Glue job code), `tmp/` (Spark scratch), `athena-results/`. Versioned + encrypted (SSE-S3/AES256). Public-access blocked and TLS-only bucket policy, since the dataset is financial-crime data. Lifecycle rules expire `tmp/` and `athena-results/` after 7 days. |
 | `aws_glue_job.curate` | `is459-g3-curate` | Smoke-test ETL job: reads the 1,000-row sample in `raw/smoke/`, joins accounts and FX rates, converts amounts to USD, writes partitioned Parquet to `curated/smoke/transactions/`. Glue 5.0, 2×G.1X workers, 10-minute timeout, no retries (cost control). Backed by its own least-privilege IAM role (`aws_iam_role.glue`) and two CloudWatch log groups (`/is459-g3/glue/error`, `/is459-g3/glue/output`, 14-day retention). |
 | `aws_glue_catalog_database.curated` | `is459_g3_curated` | Glue Data Catalog database holding the `smoke_transactions` and `full_transactions` table definitions (defined in `catalog.tf`) that Athena queries against. |
-| `aws_athena_workgroup.analysis` | `is459-g3-analysis` | Workgroup used for all project queries (BQ2 corridor analysis and reconciliation), plus its saved queries. Enforces workgroup configuration, caps any single query at 8 GiB scanned (`bytes_scanned_cutoff_per_query`), writes results to `athena-results/` (SSE-S3 encrypted). |
+| `aws_athena_workgroup.analysis` | `is459-g3-analysis` | Workgroup used for all project queries (reconciliation and verification; BQ2 now runs as the Glue network job), plus its saved queries. Enforces workgroup configuration, caps any single query at 8 GiB scanned (`bytes_scanned_cutoff_per_query`), writes results to `athena-results/` (SSE-S3 encrypted). |
 | `aws_sns_topic.failures` | `is459-g3-failures` | The one failure topic every stack in the project publishes to, plus an e-mail subscription to `var.alert_email` (confirmed via the link AWS e-mails on first apply). |
 | `aws_cloudwatch_event_rule.failures` | — | EventBridge rule matching "Glue Job State Change" events for the curate job ending in `FAILED`, `TIMEOUT` or `STOPPED`, forwarded to the SNS topic via a narrowly-scoped delivery role (`aws_iam_role.failure_delivery`). |
 | `aws_budgets_budget.account` | `is459-g3-account-monthly` | Monthly cost budget (`var.monthly_budget_usd`, capped at $10) with e-mail alerts at 50/80/100% of actual spend. |
@@ -232,7 +232,7 @@ Step 5, with `-Execute`, runs in this exact order and starts no pipeline run:
 | `aws_ecr_repository.acquisition` + `aws_ecr_repository_policy.lambda` | — | ECR repo for the acquisition image; the repository policy lets only this Lambda pull images. |
 | `aws_cloudwatch_log_group.acquisition` | — | Log group for the acquisition Lambda. |
 | `aws_lambda_function.acquisition` + IAM role/policy | `is459-g3-acquire` | Container-image Lambda (code in `src/bda_pipeline/cloud_acquisition.py`) that pulls the Kaggle HI-Small dataset and FX rates directly from inside AWS — no laptop download needed. |
-| `aws_sfn_state_machine.cloud_ingest` + IAM role/policy | `is459-g3-cloud-ingest` | Step Functions wrapper that starts and waits on `is459-g3-ingest` (step 5's state machine). |
+| `aws_sfn_state_machine.cloud_ingest` + IAM role/policy | `is459-g3-cloud-ingest` | Step Functions wrapper that starts and waits on `is459-g3-ingest` (step 5's state machine). On a result-cache hit it skips the batch: `ExistingRelease` invokes `ingest-control` (op `activate`) to verify the reused release and switch `dashboard/current.json` to it. |
 
 This is why this stack has to come after ingestion: the dependency above is
 a hardcoded ARN string, so applying this stack earlier would succeed but
@@ -259,6 +259,12 @@ applies only the 2 ECR foundation resources (repo + policy), pushes and
 verifies the image, then plans and applies the remaining 7 (log group,
 Lambda, both IAM role/policy pairs, the state machine). No acquisition run
 or paid batch job is started.
+
+HI-Large is cache-only in this stack: `Acquire` replays the pinned
+`hi-large-delta1-20261107-batch` run and never starts the batch (see
+[Run HI-Large from the cache](planning/runbooks/ingestion-runbook.md#run-hi-large-from-the-cache-free)).
+The pin depends on `pipeline/deployment.json`, so a fresh `prepare-ingestion`
+redeploy of step 5 makes that replay fail safely until the pin is updated.
 
 ---
 
