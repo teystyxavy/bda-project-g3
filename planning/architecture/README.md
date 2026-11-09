@@ -7,8 +7,8 @@
   1. Overview: dashboard control, cloud acquisition with the result cache, the
      `is459-g3-ingest` batch, and the parked streaming path with its
      dashboard publisher.
-  2. Pipeline run: every Step Functions state from upload to publication, including
-     resume mode and export checkpoints.
+  2. Pipeline run: every Step Functions state from raw files in S3 to publication,
+     including resume mode, export checkpoints and the main/demo dashboard pointer.
   3. BQ1 zoom: scoring and the export double-check.
   4. BQ2 zoom: mule-network hubs, loops, pairs and rings, and the oversized-component review.
   5. Streaming: Kinesis replay, consumer with sender and receiver state, and the
