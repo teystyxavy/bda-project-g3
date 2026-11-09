@@ -30,6 +30,39 @@
       "Default": "Batch"
     },
     "ExistingRelease": {
+      "Type": "Task",
+      "Comment": "Cache hit: make the reused, already-published release live (dashboard/current.json only).",
+      "Resource": "${control_arn}",
+      "Parameters": {
+        "op": "activate",
+        "run_id.$": "$.acquisition.result.run_id",
+        "requested_run_id.$": "$.run_id"
+      },
+      "ResultPath": "$.activation",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.TooManyRequestsException",
+            "Lambda.ServiceException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.failure",
+          "Next": "NotifyFailure"
+        }
+      ],
+      "Next": "Reused"
+    },
+    "Reused": {
       "Type": "Pass",
       "OutputPath": "$.acquisition.result",
       "End": true

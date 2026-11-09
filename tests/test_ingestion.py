@@ -457,3 +457,77 @@ def test_large_reference_and_export_have_bounded_driver_memory_headroom():
     assert (export['WorkerType'],export['NumberOfWorkers'],export['Timeout'])==('G.8X',2,360)
     small=stage_request('small-run','export',value,subset='HI-Small',rows=1000)
     assert small['WorkerType']=='G.2X' and small['Timeout']==30
+
+
+def activation_inputs(with_release_manifest=True):
+    """A published run whose release is in the dashboard bucket, with the pointer elsewhere."""
+    s3 = MemoryS3()
+    p = paths('test-run')
+    s3.put_object(Bucket=BUCKET, Key=p['raw']+'/manifest.json', Body=canonical(manifest()))
+    s3.put_object(Bucket=BUCKET, Key='pipeline/cache/'+manifest()['processing_sha256']+'.json',
+                  Body=canonical({'status': 'published', 'run_id': 'test-run', 'processing_sha256': manifest()['processing_sha256']}))
+    snapshot = canonical({'schema_version': 1, 'buildStatus': 'complete', 'pipeline': {'run_id': 'test-run'}})
+    s3.put_object(Bucket=SITE_BUCKET, Key='dashboard/releases/test-run/dashboard.json', Body=snapshot)
+    if with_release_manifest:
+        s3.put_object(Bucket=BUCKET, Key=p['export']+'/release/manifest.json', Body=canonical(dict(
+            pipeline_run_id='test-run', processing_sha256=manifest()['processing_sha256'],
+            files=[dict(file='dashboard.json', bytes=len(snapshot), sha256=hashlib.sha256(snapshot).hexdigest())])))
+    old = canonical({'schema_version': 1, 'run_id': 'other-run', 'snapshot': 'releases/other-run/dashboard.json', 'sha256': 'd'*64})
+    s3.put_object(Bucket=SITE_BUCKET, Key='dashboard/current.json', Body=old)
+    shell = {name: b'live ' + name.encode() for name in ['index.html', 'dashboard.js', 'dashboard.css']}
+    for name, data in shell.items(): s3.put_object(Bucket=SITE_BUCKET, Key='dashboard/'+name, Body=data)
+    invalidations = []
+    aws = clients(s3) | {'cloudfront': SimpleNamespace(create_invalidation=lambda **kw: invalidations.append(kw))}
+    return s3, aws, old, snapshot, shell, invalidations
+
+
+ACTIVATE = {'op': 'activate', 'run_id': 'test-run', 'requested_run_id': 'ui-abc-123'}
+
+
+@pytest.mark.parametrize('with_release_manifest', [True, False])
+def test_activate_points_live_dashboard_at_cached_release_only(with_release_manifest):
+    s3, aws, old, snapshot, shell, invalidations = activation_inputs(with_release_manifest)
+    result = handle(ACTIVATE, config(), aws)
+    pointer = json.loads(s3.data[SITE_BUCKET, 'dashboard/current.json'])
+    assert pointer == {'schema_version': 1, 'run_id': 'test-run', 'snapshot': 'releases/test-run/dashboard.json',
+                       'sha256': hashlib.sha256(snapshot).hexdigest(), 'previous_run_id': 'other-run'}
+    assert result['status'] == 'activated' and result['previous_run_id'] == 'other-run'
+    for name, data in shell.items(): assert s3.data[SITE_BUCKET, 'dashboard/'+name] == data
+    assert invalidations == [{'DistributionId': 'EU1WB6XM4GKHQ', 'InvalidationBatch': {
+        'Paths': {'Quantity': 1, 'Items': ['/current.json']}, 'CallerReference': 'activate-ui-abc-123'}}]
+    # No lock is taken or needed.
+    assert (BUCKET, 'pipeline/lock.json') not in s3.data
+
+
+def test_activate_is_idempotent_when_already_live():
+    s3, aws, old, snapshot, shell, invalidations = activation_inputs()
+    handle(ACTIVATE, config(), aws)
+    before = s3.data[SITE_BUCKET, 'dashboard/current.json']
+    assert handle(ACTIVATE, config(), aws)['status'] == 'already-active'
+    assert s3.data[SITE_BUCKET, 'dashboard/current.json'] == before and len(invalidations) == 1
+
+
+@pytest.mark.parametrize('breakage, message', [
+    ('corrupt-snapshot', 'hash mismatch'),
+    ('missing-snapshot', 'missing'),
+    ('not-published', 'No published result'),
+    ('wrong-provenance', 'provenance'),
+    ('no-requested-run', 'run ID'),
+])
+def test_activate_refuses_unverified_release_and_keeps_pointer(breakage, message):
+    s3, aws, old, snapshot, shell, invalidations = activation_inputs()
+    event = dict(ACTIVATE)
+    key = (SITE_BUCKET, 'dashboard/releases/test-run/dashboard.json')
+    if breakage == 'corrupt-snapshot': s3.data[key] = b'{"tampered": true}'
+    if breakage == 'missing-snapshot': del s3.data[key]
+    if breakage == 'not-published':
+        s3.data[BUCKET, 'pipeline/cache/'+manifest()['processing_sha256']+'.json'] = canonical({'status': 'failed', 'run_id': 'test-run'})
+    if breakage == 'wrong-provenance':
+        bad = canonical({'schema_version': 1, 'buildStatus': 'complete', 'pipeline': {'run_id': 'someone-else'}})
+        s3.data[key] = bad
+        s3.data[BUCKET, paths('test-run')['export']+'/release/manifest.json'] = canonical(dict(
+            pipeline_run_id='test-run', processing_sha256=manifest()['processing_sha256'],
+            files=[dict(file='dashboard.json', bytes=len(bad), sha256=hashlib.sha256(bad).hexdigest())]))
+    if breakage == 'no-requested-run': event.pop('requested_run_id')
+    with pytest.raises(ValueError, match=message): handle(event, config(), aws)
+    assert s3.data[SITE_BUCKET, 'dashboard/current.json'] == old and not invalidations

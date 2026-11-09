@@ -247,13 +247,15 @@ resource "aws_iam_role_policy" "control" {
     { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = ["pipeline/runs/*/curated/*", "pipeline/runs/*/network/*"] } } },
     { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/runs/*/curated/*", "${local.s3}/pipeline/runs/*/network/*"] },
     { Effect = "Allow", Action = ["glue:GetDatabase", "glue:GetPartitions"], Resource = local.catalog },
-    # - read anything under pipeline/ (manifests, config, caches, evidence) and the
-    #   current dashboard pointer.
+    # - read anything under pipeline/ (manifests, config, caches, evidence), the
+    #   current dashboard pointer, and published release snapshots (the
+    #   'activate' op verifies a release's dashboard.json before pointing at it).
     { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = "pipeline/*" } } },
-    { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/*", "${local.site}/dashboard/current.json"] },
+    { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/*", "${local.site}/dashboard/current.json", "${local.site}/dashboard/releases/*/dashboard.json"] },
     # - write: the run lock, run/stage cache receipts, curated/scored/network cache copies,
-    #   run evidence, SageMaker training inputs, and the dashboard release files
-    #   plus the shell files (index.html, dashboard.js/css) and current.json.
+    #   run evidence, SageMaker training inputs, the dashboard release files and
+    #   current.json. (The shell files stay writable for compatibility, but the
+    #   control code no longer writes them.)
     { Effect = "Allow", Action = ["s3:PutObject"], Resource = ["${local.s3}/pipeline/lock.json", "${local.s3}/pipeline/cache/*", "${local.s3}/pipeline/stage-cache/*", "${local.s3}/pipeline/runs/*/curated/*", "${local.s3}/pipeline/runs/*/scored/*", "${local.s3}/pipeline/runs/*/network/*", "${local.s3}/pipeline/runs/*/evidence/*", "${local.s3}/sagemaker/inputs/is459-g3-train-*/*", "${local.site}/dashboard/releases/*/*", "${local.site}/dashboard/current.json", "${local.site}/dashboard/index.html", "${local.site}/dashboard/dashboard.js", "${local.site}/dashboard/dashboard.css"] },
     # - delete only the lock file (releasing the lock at the end of a run);
     # - create/read the per-run Athena table;

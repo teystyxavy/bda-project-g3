@@ -319,6 +319,81 @@ def compute_usage(clients, run_id, manifest, get_json, s3):
             'scope': 'List-price estimate of Glue and SageMaker compute only; not an invoice.'}
 
 
+def switch_pointer(s3, run_id, snapshot_bytes):
+    """Point ``dashboard/current.json`` at ``releases/<run_id>/dashboard.json``.
+
+    Only the pointer is written - never the live UI shell. The conditional
+    write (IfMatch on the old ETag, or IfNoneMatch for the first release) makes
+    a concurrent pointer change fail instead of being silently overwritten.
+    ``sha256`` is the hash of the snapshot bytes, which the front end verifies.
+
+    Returns:
+        The new pointer, or None if it already pointed at ``run_id``.
+    """
+    pointer, etag = get_json(s3, 'dashboard/current.json', SITE_BUCKET)
+    if pointer and pointer.get('run_id') == run_id:
+        return None
+    new_pointer = {'schema_version': 1, 'run_id': run_id, 'snapshot': f'releases/{run_id}/dashboard.json',
+                   'sha256': hashlib.sha256(snapshot_bytes).hexdigest(), 'previous_run_id': pointer.get('run_id') if pointer else None}
+    s3.put_object(Bucket=SITE_BUCKET, Key='dashboard/current.json', Body=canonical(new_pointer),
+        ContentType='application/json', ServerSideEncryption='AES256', CacheControl='no-store,max-age=0',
+        **({'IfMatch': etag} if etag else {'IfNoneMatch': '*'}))
+    return new_pointer
+
+
+def invalidate_pointer(clients, config, caller_reference):
+    """Drop CloudFront's cached /current.json. Only the pointer changes on a
+    run (the shell is untouched and release paths are new). A repeated
+    CallerReference (a retried step) does not create a second invalidation."""
+    clients['cloudfront'].create_invalidation(DistributionId=config['distribution_id'],
+        InvalidationBatch={'Paths': {'Quantity': 1, 'Items': ['/current.json']},
+                           'CallerReference': caller_reference})
+
+
+def activate_release(s3, clients, config, run_id, manifest, requested_run_id):
+    """Make an already-published release live again (cache-hit path).
+
+    Called by the cloud-ingest workflow's ExistingRelease state when a request
+    reuses a published result instead of running the batch. Guards: the result
+    cache must hold a *published* entry for this run's identity; the release's
+    ``dashboard.json`` must already exist in the dashboard bucket, within the
+    release budget, with the size and SHA-256 recorded in the run's release
+    manifest (when it has one) and matching provenance. Nothing but
+    ``dashboard/current.json`` is written. Any failure raises, which fails the
+    execution.
+    """
+    p, requested_run_id = paths(run_id), valid_run(requested_run_id)
+    cached, _ = get_json(s3, f"pipeline/cache/{manifest['processing_sha256']}.json")
+    if (not cached or cached.get('status') != 'published' or cached.get('run_id') != run_id
+            or cached.get('processing_sha256') != manifest['processing_sha256']):
+        raise ValueError('No published result to activate')
+    release, _ = get_json(s3, f"{p['export']}/release/manifest.json")
+    recorded = None
+    if release is not None:
+        if release.get('pipeline_run_id') != run_id or release.get('processing_sha256') != manifest['processing_sha256']:
+            raise ValueError('Release manifest does not belong to this run')
+        recorded = next((item for item in release.get('files', []) if item.get('file') == 'dashboard.json'), None)
+        if recorded is None: raise ValueError('Release manifest has no dashboard.json')
+    limit = ASSET_MAX_BYTES['dashboard.json']
+    try:
+        response = s3.get_object(Bucket=SITE_BUCKET, Key=f'dashboard/releases/{run_id}/dashboard.json')
+    except s3.exceptions.NoSuchKey:
+        raise ValueError('Release snapshot is missing from the dashboard bucket') from None
+    with response['Body'] as stream: data = stream.read(limit + 1)
+    if not 0 < len(data) <= limit: raise ValueError('Release snapshot outside the release budget')
+    if recorded and (len(data) != recorded['bytes'] or hashlib.sha256(data).hexdigest() != recorded['sha256']):
+        raise ValueError('Release snapshot hash mismatch')
+    snapshot = json.loads(data)
+    if (snapshot.get('schema_version') != 1 or snapshot.get('buildStatus') != 'complete'
+            or snapshot.get('pipeline', {}).get('run_id') != run_id):
+        raise ValueError('Release snapshot provenance mismatch')
+    pointer = switch_pointer(s3, run_id, data)
+    if pointer: invalidate_pointer(clients, config, 'activate-' + requested_run_id)
+    return {'status': 'activated' if pointer else 'already-active', 'run_id': run_id,
+            'previous_run_id': pointer['previous_run_id'] if pointer else run_id,
+            'sha256': hashlib.sha256(data).hexdigest()}
+
+
 def handle(event, config, clients):
     """Dispatch one control-plane operation (see the module docstring for the flow).
 
@@ -390,6 +465,10 @@ def handle(event, config, clients):
     validate_manifest(manifest, sha(config))
     if manifest['run_id'] != run_id or manifest['model_manifest_sha256'] != config['model_manifest_sha256']:
         raise ValueError('Manifest/run/model mismatch')
+    # ---- activate: cloud-ingest cache hit -> make that published release live ----
+    # Needs no lock: it writes only the pointer, conditionally.
+    if op == 'activate':
+        return activate_release(s3, clients, config, run_id, manifest, event.get('requested_run_id', ''))
     # ---- begin: first state of the workflow ----
     if op == 'begin':
         lock, _ = get_json(s3, 'pipeline/lock.json')
@@ -563,23 +642,9 @@ def handle(event, config, clients):
         # data runs; a run only adds its immutable release copy (above) and moves the
         # pointer (below). The live shell reads current.json -> releases/<id>/dashboard.json
         # (schema_version 1), and the release copy keeps a matching shell at release_url.
-        # 3) Switch the "current release" pointer. The conditional write
-        # (IfMatch on the old ETag, or IfNoneMatch for the first release) means
-        # a concurrent change to the pointer makes this write fail instead of
-        # being silently overwritten. previous_run_id records the prior release.
-        pointer, etag = get_json(s3, 'dashboard/current.json', SITE_BUCKET)
-        new_pointer = {'schema_version': 1, 'run_id': run_id, 'snapshot': f'releases/{run_id}/dashboard.json',
-                       'sha256': hashlib.sha256(blobs['dashboard.json']).hexdigest(), 'previous_run_id': pointer.get('run_id') if pointer else None}
-        if not pointer or pointer['run_id'] != run_id:
-            s3.put_object(Bucket=SITE_BUCKET, Key='dashboard/current.json', Body=canonical(new_pointer),
-                ContentType='application/json', ServerSideEncryption='AES256', CacheControl='no-store,max-age=0',
-                **({'IfMatch': etag} if etag else {'IfNoneMatch': '*'}))
-        # 4) Ask CloudFront to drop its cached pointer. Only current.json changes on a
-        # run (the shell is untouched and release paths are new). CallerReference is
-        # per run, so a retried publish does not create a second invalidation.
-        clients['cloudfront'].create_invalidation(DistributionId=config['distribution_id'],
-            InvalidationBatch={'Paths': {'Quantity': 1, 'Items': ['/current.json']},
-                               'CallerReference': 'ingest-' + run_id})
+        # 3) Switch the "current release" pointer, then 4) invalidate /current.json.
+        switch_pointer(s3, run_id, blobs['dashboard.json'])
+        invalidate_pointer(clients, config, 'ingest-' + run_id)
         result = {'status': 'published', 'run_id': run_id, 'processing_sha256': manifest['processing_sha256'],
                   'dashboard_url': config['dashboard_url'], 'release_url': config['dashboard_url'] + f'releases/{run_id}/index.html',
                   'training_requested': manifest['train'], 'model_promoted': False}

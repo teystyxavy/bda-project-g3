@@ -235,3 +235,16 @@ def test_hi_large_fails_instead_of_reprocessing(tmp_path, monkeypatch, tamper):
 def test_hi_large_refuses_processing_options(changes):
     with pytest.raises(ValueError):
         request({'run_id': 'ui-aaaaaaaaaaaa-bbbbbbbbbbbb', 'subset': 'HI-Large', **changes})
+
+
+def test_cache_hit_activates_the_reused_release_before_ending():
+    workflow = json.loads((Path(__file__).resolve().parents[1] / 'infra/cloud-ingestion/workflow.asl.json').read_text())
+    assert workflow['States']['Cached']['Choices'][0]['Next'] == 'ExistingRelease'
+    state = workflow['States']['ExistingRelease']
+    # The dashboard detects a cache hit by this state name, so it must stay.
+    assert state['Type'] == 'Task' and state['Resource'] == '${control_arn}'
+    assert state['Parameters'] == {'op': 'activate', 'run_id.$': '$.acquisition.result.run_id', 'requested_run_id.$': '$.run_id'}
+    # A failed pointer switch fails the execution; only Lambda service errors are retried.
+    assert state['Catch'][0]['ErrorEquals'] == ['States.ALL'] and state['Catch'][0]['Next'] == 'NotifyFailure'
+    assert all(error.startswith('Lambda.') for retry in state['Retry'] for error in retry['ErrorEquals'])
+    assert workflow['States'][state['Next']] == {'Type': 'Pass', 'OutputPath': '$.acquisition.result', 'End': True}

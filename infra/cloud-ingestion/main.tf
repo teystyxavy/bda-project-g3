@@ -48,6 +48,8 @@ locals {
   machine         = "arn:aws:states:${local.region}:${local.account}:stateMachine:is459-g3-cloud-ingest"
   batch           = "arn:aws:states:${local.region}:${local.account}:stateMachine:is459-g3-ingest"
   function        = "arn:aws:lambda:${local.region}:${local.account}:function:is459-g3-acquire"
+  # The batch stack's control Lambda; its 'activate' op makes a reused release live.
+  control         = "arn:aws:lambda:${local.region}:${local.account}:function:is459-g3-ingest-control"
   failure_topic   = "arn:aws:sns:${local.region}:${local.account}:is459-g3-failures"
 }
 # Private ECR repository for the acquisition image (immutable tags, scan on
@@ -118,7 +120,8 @@ resource "aws_iam_role" "workflow" {
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "states.amazonaws.com" }, Action = "sts:AssumeRole", Condition = { StringEquals = { "aws:SourceAccount" = local.account }, ArnEquals = { "aws:SourceArn" = local.machine } } }] })
 }
 # Workflow permissions:
-# - invoke the acquisition Lambda;
+# - invoke the acquisition Lambda, and the control Lambda (cache hit: activate
+#   the reused release, i.e. switch dashboard/current.json);
 # - start the main ingestion workflow, then poll/stop its executions
 #   (DescribeExecution/StopExecution) while waiting for it to finish;
 # - manage the managed EventBridge rule Step Functions uses to learn when a
@@ -127,7 +130,7 @@ resource "aws_iam_role" "workflow" {
 resource "aws_iam_role_policy" "workflow" {
   role = aws_iam_role.workflow.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
-    { Effect = "Allow", Action = ["lambda:InvokeFunction"], Resource = local.function },
+    { Effect = "Allow", Action = ["lambda:InvokeFunction"], Resource = [local.function, local.control] },
     { Effect = "Allow", Action = ["states:StartExecution"], Resource = local.batch },
     { Effect = "Allow", Action = ["states:DescribeExecution", "states:StopExecution"], Resource = "arn:aws:states:${local.region}:${local.account}:execution:is459-g3-ingest:*" },
     { Effect = "Allow", Action = ["events:PutRule", "events:PutTargets", "events:DescribeRule"], Resource = "arn:aws:events:${local.region}:${local.account}:rule/StepFunctionsGetEventsForStepFunctionsExecutionRule" },
@@ -140,7 +143,7 @@ resource "aws_sfn_state_machine" "cloud_ingest" {
   name       = "is459-g3-cloud-ingest"
   role_arn   = aws_iam_role.workflow.arn
   type       = "STANDARD"
-  definition = templatefile("${path.module}/workflow.asl.json", { acquisition_arn = local.function, batch_arn = local.batch, failure_topic = local.failure_topic })
+  definition = templatefile("${path.module}/workflow.asl.json", { acquisition_arn = local.function, control_arn = local.control, batch_arn = local.batch, failure_topic = local.failure_topic })
   depends_on = [aws_iam_role_policy.workflow, aws_lambda_function.acquisition]
 }
 # Outputs: the workflow ARN, and the minimal policy a human/CI identity needs to
