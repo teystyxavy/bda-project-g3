@@ -18,7 +18,7 @@ milestone log (October to early November), kept unchanged apart from encoding fi
 | Batch | Step Functions `is459-g3-ingest`: `Begin` → `Curate` → parallel `Baseline` (+ optional SageMaker training) / `Score` / `Network` → `Export` → `Publish` | Live, deployment `47ce337e…` |
 | Export job | Glue `is459-g3-ingest-export` | Runs the improved (lean) export since 8 Nov 22:49 SGT (`export-improved-e31cd65b…`), see [export swap](#export-swap-and-step-functions-resume-8-november) |
 | Upload trigger | EventBridge rule `is459-g3-raw-upload-trigger` → `is459-g3-raw-trigger` | Live, opt-in, tested 7 Oct |
-| Streaming | ECR image, consumer Lambda, DynamoDB state, S3 audit, publisher Lambda | Kinesis stream **parked** (no shard). The publisher's last snapshot for `stream-delta1-20261107` (984/984 scored, reconciled) is what the dashboard's **Incoming AML** tab shows |
+| Streaming | ECR image, consumer Lambda, DynamoDB state, S3 audit, publisher Lambda | Kinesis stream **parked** (no shard). The publisher's last snapshot for `stream-delta1-20261107` (984/984 HI-Medium scored, reconciled; 744 on HI-Large) is what the dashboard's **Incoming AML** tab shows |
 | Model | XGBoost `hist-depth5-delta1`, weights `0170bef6…` | Promoted 7 Nov; scores every run without retraining |
 | Foundation | Data bucket `is459-g3-588738581042-ap-southeast-1`, Glue catalog, Athena `is459-g3-analysis`, SNS `is459-g3-failures`, budget alert USD 10/month | Live. The SNS topic currently has **no email subscriber** |
 
@@ -27,7 +27,7 @@ milestone log (October to early November), kept unchanged apart from encoding fi
 | Date | What happened | Record |
 |---|---|---|
 | 7 Nov | delta1 promoted (trained on an HI-Large date subset). HI-Medium scored with it as isolated release `medium-delta1-20261107-183216` | [promotion](evidence/delta1-shared-promotion-20261107.json), [run](evidence/hi-medium-delta1-run-20261107.json) |
-| 7 Nov | Streaming rebuilt for delta1 (all 15 behaviour features, receiver state preloaded). One replay of 984 events reconciled exactly; Incoming tab switched to it; stream parked again | [evidence](evidence/streaming-delta1-result-20261107.json), [streaming README](../streaming/README.md) |
+| 7 Nov | Streaming rebuilt for delta1 (all 15 behaviour features, receiver state preloaded). One replay of 984 HI-Medium events (744 on HI-Large) reconciled exactly; Incoming tab switched to it; stream parked again | [evidence](evidence/streaming-delta1-result-20261107.json), [streaming README](../streaming/README.md) |
 | 7 Nov | HI-Large run `hi-large-delta1-20261107-batch` started on all 179,702,229 rows. Curate, baseline, score and network passed; the export failed, and a retry stopped on one 26,370-account connected component above the 19,277-account case limit | [run](evidence/hi-large-delta1-run-20261107.json), [runbook](runbooks/hi-large-delta1.md) |
 | 8 Nov | Recovery exports on a separate fallback Glue job. The lean run `jr_d84e1e93` succeeded in 1h34m (about USD 11) with exact score and dashboard parity | [fallback log](runbooks/export-fallback-20261108.md), [result](evidence/hi-large-delta1-result-20261108.json) |
 | 8 Nov | HI-Large published to the live dashboard (21:33 SGT), then the original Step Functions run finished `SUCCEEDED` through a resume execution | [result](evidence/hi-large-delta1-result-20261108.json) |

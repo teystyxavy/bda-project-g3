@@ -4,7 +4,7 @@
 
 Status, 9 November 2026: **deployed, replayed once, live on the dashboard, stream
 parked.** On 7 Nov the delta1 stack was deployed under its own state
-(`streaming-delta1-20261107`) and one replay of 984 events finished at 15:51 UTC. All
+(`streaming-delta1-20261107`) and one replay of 984 HI-Medium events (744 on HI-Large) finished at 15:51 UTC. All
 984 results reconciled: features exact, maximum score difference 9.3e-10, 1,104
 DynamoDB items, 984 audit objects, no failures
 ([evidence](../planning/evidence/streaming-delta1-result-20261107.json)). The
@@ -54,7 +54,7 @@ Local evidence (`output/streaming-demo-delta1-20261107/verification.json`, no AW
   rows). The check uses that folder; its digest of per-file SHA-256 values is `d1b88d99…`.
   On 200,000 sampled rows its features equal the release's `bq1_scored.parquet`
   (`f914ecb9…`).
-- **Cohort:** 32 senders with 20–40 payments each, 984 transactions from Sep 1 to 16
+- **Cohort:** 32 senders with 20–40 payments each, 984 HI-Medium transactions (744 on HI-Large) from Sep 1 to 16
   (158 of them inside the release's Sep 15–28 window), paying 88 receivers. The receiver
   preload holds 1,957 payments, and the largest state is 11 KB.
 - **Parity:** all 15 features are exact, USD sums included. The maximum score difference

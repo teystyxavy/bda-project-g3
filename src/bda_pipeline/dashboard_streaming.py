@@ -86,6 +86,8 @@ VERIFIED = {'stream-smoke-20261006': {
     'transactions': 884, 'features_exact': True, 'max_absolute_score_difference': 2.9103830456733704e-11,
     'verified_on': '2026-10-06', 'evidence': 'planning/evidence/streaming-deployment-result-20261006.json',
     'model_manifest_sha256': OCTOBER_MODEL},
+    # 984 is the HI-Medium replay cohort recorded in the evidence file below; on HI-Large
+    # the count is 744. Keep this value equal to the evidence (a test checks it).
     'stream-delta1-20261107': {
     'transactions': 984, 'features_exact': True, 'max_absolute_score_difference': 9.313225746154785e-10,
     'verified_on': '2026-11-07', 'evidence': 'planning/evidence/streaming-delta1-result-20261107.json',

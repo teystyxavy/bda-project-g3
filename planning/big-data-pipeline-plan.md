@@ -18,7 +18,7 @@
 >   `is459-g3-ingest` (curate → baseline / score / network in parallel → export → publish).
 >   The stage cache is off above 50M rows; the whole-result cache still works. The
 >   export job runs the improved lean export since 8 Nov.
-> - **Streaming** is parked (no Kinesis shard). The delta1 replay of 7 Nov (984 events,
+> - **Streaming** is parked (no Kinesis shard). The delta1 replay of 7 Nov (984 HI-Medium events, 744 on HI-Large,
 >   all 15 features exact) is shown on the dashboard's **Incoming AML** tab.
 > - **Dashboard:** BQ1, BQ2, Incoming AML and Ingestion tabs. Since 9 Nov the Ingestion
 >   tab can run HI-Large cache-only (returns the published result, no Glue).
