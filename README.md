@@ -223,9 +223,9 @@ Single measured runs, not service-level guarantees. All scores and totals reconc
 </details>
 
 <details>
-<summary><b>Streaming replay, 7 November 2026</b></summary>
+<summary><b>Streaming replay</b></summary>
 
-984 past HI-Medium transactions (744 on HI-Large) from 32 complete sender histories were replayed through Kinesis
+744 past HI-Large transactions from 32 complete sender histories were replayed through Kinesis (9 Nov; an earlier 7 Nov replay used 984 HI-Medium transactions)
 and scored one at a time with all 15 behaviour features. Every feature matched the
 batch pipeline exactly. The stream is now parked to stop shard charges; everything else
 is kept and Terraform can restore it.

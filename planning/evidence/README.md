@@ -10,7 +10,7 @@ ignored `output/` folder.
 |---|---|
 | HI-Large delta1 run: lean export, publication and Step Functions resume (8 Nov) | [hi-large-delta1-result-20261108.json](hi-large-delta1-result-20261108.json) |
 | Full HI-Medium dashboard ingestion deployed (8 Nov) | [full-medium-dashboard-deployment-20261108.json](full-medium-dashboard-deployment-20261108.json) |
-| Streaming delta1 replay, 984 HI-Medium events reconciled (7 Nov; 744 on HI-Large) | [streaming-delta1-result-20261107.json](streaming-delta1-result-20261107.json) |
+| Streaming delta1 replay, 984 HI-Medium events reconciled (7 Nov) | [streaming-delta1-result-20261107.json](streaming-delta1-result-20261107.json) |
 | delta1 promotion (7 Nov) | [delta1-shared-promotion-20261107.json](delta1-shared-promotion-20261107.json) |
 | HI-Large deployment and run start (7 Nov) | [hi-large-delta1-deployment-20261107.json](hi-large-delta1-deployment-20261107.json), [hi-large-delta1-run-20261107.json](hi-large-delta1-run-20261107.json) |
 | HI-Medium delta1 run (7 Nov) | [hi-medium-delta1-run-20261107.json](hi-medium-delta1-run-20261107.json) |

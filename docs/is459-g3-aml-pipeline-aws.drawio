@@ -1956,7 +1956,7 @@
         <mxCell id="stream-subtitle" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=15;fontColor=light-dark(#545B64,#B8BCC2);fontFamily=Helvetica;fontStyle=0;" value="A separate path from the batch run. A replay script sends past transactions into Kinesis in time order, and a Lambda scores each one with an approved XGBoost model." vertex="1">
           <mxGeometry height="26" width="1800" x="40" y="58" as="geometry" />
         </mxCell>
-        <mxCell id="stream-note" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=13;fontColor=light-dark(#545B64,#B8BCC2);fontFamily=Helvetica;fontStyle=0;" value="&lt;b&gt;Status&lt;/b&gt; the delta1 replay of 7 Nov 2026 (984 HI-Medium transactions; 744 on HI-Large) is reconciled and shown on the live Incoming AML tab. The Kinesis stream is parked (deleted) and the scoring Lambda is switched off; everything else is kept and Terraform can bring the stream back. The batch pipeline does not depend on any of it." vertex="1">
+        <mxCell id="stream-note" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=13;fontColor=light-dark(#545B64,#B8BCC2);fontFamily=Helvetica;fontStyle=0;" value="&lt;b&gt;Status&lt;/b&gt; the HI-Large replay of 9 Nov 2026 (744 transactions; it replaced the 7 Nov HI-Medium replay of 984) is shown on the live Incoming AML tab. The Kinesis stream is parked (deleted) and the scoring Lambda is switched off; everything else is kept and Terraform can bring the stream back. The batch pipeline does not depend on any of it." vertex="1">
           <mxGeometry height="24" width="2000" x="40" y="86" as="geometry" />
         </mxCell>
         <mxCell id="stream-replay" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;container=1;collapsible=0;fillColor=none;strokeColor=light-dark(#545B64,#B8BCC2);" value="" vertex="1">
@@ -1965,7 +1965,7 @@
         <mxCell id="stream-replay-icon" parent="stream-replay" style="sketch=0;outlineConnect=0;fontColor=light-dark(#232F3E,#E6E6E6);gradientColor=none;fillColor=light-dark(#232F3E,#E6E6E6);strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.client;" value="" vertex="1">
           <mxGeometry height="50" width="50" x="55" y="14" as="geometry" />
         </mxCell>
-        <mxCell id="stream-replay-txt" parent="stream-replay" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=top;fontSize=11;fontColor=light-dark(#232F3E,#E6E6E6);fontFamily=Helvetica;spacing=0;" value="&lt;b&gt;Replay script&lt;/b&gt;&lt;br&gt;&lt;i&gt;sends 984 past HI-Medium transactions (744 on HI-Large) in time order&lt;/i&gt;" vertex="1">
+        <mxCell id="stream-replay-txt" parent="stream-replay" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=top;fontSize=11;fontColor=light-dark(#232F3E,#E6E6E6);fontFamily=Helvetica;spacing=0;" value="&lt;b&gt;Replay script&lt;/b&gt;&lt;br&gt;&lt;i&gt;sends 744 past HI-Large transactions in time order&lt;/i&gt;" vertex="1">
           <mxGeometry height="78" width="152" x="4" y="70" as="geometry" />
         </mxCell>
         <mxCell id="stream-kin" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=light-dark(#FFFFFF,#1F2329);strokeColor=#8C4FFF;strokeWidth=1.5;dashed=1;verticalAlign=top;spacingTop=2;fontStyle=1;fontSize=11;fontColor=#8C4FFF;fontFamily=Helvetica;" value="Amazon Kinesis Data Streams" vertex="1">
@@ -2217,7 +2217,7 @@
         <mxCell id="stream-lb0" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#232F3E;strokeColor=#FF9900;strokeWidth=2;fontColor=#FFFFFF;fontStyle=1;fontSize=13;fontFamily=Helvetica;" value="1" vertex="1">
           <mxGeometry height="28" width="28" x="40" y="1139" as="geometry" />
         </mxCell>
-        <mxCell id="stream-lt0" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=12;fontColor=light-dark(#232F3E,#E6E6E6);fontFamily=Helvetica;fontStyle=0;" value="&lt;b&gt;Replay&lt;/b&gt; – a script sends 984 past HI-Medium transactions (744 on HI-Large) in time order, so the demo behaves like live traffic." vertex="1">
+        <mxCell id="stream-lt0" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontSize=12;fontColor=light-dark(#232F3E,#E6E6E6);fontFamily=Helvetica;fontStyle=0;" value="&lt;b&gt;Replay&lt;/b&gt; – a script sends 744 past HI-Large transactions in time order, so the demo behaves like live traffic." vertex="1">
           <mxGeometry height="36" width="1120" x="80" y="1135" as="geometry" />
         </mxCell>
         <mxCell id="stream-lb1" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#232F3E;strokeColor=#FF9900;strokeWidth=2;fontColor=#FFFFFF;fontStyle=1;fontSize=13;fontFamily=Helvetica;" value="2" vertex="1">
