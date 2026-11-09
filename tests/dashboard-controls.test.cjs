@@ -404,6 +404,22 @@ test('stale snapshots and failed refreshes keep the last published scores',async
   assert.ok([...h.timers.values()].some(timer=>timer.ms===20000));
 });
 
+test('the Incoming review card names the datasets instead of comparing different ones',async()=>{
+  const h=await harness({configured:false,authenticated:false});
+  const card=(subset,id)=>vm.runInContext(`streamLinksHTML({queue:[{transaction_id:'${id}',timestamp:'2022-09-05T14:32:00'}],latest:[]},
+    {pipeline:{subset:'${subset}'},splits:{train:['2022-09-01','2022-09-11'],test:['2022-09-15','2023-01-13']},exploration:{aml:{periods:{}}}})`,h.context);
+  const other=card('HI-Large','HI-Medium:7');
+  assert.match(other,/same frozen model and behaviour features/);
+  assert.match(other,/replays HI-Medium payments and the review queue shows HI-Large, so the two queues hold different payments/);
+  assert.doesNotMatch(other,/evaluation days|Training reference|None of them appear/);
+  assert.match(other,/history for each sender and receiver/);
+  const same=card('HI-Medium','HI-Medium:7');
+  assert.match(same,/fall on these evaluation days/);
+  assert.match(same,/Training reference/);
+  assert.match(same,/None of them appear/);
+  assert.doesNotMatch(same,/replays HI-Medium payments/);
+});
+
 test('a completed stream is never stale and is checked less often',async()=>{
   const done=streamSnapshot({state:'completed',reconciled:true,processed:884,senders:{expected:32,started:32,complete:32},
     generated_at:new Date(Date.now()-86400000).toISOString()});
