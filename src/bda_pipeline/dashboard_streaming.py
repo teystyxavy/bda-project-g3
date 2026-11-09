@@ -77,8 +77,9 @@ REVIEWS = {
     OCTOBER_MODEL: {'cutoff': 0.9937289953, 'capacity': 100, 'period': '2022-09-07 to 2022-09-08',
                     'days': 'HI-Small validation', 'source_run': 'opt-full-20261006-aws1',
                     'model_manifest_sha256': OCTOBER_MODEL},
-    DELTA1_MODEL: {'cutoff': 0.9953691363, 'capacity': 100, 'period': '2022-09-15 to 2022-09-28',
-                   'days': 'HI-Medium batch', 'source_run': 'medium-delta1-20261107-183216',
+    # The main dashboard's HI-Large release: lowest score in its test-period top 100.
+    DELTA1_MODEL: {'cutoff': 0.9970490336, 'capacity': 100, 'period': '2022-09-15 to 2023-01-12',
+                   'days': 'HI-Large batch', 'source_run': 'hi-large-delta1-20261107-batch',
                    'model_manifest_sha256': DELTA1_MODEL}}
 # Recorded cloud acceptance per replay run and model: every committed score was
 # compared with the frozen batch reference for the same transaction.

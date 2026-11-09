@@ -1,17 +1,39 @@
 # Bounded streaming demo
 
+## HI-Large replay (`stream-hilarge-20261109`)
+
+The **Incoming AML** tab replays HI-Large, the same dataset as the main dashboard
+(release `hi-large-delta1-20261107-batch`). The run is set up by
+`scripts/streaming/deploy-stream-hilarge.ps1` (plan only by default; `-Execute`
+deploys, replays, publishes and parks the stream again, about 20-30 minutes).
+
+- **Cohort:** HI-Large has 179.7M rows, too many to scan on a laptop, so the cohort is
+  picked with Athena over the run's curated data (`scripts/streaming/hi-large-cohort.sql`).
+  It takes the 32 lexicographically first hashed senders with 20-40 payments in the whole
+  dataset, all between 1 September 2022 and 31 January 2023 (the consumer's calendar), so
+  every sender's full history is replayed. No labels are read. The senders are listed in
+  `scripts/streaming/hi-large-cohort-senders.json`. The extract holds every payment they
+  sent and every payment into their 321 receivers (37,754 rows), and
+  `prepare-streaming-demo.py --senders` builds the package from it with the same local
+  checks as before: 744 events (1 Sep to 31 Dec 2022), 37,010 preloaded receiver
+  payments, all 15 features exact against batch and a maximum score difference of 0.0.
+  The highest score is 0.9945, so none of the 744 reaches the review cutoff below.
+- **Model and image:** the same frozen delta1 model (manifest `0b9ba30d…`) and the same
+  reviewed consumer image (`sha256:63d29f35…`). `copy-streaming-image.py` copies it into
+  the run's own ECR repository byte for byte, so no rebuild is needed.
+- **Review cutoff:** a streamed payment is flagged when it reaches the lowest score in the
+  HI-Large release's test-period top 100 (0.9970, 15 Sep 2022 to 12 Jan 2023).
+- **Stack:** its own Terraform state (`streaming-hilarge-20261109/terraform.tfstate`) and
+  resource names (`is459-g3-stream-hilarge-20261109`). The stream is parked after the
+  replay; the table, functions and snapshot stay.
+
+The sections below describe the method, which is unchanged.
+
 ## delta1 model with all 15 behaviour features (`stream-delta1-20261107`)
 
-Status, 9 November 2026: **deployed, replayed once, live on the dashboard, stream
-parked.** On 7 Nov the delta1 stack was deployed under its own state
-(`streaming-delta1-20261107`) and one replay of 984 events finished at 15:51 UTC. All
-984 results reconciled: features exact, maximum score difference 9.3e-10, 1,104
-DynamoDB items, 984 audit objects, no failures
-([evidence](../planning/evidence/streaming-delta1-result-20261107.json)). The
-dashboard's **Incoming AML** tab now reads `streaming-config.json` →
-`stream-delta1-20261107`. No Kinesis stream exists in the account (checked 9 Nov), so
-the stream is parked again. The image scan reports 19 HIGH, 25 MEDIUM, 9 LOW and 1
-undefined findings.
+On 7 Nov the delta1 stack was deployed under its own state (`streaming-delta1-20261107`)
+and replayed 984 HI-Medium events. It served the Incoming tab until the HI-Large replay
+above replaced it.
 
 The batch pipeline now serves delta1 (model `0170bef6…`, manifest `0b9ba30d…`, trained
 on an HI-Large date subset). Release `medium-delta1-20261107-183216-ui1` scores HI-Medium
@@ -120,7 +142,7 @@ Park it again by applying without `-var provision_stream=true`.
 
 ## Incoming AML dashboard view
 
-Status, 9 November 2026: the tab now serves the delta1 run `stream-delta1-20261107`
+Status, 9 November 2026: the tab serves the HI-Large run `stream-hilarge-20261109`
 (see the top of this file). The 7 November notes below describe the first
 publication, for `stream-smoke-20261006`.
 

@@ -37,6 +37,12 @@ Inputs
     ``--artifacts``/``--manifest-sha256``: the frozen model release, verified
     against its manifest hash (default: the pinned ``MANIFEST``).
 
+    ``--senders``: optional JSON list of hashed sender keys chosen outside this
+    script, for a source too large to scan locally (HI-Large: 179.7M rows). The
+    reference is then an extract holding every row those senders sent and every
+    row their receivers got. Each sender must have 20-40 events in the extract,
+    which must be its full history (the extract query guarantees this).
+
 Outputs (``--output``, a fresh directory)
     ``replay.csv``      - one row per event (inputs + run_id + ordinal);
     ``events.jsonl``    - canonical JSON events, in replay order;
@@ -51,6 +57,12 @@ Usage::
     python scripts/streaming/prepare-streaming-demo.py --reference <scored.parquet> \\
         --artifacts <model dir> --manifest-sha256 <sha> --reference-sha256 <sha> \\
         --run-id stream-v2-20261107 --output output/streaming-demo-v2-20261107
+
+HI-Large (cohort picked with Athena, see scripts/streaming/hi-large-cohort.sql)::
+
+    python scripts/streaming/prepare-streaming-demo.py --reference <hi-large-cohort.parquet> \\
+        --senders <senders.json> --artifacts <model dir> --manifest-sha256 <sha> \\
+        --reference-sha256 <sha> --run-id stream-hilarge-20261109 --output output/streaming-demo-hilarge-20261109
 """
 import argparse
 import hashlib
@@ -113,6 +125,7 @@ def main():
     parser.add_argument('--manifest-sha256',default=MANIFEST)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--run-id',default='stream-smoke-20261006')
+    parser.add_argument('--senders',type=Path,help='JSON list of pre-selected hashed sender keys')
     args=parser.parse_args()
     # Never overwrite a previously verified package.
     if args.output.exists(): raise ValueError('Use a fresh output directory')
@@ -131,7 +144,12 @@ def main():
         for bank,account in batch.to_pandas().itertuples(index=False,name=None):
             sender=key(bank,account);counts[sender]=counts.get(sender,0)+1
     # Label-independent deterministic selection; full history, never first-N rows from busy accounts.
-    senders=set(sorted(sender for sender,count in counts.items() if 20<=count<=40)[:32])
+    if args.senders:
+        senders=set(json.loads(args.senders.read_text(encoding='utf-8')))
+        if len(senders)!=32 or any(not 20<=counts.get(sender,0)<=40 for sender in senders):
+            raise ValueError('Pre-selected senders must be 32 senders with 20-40 events each')
+    else:
+        senders=set(sorted(sender for sender,count in counts.items() if 20<=count<=40)[:32])
     chunks=[]
     # Pass 2: keep only rows from the selected senders, with input + feature columns.
     for batch in batches(args.reference,[*INPUT_COLUMNS,*FEATURES]):
@@ -204,7 +222,9 @@ def main():
             'manifest_sha256':args.manifest_sha256,'replay_sha256':digest(args.output/'replay.csv'),
             'events_sha256':digest(args.output/'events.jsonl'),'receivers_sha256':digest(args.output/'receivers.jsonl'),
             'results_sha256':digest(args.output/'results.jsonl'),
-            'selection':'32 lexicographically first hashed senders with 20-40 total events; no labels used',
+            'selection':('32 pre-selected hashed senders (lexicographically first with 20-40 total events, all inside the '
+                         'streaming calendar); no labels used' if args.senders else
+                         '32 lexicographically first hashed senders with 20-40 total events; no labels used'),
             'receiver_preload':'Every other payment into each receiver the cohort pays, from the same verified batch data',
             'input':'Verified curated replay; existing prior-day FX values; not a raw transaction ingestion path'}
     (args.output/'verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')

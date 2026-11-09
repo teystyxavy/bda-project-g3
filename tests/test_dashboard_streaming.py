@@ -242,7 +242,7 @@ def test_november_run_carries_receiver_features_and_reconciles_receivers(aws2):
     # Two earlier payments into the shared receiver, from two distinct senders, inside 24 hours.
     assert data['latest'][0]['in_txn_count_24h'] == 2 and data['latest'][0]['distinct_senders_24h'] == 2
     assert data['receivers'] == {'expected': 1, 'preloaded': 1, 'complete': 0}
-    # Fixture scores top out at 0.9, below delta1's batch top-100 cutoff (0.9954).
+    # Fixture scores top out at 0.9, below delta1's HI-Large batch top-100 cutoff (0.9970).
     assert data['review'] == {**publisher.REVIEWS[publisher.DELTA1_MODEL], 'flagged': 0}
     assert isinstance(data['latest'][0]['amount_sum_7d'], float) and data['latest'][0]['corridor_prior_count'] == 1
     assert data['verification'] is None and 'preloaded' in data['cohort']
