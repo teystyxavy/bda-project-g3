@@ -11,6 +11,7 @@ from raw Kaggle files to a live dashboard, fully serverless on AWS.**
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
 
 [**Open the dashboard**](https://d1n61tlw9pcrog.cloudfront.net/) ·
+[Videos](#video-walkthroughs) ·
 [Architecture](#architecture) ·
 [Quick start](#quick-start) ·
 [Documentation](planning/README.md) ·
@@ -76,6 +77,11 @@ dataset (synthetic), enriched with historical FX rates so every amount is compar
 
 The public view is read-only. Starting a run needs operator sign-in with the Group 3
 AWS identity; see the [control stack](infra/dashboard-control/README.md).
+
+## Video walkthroughs
+
+- [**Pipeline setup**](https://www.youtube.com/watch?v=lTGRlAZejuI)
+- [**Pipeline run**](https://www.youtube.com/watch?v=MtWR1V7jZyU)
 
 ## Architecture
 
