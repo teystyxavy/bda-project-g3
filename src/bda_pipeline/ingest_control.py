@@ -558,11 +558,11 @@ def handle(event, config, clients):
         for name, data in blobs.items():
             s3.put_object(Bucket=SITE_BUCKET, Key=f'dashboard/releases/{run_id}/{name}', Body=data,
                 ContentType=ASSETS[name], ServerSideEncryption='AES256', CacheControl='public,max-age=31536000,immutable')
-        # 2) Top-level shell files (no-cache so browsers revalidate).
-        # Compatible shell assets can load either the previous snapshot or the new pointer.
-        for name in ['index.html', 'dashboard.js', 'dashboard.css']:
-            s3.put_object(Bucket=SITE_BUCKET, Key=f'dashboard/{name}', Body=blobs[name],
-                ContentType=ASSETS[name], ServerSideEncryption='AES256', CacheControl='no-cache')
+        # 2) The live UI shell (dashboard/index.html, dashboard.js, dashboard.css) is
+        # deliberately NOT written here. It is published on purpose, separately from
+        # data runs; a run only adds its immutable release copy (above) and moves the
+        # pointer (below). The live shell reads current.json -> releases/<id>/dashboard.json
+        # (schema_version 1), and the release copy keeps a matching shell at release_url.
         # 3) Switch the "current release" pointer. The conditional write
         # (IfMatch on the old ETag, or IfNoneMatch for the first release) means
         # a concurrent change to the pointer makes this write fail instead of
@@ -574,11 +574,11 @@ def handle(event, config, clients):
             s3.put_object(Bucket=SITE_BUCKET, Key='dashboard/current.json', Body=canonical(new_pointer),
                 ContentType='application/json', ServerSideEncryption='AES256', CacheControl='no-store,max-age=0',
                 **({'IfMatch': etag} if etag else {'IfNoneMatch': '*'}))
-        # 4) Ask CloudFront to drop its cached copies of the mutable paths.
-        # CallerReference is per run, so a retried publish does not create a
-        # second invalidation.
+        # 4) Ask CloudFront to drop its cached pointer. Only current.json changes on a
+        # run (the shell is untouched and release paths are new). CallerReference is
+        # per run, so a retried publish does not create a second invalidation.
         clients['cloudfront'].create_invalidation(DistributionId=config['distribution_id'],
-            InvalidationBatch={'Paths': {'Quantity': 4, 'Items': ['/', '/index.html', '/dashboard.js', '/current.json']},
+            InvalidationBatch={'Paths': {'Quantity': 1, 'Items': ['/current.json']},
                                'CallerReference': 'ingest-' + run_id})
         result = {'status': 'published', 'run_id': run_id, 'processing_sha256': manifest['processing_sha256'],
                   'dashboard_url': config['dashboard_url'], 'release_url': config['dashboard_url'] + f'releases/{run_id}/index.html',
