@@ -5,7 +5,7 @@ tests; see [the spec's implementation record](improvement_1_spec.md) for
 exact status, including the one still-open step). #2–#5 not started. This
 document records the file inventory, measured baseline and the five
 highest-ROI improvements identified; see
-[local model validation](../archive/reviews/local-model-validation.md) for
+local model validation (archived) for
 the frozen comparison this proposal works from.
 
 ## Objective and measured baseline

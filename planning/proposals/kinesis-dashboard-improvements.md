@@ -1,5 +1,12 @@
 # Proposed Kinesis improvements: incoming scores visible in the dashboard
 
+Status, 9 November 2026: **improvement 1 is deployed and live.** The publisher stack
+is in AWS and the dashboard's **Incoming AML** tab shows the snapshot of the delta1
+replay `stream-delta1-20261107` (984 of 984 scored, reconciled, state `completed`).
+The Kinesis stream is parked, so the tab shows that finished replay rather than new
+traffic. A live window needs the stream restored; see the
+[streaming README](../../streaming/README.md#parked).
+
 Status, 1 November 2026: improvement 1 is implemented and tested locally, not
 deployed: publisher `src/bda_pipeline/dashboard_streaming.py`, opt-in Terraform in
 `infra/streaming` and the Incoming AML view in `dashboard/`. The hosting stack is

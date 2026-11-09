@@ -1,7 +1,7 @@
 # AWS batch foundation runbook
 
 Current cross-component demonstration and submission preparation is in
-[the final demo runbook](../delivery/final-demo-runbook.md). The sections below retain the
+the final demo runbook (retired). The sections below retain the
 foundation build history; later scoring, hosting, orchestration and streaming
 results supersede earlier milestone-only status statements.
 
@@ -13,11 +13,11 @@ All 21 Python tests pass in the official Glue 5 container, including the 1,000-r
 Spark/Parquet parity test and non-USD same-day/prior-day FX checks. The native
 Windows Python suite still skips the Spark module; use the container runner for
 the complete suite. An authenticated plan completed on 2026-10-05 with 24
-additions and no changes/deletions; see [the saved-plan review](../archive/reviews/aws-plan-review.md).
+additions and no changes/deletions; see the saved-plan review (archived).
 That infrastructure plan has now been applied with user approval; the follow-up
 plan reports no changes. The sample execution was separately approved and verified;
 Full-data curation and the separately approved frozen-model scoring execution
-have since succeeded; see [full scoring verification](../archive/reviews/full-cloud-scoring-review.md).
+have since succeeded; see full scoring verification (archived).
 
 Verified on 2026-10-04: the actual job entry point also completed through
 `spark-submit --master local[2]` in that container using the sample inputs,
@@ -230,15 +230,15 @@ See the deployment-status document for actual results and run identifiers.
 The curation job remains unchanged. `jobs/score_transactions.py` is now locally
 tested in the pinned Glue 5 container: 44 tests pass, including a 1,024-row
 distributed inference/Parquet round-trip comparison with the frozen native model.
-See [scoring preparation and validation](../archive/reviews/cloud-scoring-preparation.md) for commands,
+See scoring preparation and validation (archived) for commands,
 Linux wheel packaging, trusted hashes and the XGBoost runtime-version difference.
 The separate scoring stack and both approved artifact releases are deployed.
 The localization retry scored all 1,024 rows with exact native parity but FAILED
 at output commit. Exact Glue job/account trust worked. Four partial Parquet files
 are retained for diagnosis, with no success marker. See
-[smoke and retry history](../archive/reviews/scoring-infrastructure-review.md). The third smoke also
+smoke and retry history (archived). The third smoke also
 FAILED with exact parity; root-marker permissions were insufficient. See
-[current commit review](../archive/reviews/scoring-success-marker-review.md) for the tested explicit
+current commit review (archived) for the tested explicit
 success-marker setting. The approved fourth run **SUCCEEDED** in 120 execution
 seconds, with a real S3 `_SUCCESS` and ordinary 1,024-row reconciliation showing
 zero score difference. Two updates applied, zero uploads; the post-apply plan
@@ -267,7 +267,7 @@ reconstructed locally. Five verifier tests cover the success gate and diagnostic
 mode; the failed prefix must never be reused or published.
 
 The full-data scoring path is implemented and verified in
-[full scoring and local dashboard export](../archive/reviews/full-cloud-scoring-review.md), including
+full scoring and local dashboard export (archived), including
 the exact private plan, source evidence, cost scenario and real verification/
 export commands. It reuses the 131 verified curated Parquet objects and existing
 artifact release. The approved plan applied with two updates and zero uploads;
@@ -297,14 +297,14 @@ A reviewed single `enabled=false` to `true` change enabled distribution
 headers, HTTP-to-HTTPS redirect, direct S3/unpublished-path denial and live
 dashboard interactions passed. State, versioned upload receipts and deployment
 logs remain private; screenshots and summaries are local.
-See [publication review](../archive/reviews/dashboard-publication-review-20261006.md) and
+See publication review (archived) and
 [result metadata](../evidence/dashboard-publication-result-20261006.json).
 The packaged manifest remains the immutable historical pre-publication record.
 Future uploads or infrastructure changes need their own reviewed approval scope.
 
 ## 8. Verified orchestration — one approved execution completed
 
-See [orchestration review](../archive/reviews/orchestration-review-20261006.md). Source and local
+See orchestration review (archived). Source and local
 tests are implemented and the approved deployment/execution completed. Three
 resources were added; only the existing scorer's output/temp arguments and
 matching IAM prefixes were updated. Both post-apply plans show no changes.

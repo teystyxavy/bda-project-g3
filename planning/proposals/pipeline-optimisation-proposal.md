@@ -1,5 +1,11 @@
 # Proposal: faster AWS ingestion and a realistic banking data flow
 
+Status, 9 November 2026: phases A/B are deployed. Phase D's first milestone, the
+Incoming AML replay view, is deployed (see the
+[Kinesis dashboard proposal](kinesis-dashboard-improvements.md)). Incremental
+ingestion (phase C) is still proposed. HI-Large added its own scaling work (lean
+checkpointed export, Step Functions resume); see the [HI-Large runbook](../runbooks/hi-large-delta1.md).
+
 Status: phases A/B full-rebuild optimisations are now implemented and deployed;
 see [implementation](../runbooks/pipeline-optimisation-implementation.md) and
 [acceptance/observed timings](../evidence/pipeline-optimisation-result-20261006.json).

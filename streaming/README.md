@@ -2,8 +2,16 @@
 
 ## delta1 model with all 15 behaviour features (`stream-delta1-20261107`)
 
-Status, 7 November 2026: **code and local parity done; not deployed.** The 6 October
-run below is unchanged and still serves the live Incoming tab.
+Status, 9 November 2026: **deployed, replayed once, live on the dashboard, stream
+parked.** On 7 Nov the delta1 stack was deployed under its own state
+(`streaming-delta1-20261107`) and one replay of 984 events finished at 15:51 UTC. All
+984 results reconciled: features exact, maximum score difference 9.3e-10, 1,104
+DynamoDB items, 984 audit objects, no failures
+([evidence](../planning/evidence/streaming-delta1-result-20261107.json)). The
+dashboard's **Incoming AML** tab now reads `streaming-config.json` →
+`stream-delta1-20261107`. No Kinesis stream exists in the account (checked 9 Nov), so
+the stream is parked again. The image scan reports 19 HIGH, 25 MEDIUM, 9 LOW and 1
+undefined findings.
 
 The batch pipeline now serves delta1 (model `0170bef6…`, manifest `0b9ba30d…`, trained
 on an HI-Large date subset). Release `medium-delta1-20261107-183216-ui1` scores HI-Medium
@@ -112,6 +120,10 @@ Park it again by applying without `-var provision_stream=true`.
 
 ## Incoming AML dashboard view
 
+Status, 9 November 2026: the tab now serves the delta1 run `stream-delta1-20261107`
+(see the top of this file). The 7 November notes below describe the first
+publication, for `stream-smoke-20261006`.
+
 Status, 7 November 2026: **publisher deployed and tab published.** Steps 1–5 below are
 done for `stream-smoke-20261006`. The publisher stack added 9 resources, changed 0 and
 destroyed 0, with the schedule disabled. One publication returned `completed`: 884/884,
@@ -185,9 +197,9 @@ and the retained table is deletion-protected, so plan that change separately.
 Fourteen resources and the reviewed image were deployed; the stream and its
 mapping are now parked (above). The one approved replay passed all 884 result
 comparisons and 32 sender-history checks. See the
-[completed result](../planning/archive/reviews/streaming-demo-result-20261006.md),
-[revised review](../planning/archive/reviews/streaming-failure-isolation-review-20261006.md) and
-[original deployment review](../planning/archive/reviews/streaming-demo-review-20261006.md)
+completed result (archived),
+revised review (archived) and
+original deployment review (archived)
 for evidence, costs, exact approval scope and cloud acceptance criteria.
 
 The producer replays verified curated CSV transactions; Lambda recomputes exact

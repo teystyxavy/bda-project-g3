@@ -1,5 +1,12 @@
 # Full-pipeline optimisation
 
+> **Since then (to 9 November 2026):** a fourth parallel branch, the Glue mule-network
+> job, replaced the Athena corridor branch. The stage cache is skipped above 50M rows
+> (HI-Large), while the whole-result cache still returns an identical request
+> instantly. HI-Large's export was rebuilt as a lean, checkpointed export on 8 Nov
+> and is now the production export job. See the [HI-Large runbook](hi-large-delta1.md).
+> The timings below are the 6 Oct HI-Small measurements.
+
 The existing AWS batch is now updated with parallel branches, bounded SageMaker
 completion checks, verified stage reuse and streamlined export. AWS smoke/full
 acceptance and observed timings are recorded in the accompanying deployment result.

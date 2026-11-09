@@ -1,5 +1,39 @@
 # HI-Large with frozen Delta 1
 
+## Outcome (8 November 2026)
+
+**Status: SUCCEEDED and live on the dashboard.** Run `hi-large-delta1-20261107-batch`
+scored all 179,702,229 rows and is the data behind the current dashboard release.
+
+1. **7 Nov:** curate, baseline, score and network passed. The export failed, and a
+   retry stopped on one connected component of 26,370 accounts, above the
+   19,277-account case limit.
+2. **8 Nov:** recovery exports ran on a separate fallback Glue job (see the
+   [fallback log](export-fallback-20261108.md)). The lean run `jr_d84e1e93`
+   succeeded in 1h34m (about USD 11, two G.8X, peak driver memory 27.2 GB) with exact
+   score parity and exact dashboard parity. The oversized component is withheld from
+   the actionable rings and kept as private evidence; it is not split or tuned.
+3. **8 Nov, 21:33 SGT:** published to the live dashboard with the new UI.
+4. **8 Nov, 22:28 SGT:** Step Functions execution
+   `hi-large-delta1-20261107-batch-resume1` used `Begin`'s resume mode to skip
+   curate, score and network, verified the baseline, adopted the lean export and
+   finished `SUCCEEDED` in 5m26s (about USD 0.32). The result cache now returns this
+   release instantly for an identical request.
+5. **8 Nov, 22:49 SGT:** the improved export became the production export job, so
+   future runs get the same fixes.
+
+BQ2 over the full population: 1,927,631 accounts, 9,732 rings (largest 173),
+16,315 loops and 156,128 back-and-forth pairs. Machine-readable record:
+[hi-large-delta1-result-20261108.json](../evidence/hi-large-delta1-result-20261108.json).
+
+Do **not** redrive the failed 7 Nov execution: its error routes to the Fail state, so
+a redrive fails again. Use the resume package in
+`output/sfn-hi-large-resume-20261108/ready/` if a resume is ever needed again. Since 9 Nov the
+dashboard offers a **HI-Large cache-only** run: it returns this published release in
+about 10 seconds with no Glue (`output/hi-large-cached-run-20261109/`).
+
+## Original run plan
+
 This uses the existing `is459-g3-ingest` Step Functions workflow. It scores all
 179,702,229 retained HI-Large transactions and computes BQ2 over that complete
 population. BQ1 reports the promoted model's original chronological periods:
