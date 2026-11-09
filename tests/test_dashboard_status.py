@@ -71,6 +71,14 @@ def entries(names, offset=0):
              'stateEnteredEventDetails': {'name': name}} for i, name in enumerate(names)]
 
 
+def test_selection_reports_the_run_subset_and_rejects_anything_else():
+    assert status.selection('{"subset":"HI-Large"}')['subset'] == 'HI-Large'
+    assert status.selection('{"subset":"HI-Medium","rows":1000}') == {
+        'subset': 'HI-Medium', 'rows': 1000, 'dataset_version': None, 'train': False}
+    for raw in ['{}', None, '{"subset":"private-value"}', '{"subset":["HI-Large"]}', 'not json']:
+        assert status.selection(raw)['subset'] == 'HI-Small'
+
+
 def test_running_run_reports_stages_without_payloads_or_arns(states):
     secret = {'run_id': 'live-run', 'rows': 1000, 'train': False, 'bucket': 'private-bucket-588738581042'}
     parent = states.add(MACHINE, 'live-run', 'RUNNING', NOW, input=json.dumps(secret))

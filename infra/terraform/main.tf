@@ -16,7 +16,7 @@
 #   * The original "smoke" Glue curate job (jobs/curate_transactions.py) with a
 #     least-privilege IAM role and its CloudWatch log groups.
 #   * The Glue Data Catalog database (is459_g3_curated) and the Athena
-#     workgroup (is459-g3-analysis) used for the BQ2 corridor SQL.
+#     workgroup (is459-g3-analysis) used for ad hoc SQL.
 #   * Failure alerting: an SNS topic (is459-g3-failures) with an e-mail
 #     subscription, plus an EventBridge rule that forwards failed Glue runs.
 #   * An AWS Budget with 50/80/100% e-mail alerts to cap student spend.
@@ -227,12 +227,11 @@ resource "aws_glue_catalog_database" "curated" {
   name = replace("${var.project_name}_curated", "-", "_")
 }
 
-# Athena workgroup used for all project queries (BQ2 corridor analysis and
-# reconciliation). enforce_workgroup_configuration stops clients overriding
+# Athena workgroup used for ad hoc SQL over the curated data. enforce_workgroup_configuration stops clients overriding
 # these settings; bytes_scanned_cutoff_per_query = 8 GiB cancels any query
 # that would scan more, which caps the cost of a mistaken query (Athena bills
-# per byte scanned). 8 GiB was sized for the curated dataset's full-scan
-# corridor query (~2.6-3 GB at current size), with headroom for growth.
+# per byte scanned). 8 GiB was sized for a full scan of the curated HI-Small
+# dataset (~2.6-3 GB), with headroom for growth.
 # Results go to athena-results/ encrypted with SSE-S3, and per-query metrics
 # are published to CloudWatch.
 resource "aws_athena_workgroup" "analysis" {

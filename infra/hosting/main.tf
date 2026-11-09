@@ -2,7 +2,7 @@
 # infra/hosting/main.tf -- static dashboard hosting (S3 + CloudFront)
 # =============================================================================
 # What it is: where the project's results dashboard (BQ1 review queue + BQ2
-# corridor charts) is published. The dashboard is static HTML/JS/CSS + JSON
+# mule networks) is published. The dashboard is static HTML/JS/CSS + JSON
 # snapshots, so no web server is needed:
 #   * a private S3 bucket is459-g3-dashboard-<account>-<region>; files live
 #     under dashboard/ (written by the ingestion control Lambda's "publish"

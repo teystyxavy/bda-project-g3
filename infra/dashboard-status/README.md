@@ -17,8 +17,8 @@ runs and the newest run's stages (the same stage mapping as the control API).
 
 It cannot start, stop or change anything. IAM allows only `states:ListExecutions`,
 `states:DescribeExecution`, `states:GetExecutionHistory` and its own logs. History is
-read **without payloads**; run options are whitelisted (`rows`, `dataset_version`,
-`train`); no ARNs or account IDs are returned. The Lambda caches responses for 15 s,
+read **without payloads**; run options are whitelisted (`subset`, `rows`,
+`dataset_version`, `train`); no ARNs or account IDs are returned. The Lambda caches responses for 15 s,
 the API is throttled (rate 5, burst 10) and the Lambda has reserved concurrency 2, so
 public traffic cannot drive unbounded AWS calls. The dashboard only polls while the
 Ingestion tab is open and visible.
