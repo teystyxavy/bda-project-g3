@@ -3,6 +3,8 @@ let snapshot;
 let activeView='aml';
 let snapshotLoad=0;
 const element = id => document.getElementById(id);
+// ?view=demo shows the latest demo run (demo.json); the main page always follows current.json (HI-Large).
+const demoView = typeof location!=='undefined' && new URLSearchParams(location.search).get('view')==='demo';
 const integer = value => Number(value).toLocaleString('en-US');
 // Older snapshots may not retain receiver history; missing values are not zero.
 const historyCount = value => Number.isSafeInteger(value) && value >= 0 ? integer(value) : 'Unavailable';
@@ -283,13 +285,15 @@ async function start(snapshotSource=null) {
   try {
     let source=snapshotSource||'dashboard.json', pointer=null;
     if(!snapshotSource && !location.pathname.includes('/releases/')) {
-      const current=await fetch('current.json',{cache:'no-store'});
+      const banner=element('demo-banner');if(banner) banner.hidden=!demoView;
+      const current=await fetch(demoView?'demo.json':'current.json',{cache:'no-store'});
       if(current.ok) {
         pointer=await current.json();
         if(pointer.schema_version!==1 || !/^releases\/[a-z0-9][a-z0-9-]{2,35}\/dashboard\.json$/.test(pointer.snapshot)
           || !/^[0-9a-f]{64}$/.test(pointer.sha256)) throw new Error('Invalid release pointer');
         source=pointer.snapshot;
-      } else if(![403,404].includes(current.status)) throw new Error(`Release request failed (${current.status})`);
+      } else if(demoView) throw new Error([403,404].includes(current.status)?'No demo run has been published yet':`Demo request failed (${current.status})`);
+      else if(![403,404].includes(current.status)) throw new Error(`Release request failed (${current.status})`);
     }
     const response=await fetch(source,{cache:'no-store'});
     if(!response.ok) throw new Error(`Data request failed (${response.status})`);
@@ -644,7 +648,12 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
   async function loadResults(run) {
     if(loadedRelease===run.release_url) return true;
     const ok=await start(resultPath(run));
-    if(ok) {loadedRelease=run.release_url;element('ingestion-run-note').textContent='Verified results loaded. Open BQ1 · Review queue or BQ2 · Mule networks to explore this run.';}
+    if(ok) {
+      loadedRelease=run.release_url;
+      const live=run.selection?.subset==='HI-Large' && !run.selection?.train;
+      element('ingestion-run-note').textContent='Verified results loaded. Open BQ1 · Review queue or BQ2 · Mule networks to explore this run. '+
+        (live?'This run is on the main dashboard.':'This demo run is on the demo page; the main dashboard still shows the HI-Large release.');
+    }
     else element('ingestion-run-note').textContent='Run succeeded. Results are not available here yet; select View verified results to try again.';
     return ok;
   }

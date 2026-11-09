@@ -319,8 +319,22 @@ def compute_usage(clients, run_id, manifest, get_json, s3):
             'scope': 'List-price estimate of Glue and SageMaker compute only; not an invoice.'}
 
 
-def switch_pointer(s3, run_id, snapshot_bytes):
-    """Point ``dashboard/current.json`` at ``releases/<run_id>/dashboard.json``.
+# Only HI-Large runs move the main dashboard (current.json). Every other run (HI-Small,
+# HI-Medium, row-limited demos, candidate training) is a demo: it moves demo.json,
+# which the dashboard shows at ?view=demo. Making another release live is a deliberate
+# manual step (scripts/dashboard/make-live.py).
+LIVE_SUBSET = 'HI-Large'
+LIVE_POINTER, DEMO_POINTER = 'current.json', 'demo.json'
+
+
+def release_pointer(manifest):
+    """The pointer a run's release moves: ``current.json`` for HI-Large without
+    candidate training, otherwise ``demo.json``."""
+    return LIVE_POINTER if manifest['subset'] == LIVE_SUBSET and not manifest['train'] else DEMO_POINTER
+
+
+def switch_pointer(s3, run_id, snapshot_bytes, name=LIVE_POINTER):
+    """Point ``dashboard/<name>`` (``current.json`` or ``demo.json``) at ``releases/<run_id>/dashboard.json``.
 
     Only the pointer is written - never the live UI shell. The conditional
     write (IfMatch on the old ETag, or IfNoneMatch for the first release) makes
@@ -330,23 +344,24 @@ def switch_pointer(s3, run_id, snapshot_bytes):
     Returns:
         The new pointer, or None if it already pointed at ``run_id``.
     """
-    pointer, etag = get_json(s3, 'dashboard/current.json', SITE_BUCKET)
+    if name not in (LIVE_POINTER, DEMO_POINTER): raise ValueError('Unknown dashboard pointer')
+    pointer, etag = get_json(s3, 'dashboard/' + name, SITE_BUCKET)
     if pointer and pointer.get('run_id') == run_id:
         return None
     new_pointer = {'schema_version': 1, 'run_id': run_id, 'snapshot': f'releases/{run_id}/dashboard.json',
                    'sha256': hashlib.sha256(snapshot_bytes).hexdigest(), 'previous_run_id': pointer.get('run_id') if pointer else None}
-    s3.put_object(Bucket=SITE_BUCKET, Key='dashboard/current.json', Body=canonical(new_pointer),
+    s3.put_object(Bucket=SITE_BUCKET, Key='dashboard/' + name, Body=canonical(new_pointer),
         ContentType='application/json', ServerSideEncryption='AES256', CacheControl='no-store,max-age=0',
         **({'IfMatch': etag} if etag else {'IfNoneMatch': '*'}))
     return new_pointer
 
 
-def invalidate_pointer(clients, config, caller_reference):
-    """Drop CloudFront's cached /current.json. Only the pointer changes on a
+def invalidate_pointer(clients, config, caller_reference, name=LIVE_POINTER):
+    """Drop CloudFront's cached /<name> pointer. Only the pointer changes on a
     run (the shell is untouched and release paths are new). A repeated
     CallerReference (a retried step) does not create a second invalidation."""
     clients['cloudfront'].create_invalidation(DistributionId=config['distribution_id'],
-        InvalidationBatch={'Paths': {'Quantity': 1, 'Items': ['/current.json']},
+        InvalidationBatch={'Paths': {'Quantity': 1, 'Items': ['/' + name]},
                            'CallerReference': caller_reference})
 
 
@@ -358,8 +373,9 @@ def activate_release(s3, clients, config, run_id, manifest, requested_run_id):
     cache must hold a *published* entry for this run's identity; the release's
     ``dashboard.json`` must already exist in the dashboard bucket, within the
     release budget, with the size and SHA-256 recorded in the run's release
-    manifest (when it has one) and matching provenance. Nothing but
-    ``dashboard/current.json`` is written. Any failure raises, which fails the
+    manifest (when it has one) and matching provenance. Nothing but the
+    release's pointer (``release_pointer``: current.json for HI-Large, else
+    demo.json) is written. Any failure raises, which fails the
     execution.
     """
     p, requested_run_id = paths(run_id), valid_run(requested_run_id)
@@ -387,9 +403,10 @@ def activate_release(s3, clients, config, run_id, manifest, requested_run_id):
     if (snapshot.get('schema_version') != 1 or snapshot.get('buildStatus') != 'complete'
             or snapshot.get('pipeline', {}).get('run_id') != run_id):
         raise ValueError('Release snapshot provenance mismatch')
-    pointer = switch_pointer(s3, run_id, data)
-    if pointer: invalidate_pointer(clients, config, 'activate-' + requested_run_id)
-    return {'status': 'activated' if pointer else 'already-active', 'run_id': run_id,
+    name = release_pointer(manifest)
+    pointer = switch_pointer(s3, run_id, data, name)
+    if pointer: invalidate_pointer(clients, config, 'activate-' + requested_run_id, name)
+    return {'status': 'activated' if pointer else 'already-active', 'run_id': run_id, 'pointer': name,
             'previous_run_id': pointer['previous_run_id'] if pointer else run_id,
             'sha256': hashlib.sha256(data).hexdigest()}
 
@@ -642,10 +659,13 @@ def handle(event, config, clients):
         # data runs; a run only adds its immutable release copy (above) and moves the
         # pointer (below). The live shell reads current.json -> releases/<id>/dashboard.json
         # (schema_version 1), and the release copy keeps a matching shell at release_url.
-        # 3) Switch the "current release" pointer, then 4) invalidate /current.json.
-        switch_pointer(s3, run_id, blobs['dashboard.json'])
-        invalidate_pointer(clients, config, 'ingest-' + run_id)
+        # 3) Switch the run's pointer (current.json for HI-Large, demo.json for every
+        # other run), then 4) invalidate that pointer.
+        name = release_pointer(manifest)
+        switch_pointer(s3, run_id, blobs['dashboard.json'], name)
+        invalidate_pointer(clients, config, 'ingest-' + run_id, name)
         result = {'status': 'published', 'run_id': run_id, 'processing_sha256': manifest['processing_sha256'],
+                  'pointer': name,
                   'dashboard_url': config['dashboard_url'], 'release_url': config['dashboard_url'] + f'releases/{run_id}/index.html',
                   'training_requested': manifest['train'], 'model_promoted': False}
         # Measured runtime/cost is informational only, so a measurement failure
