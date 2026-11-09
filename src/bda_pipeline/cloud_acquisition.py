@@ -53,6 +53,57 @@ from .ingest_contract import BUCKET, REGION, CONFIG_KEY, canonical, sha, valid_r
 # S3 transfer settings: 16 MB multipart chunks with only 2 parallel threads,
 # to keep memory use predictable inside the Lambda while uploading ~0.5 GB CSVs.
 TRANSFER = TransferConfig(max_concurrency=2, multipart_chunksize=16 * 1024 * 1024)
+# Cache-only subsets. HI-Large (180M rows) cannot be prepared inside this
+# Lambda, and its stage cache is disabled above 50M rows, so a miss would mean
+# a full paid reprocess. Instead a run reuses the identity of the pinned,
+# already-published run: same inputs, same deployment => same processing_sha256
+# => the workflow's Cached choice goes to ExistingRelease and Batch never runs.
+# Any mismatch raises, so the workflow fails at Acquire and can never fall
+# through to Batch.
+CACHE_ONLY_RUNS = {'HI-Large': {
+    'run_id': 'hi-large-delta1-20261107-batch',
+    'processing_sha256': '4d2827bfe102593a60c7c43032d763bcd6e648b61dc59f75292bbf8d3d641b76'}}
+
+
+def cache_only_keys(subset):
+    pinned = CACHE_ONLY_RUNS[subset]
+    return (f"pipeline/runs/{pinned['run_id']}/raw/manifest.json",
+            f"pipeline/cache/{pinned['processing_sha256']}.json")
+
+
+def reuse_pinned_run(options, s3):
+    """Return the published result of the pinned run, or raise. Reads only.
+
+    Checks: (1) the pinned manifest's identity fields still hash to the pinned
+    ``processing_sha256``; (2) that identity was built with the deployment that
+    is live now (``deployment_sha256 == sha(pipeline/deployment.json)``);
+    (3) the result cache holds a *published* entry for it. Nothing is claimed,
+    uploaded or started.
+    """
+    subset = options['subset']
+    pinned = CACHE_ONLY_RUNS[subset]
+    manifest_key, cache_key = cache_only_keys(subset)
+    config, manifest, cached = read_json(s3, CONFIG_KEY), read_json(s3, manifest_key), read_json(s3, cache_key)
+    if not isinstance(config, dict) or not isinstance(manifest, dict) or not isinstance(cached, dict):
+        raise ValueError('Pinned run, deployment or result cache is unavailable')
+    if manifest.get('subset') != subset or manifest.get('run_id') != pinned['run_id']:
+        raise ValueError('Pinned manifest does not belong to the pinned run')
+    identity = {key: manifest[key] for key in ['subset', 'rows', 'files', 'start_date', 'end_date',
+                                               'dataset_version', 'deployment_sha256', 'train']}
+    identity['export_dates'] = manifest.get('export_dates')
+    if manifest.get('selection') is not None:
+        identity.update({key: manifest.get(key) for key in ['selection', 'source_index_rows', 'network_rows']})
+    if not (sha(identity) == manifest.get('processing_sha256') == pinned['processing_sha256']):
+        raise ValueError('Pinned run identity mismatch')
+    if manifest['deployment_sha256'] != sha(config):
+        raise ValueError('Deployment changed since the pinned run; the result cache no longer applies')
+    if (cached.get('status') != 'published' or cached.get('run_id') != pinned['run_id']
+            or cached.get('processing_sha256') != pinned['processing_sha256']):
+        raise ValueError('No published result for the pinned run')
+    return {'cache_hit': True, 'result': {**cached, 'cache_hit': True, 'cache_only': True,
+                                          'requested_run_id': options['run_id']}}
+
+
 def validate_selection(subset, rows, train):
     """Validate supported subsets and bounded custom limits; None selects the full dataset."""
     subset = resolve_subset(subset)
@@ -126,6 +177,13 @@ def request(event):
     if version is not None and (type(version) is not int or version < 1):
         raise ValueError('Invalid dataset version')
     if value['train'] and value['rows'] is not None: raise ValueError('Training requires the full subset')
+    subset = resolve_subset(event.get('subset', 'HI-Small'))
+    if subset in CACHE_ONLY_RUNS:
+        # Cache-only: any option that could mean new processing is refused.
+        if value['rows'] is not None or version is not None or any(value[key] for key in ['train', 'refresh', 'rerun']):
+            raise ValueError(f'{subset} only reuses its verified run; row limits, versions and modes are not allowed')
+        value['subset'] = subset
+        return value
     value['subset'] = validate_selection(event.get('subset', 'HI-Small'), value['rows'], value['train'])
     return value
 
@@ -224,6 +282,9 @@ def acquire(event, clients, root, context=None, downloader=None, getter=None, se
         ``handler`` turns these into a sanitised failure.
     """
     options = request(event)
+    if options['subset'] in CACHE_ONLY_RUNS:
+        # Before any claim or upload: a cache-only run writes nothing to S3.
+        return reuse_pinned_run(options, clients['s3'])
     run_id = options['run_id']
     subset = options['subset']
     names = selected_files(subset)

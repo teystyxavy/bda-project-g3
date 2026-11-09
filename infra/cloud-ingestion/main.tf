@@ -40,14 +40,15 @@ variable "kaggle_secret_arn" {
 # this workflow, batch = the ingestion workflow it starts, function = the
 # acquisition Lambda).
 locals {
-  account       = "588738581042"
-  region        = "ap-southeast-1"
-  bucket        = "is459-g3-${local.account}-${local.region}"
-  s3            = "arn:aws:s3:::${local.bucket}"
-  machine       = "arn:aws:states:${local.region}:${local.account}:stateMachine:is459-g3-cloud-ingest"
-  batch         = "arn:aws:states:${local.region}:${local.account}:stateMachine:is459-g3-ingest"
-  function      = "arn:aws:lambda:${local.region}:${local.account}:function:is459-g3-acquire"
-  failure_topic = "arn:aws:sns:${local.region}:${local.account}:is459-g3-failures"
+  account         = "588738581042"
+  region          = "ap-southeast-1"
+  bucket          = "is459-g3-${local.account}-${local.region}"
+  s3              = "arn:aws:s3:::${local.bucket}"
+  pinned_manifest = "pipeline/runs/hi-large-delta1-20261107-batch/raw/manifest.json"
+  machine         = "arn:aws:states:${local.region}:${local.account}:stateMachine:is459-g3-cloud-ingest"
+  batch           = "arn:aws:states:${local.region}:${local.account}:stateMachine:is459-g3-ingest"
+  function        = "arn:aws:lambda:${local.region}:${local.account}:function:is459-g3-acquire"
+  failure_topic   = "arn:aws:sns:${local.region}:${local.account}:is459-g3-failures"
 }
 # Private ECR repository for the acquisition image (immutable tags, scan on
 # push, AES256 encrypted).
@@ -86,10 +87,11 @@ resource "aws_iam_role_policy" "acquisition" {
     #   acquisition-failure.json evidence file if acquisition fails.
     { Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents"], Resource = "${aws_cloudwatch_log_group.acquisition.arn}:*" },
     { Effect = "Allow", Action = ["s3:GetBucketLocation"], Resource = local.s3 },
-    { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = ["pipeline/deployment.json", "pipeline/cache/*", "pipeline/acquisition/*"] } } },
-    { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/deployment.json", "${local.s3}/pipeline/cache/*", "${local.s3}/pipeline/acquisition/*"] },
+    # Cache-only HI-Large also reads the pinned run's manifest (must match cloud_acquisition.CACHE_ONLY_RUNS).
+    { Effect = "Allow", Action = ["s3:ListBucket"], Resource = local.s3, Condition = { StringLike = { "s3:prefix" = ["pipeline/deployment.json", "pipeline/cache/*", "pipeline/acquisition/*", local.pinned_manifest] } } },
+    { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.s3}/pipeline/deployment.json", "${local.s3}/pipeline/cache/*", "${local.s3}/pipeline/acquisition/*", "${local.s3}/${local.pinned_manifest}"] },
     { Effect = "Allow", Action = ["s3:PutObject", "s3:AbortMultipartUpload"], Resource = ["${local.s3}/pipeline/acquisition/*", "${local.s3}/pipeline/runs/*/raw/*", "${local.s3}/pipeline/runs/*/evidence/acquisition-failure.json"] }
-  # ...plus, only when a Kaggle secret is configured, read that one secret.
+    # ...plus, only when a Kaggle secret is configured, read that one secret.
   ], var.kaggle_secret_arn == "" ? [] : [{ Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = var.kaggle_secret_arn }]) })
 }
 # The acquisition Lambda. Container image; 3 GB memory and 10 GB of /tmp disk

@@ -46,7 +46,11 @@ run "protected_bounded_control_plane" {
     error_message = "Restrict browser origins and bound API traffic."
   }
   assert {
-    condition     = jsondecode(aws_iam_role_policy.function.policy).Statement[1].Resource == local.machine && !strcontains(aws_iam_role_policy.function.policy, "s3:") && !strcontains(aws_iam_role_policy.function.policy, "sagemaker:")
-    error_message = "The API may launch only the existing acquisition workflow and must not read raw data or operate model jobs directly."
+    condition     = jsondecode(aws_iam_role_policy.function.policy).Statement[1].Resource == local.machine && !strcontains(aws_iam_role_policy.function.policy, "s3:Put") && !strcontains(aws_iam_role_policy.function.policy, "s3:Delete") && !strcontains(aws_iam_role_policy.function.policy, "s3:*") && !strcontains(aws_iam_role_policy.function.policy, "glue:") && !strcontains(aws_iam_role_policy.function.policy, "sagemaker:")
+    error_message = "The API may launch only the existing acquisition workflow, must not write S3 and must not operate Glue or model jobs directly."
+  }
+  assert {
+    condition     = alltrue([for r in jsondecode(aws_iam_role_policy.function.policy).Statement[6].Resource : !strcontains(r, "/raw/") || endswith(r, "/raw/manifest.json")]) && !strcontains(aws_iam_role_policy.function.policy, "/curated") && !strcontains(aws_iam_role_policy.function.policy, "/scored")
+    error_message = "The inventory may read run manifests and control documents only, never raw or processed data."
   }
 }

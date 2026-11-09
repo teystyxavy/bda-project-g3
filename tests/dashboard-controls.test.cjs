@@ -610,3 +610,44 @@ test('Medium selection supports full runs, bounds custom rows and disables train
   assert.match(h.el('ingestion-message').textContent,/Choose a transaction limit from 1 to 32,000,000/);
   assert.equal(h.calls.some(call=>call.init.method==='POST'),false);
 });
+
+test('HI-Large is a cache-only run: options locked, workflow started and tracked normally',async()=>{
+  let submitted;
+  const h=await harness({fetchHook:async(url,init)=>{
+    if(url===CONFIG.api_url+'/runs' && init.method==='POST') {submitted=JSON.parse(init.body);return respond({run_id:RUN_ID,status:'RUNNING'},202);}
+    if(url===CONFIG.api_url+'/runs/'+RUN_ID) return respond(run());
+  }});
+  h.el('ingestion-subset').value='HI-Large';h.el('ingestion-rerun').checked=true;h.el('ingestion-version').value='8';h.el('ingestion-subset').onchange();
+  assert.equal(h.el('ingestion-size').value,'full');
+  assert.equal(h.el('ingestion-rerun').checked,false);assert.equal(h.el('ingestion-rerun').disabled,true);
+  assert.equal(h.el('ingestion-version').value,'');assert.equal(h.el('ingestion-train').disabled,true);
+  assert.equal(h.el('ingestion-start').textContent,'Start cached HI-Large run');
+  h.el('ingestion-preview').onclick();
+  assert.match(h.el('ingestion-preview-output').textContent,/ExistingRelease/);
+  assert.equal(h.calls.some(call=>call.init.method==='POST'),false);
+  await h.el('ingestion-form').onsubmit({preventDefault(){}});
+  assert.equal(submitted.subset,'HI-Large');assert.equal(submitted.rows,null);assert.equal(submitted.rerun,false);
+  assert.equal(submitted.refresh,false);assert.equal(submitted.train,false);assert.equal(submitted.dataset_version,null);
+  assert.equal(h.calls.some(call=>call.url===CONFIG.api_url+'/runs/'+RUN_ID),true);
+  h.el('ingestion-subset').value='HI-Small';h.el('ingestion-subset').onchange();
+  assert.equal(h.el('ingestion-rerun').disabled,false);
+});
+
+test('the tab shows cached versions and published results for the selected dataset',async()=>{
+  const inventory={datasets:{'HI-Small':{cached_versions:[7,8],latest:8},'HI-Medium':{cached_versions:[],latest:null}},
+    results:[{run_id:'small-full-run',subset:'HI-Small',rows:null,dataset_version:8,train:false,selection:false,reusable:true},
+      {run_id:'hi-large-delta1-20261107-batch',subset:'HI-Large',rows:179702229,dataset_version:8,train:false,selection:true,reusable:true}]};
+  const h=await harness({fetchHook:async url=>{
+    if(url===CONFIG.api_url+'/options') return respond({notice:'n',inventory,subsets:[{value:'HI-Small',label:'HI-Small',supported:true},
+      {value:'HI-Medium',label:'HI-Medium',supported:true},{value:'HI-Large',label:'HI-Large',supported:true}]});
+  }});
+  assert.match(h.el('ingestion-version-help').textContent,/v7, v8 \(latest\)/);
+  assert.equal(h.el('ingestion-existing').hidden,false);
+  assert.match(h.el('ingestion-existing-list').children[0].textContent,/small-full-run.*no cost/);
+  h.el('ingestion-subset').value='HI-Medium';h.el('ingestion-subset').onchange();
+  assert.match(h.el('ingestion-version-help').textContent,/No cached version yet/);
+  assert.equal(h.el('ingestion-existing').hidden,true);
+  h.el('ingestion-subset').value='HI-Large';h.el('ingestion-subset').onchange();
+  assert.match(h.el('ingestion-existing-list').children[0].textContent,/179,702,229 transactions.*hi-large-delta1/);
+  assert.equal(h.calls.some(call=>call.init.method==='POST'),false);
+});

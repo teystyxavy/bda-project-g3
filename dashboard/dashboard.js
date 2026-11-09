@@ -449,7 +449,7 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
   const KEY='is459-ingestion-';
   const stageLabels={pending:'Waiting',running:'In progress',complete:'Complete',reused:'Reused',skipped:'Skipped',failed:'Failed',stopped:'Stopped'};
   let config=null, auth=null, timer=null, polling=false, historyBusy=false, submitting=false;
-  let currentRun=null, lastStatus=null, failures=0, loadedRelease=null;
+  let currentRun=null, lastStatus=null, failures=0, loadedRelease=null, inventory=null;
   // Public read-only status: shown when no operator is signed in. It never starts or changes runs.
   let statusUrl=null, statusTimer=null, statusBusy=false;
   const read=name=>{try{return JSON.parse(sessionStorage.getItem(KEY+name)||'null');}catch{return null;}};
@@ -463,6 +463,26 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
   const date=value=>value?new Date(value).toLocaleString():'—';
   const elapsed=seconds=>`${Math.floor(seconds/60)}m ${Math.floor(seconds%60)}s`;
 
+  // What already exists in AWS (read-only, from /options): cached Kaggle versions and published results.
+  function renderInventory() {
+    const help=element('ingestion-version-help'), box=element('ingestion-existing'), list=element('ingestion-existing-list');
+    if(!help || !box || !list) return;
+    const subset=element('ingestion-subset').value;
+    if(!inventory) {help.textContent=signedIn()&&config?'Cached versions are unavailable right now. Leave empty to use the latest.':'Leave empty to use the latest available version.';box.hidden=true;return;}
+    const cached=inventory.datasets?.[subset];
+    help.textContent=subset==='HI-Large'?'HI-Large reuses the dataset version of its verified run.':
+      cached?.cached_versions?.length?`Already cached in AWS: ${cached.cached_versions.map(v=>'v'+v+(v===cached.latest?' (latest)':'')).join(', ')}. A cached version is reused instead of downloaded from Kaggle again.`:
+      'No cached version yet: the first run downloads it from Kaggle.';
+    const items=(inventory.results||[]).filter(item=>item.subset===subset).slice(0,8);
+    list.replaceChildren();
+    for(const item of items) {
+      const li=document.createElement('li');
+      li.textContent=`${item.rows?integer(item.rows)+' transactions':'Full dataset'} · v${item.dataset_version??'?'}${item.train?' · candidate training':''}${item.selection?' · date selection':''} · ${item.run_id} · ${item.reusable?'same request reuses it at no cost':'older deployment, a new request would reprocess'}`;
+      list.appendChild(li);
+    }
+    box.hidden=!items.length;
+  }
+
   function updateControls() {
     const online=Boolean(config), login=signedIn(), pending=Boolean(read('pending'));
     element('ingestion-signin').disabled=!online || submitting;
@@ -474,17 +494,23 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
     element('ingestion-signout').disabled=submitting;
     element('ingestion-fields').disabled=!login || submitting || pending || lastStatus?.status==='RUNNING';
     const medium=element('ingestion-subset').value==='HI-Medium';
+    // HI-Large is cache-only: the workflow reuses the verified run and fails rather than reprocess.
+    const large=element('ingestion-subset').value==='HI-Large';
+    for(const option of element('ingestion-size').options) option.disabled=large && option.value!=='full';
+    if(large) element('ingestion-size').value='full';
+    for(const id of ['ingestion-refresh','ingestion-rerun','ingestion-version']) element(id).disabled=large;
+    if(large) {element('ingestion-refresh').checked=false;element('ingestion-rerun').checked=false;element('ingestion-version').value='';}
     const fullOption=Array.from(element('ingestion-size').options).find(option=>option.value==='full');
-    if(fullOption) {fullOption.disabled=false;fullOption.textContent=medium?'Full dataset · about 32 million transactions':'Full dataset · about 5.1 million transactions';}
+    if(fullOption) {fullOption.disabled=false;fullOption.textContent=large?'Full dataset · 179.7 million transactions · reuses verified run':medium?'Full dataset · about 32 million transactions':'Full dataset · about 5.1 million transactions';}
     element('ingestion-rows').max=medium?'32000000':'5100000';
     const full=element('ingestion-size').value==='full';
     element('ingestion-rows-field').hidden=element('ingestion-size').value!=='custom';
     element('ingestion-preview').disabled=!login || submitting || pending;
-    element('ingestion-train').disabled=!full || medium;
-    if(!full || medium) element('ingestion-train').checked=false;
-    element('ingestion-train-help').textContent=medium?'HI-Medium uses the existing model; candidate training is unavailable.':'Available for full HI-Small runs. Requires separate review before promotion.';
+    element('ingestion-train').disabled=!full || medium || large;
+    if(!full || medium || large) element('ingestion-train').checked=false;
+    element('ingestion-train-help').textContent=large?'HI-Large reuses its verified run from the cache: no Glue processing or training. If the cache no longer matches, the run stops at Acquire.':medium?'HI-Medium uses the existing model; candidate training is unavailable.':'Available for full HI-Small runs. Requires separate review before promotion.';
     element('ingestion-start').disabled=!login || submitting || lastStatus?.status==='RUNNING';
-    element('ingestion-start').textContent=submitting?'Submitting…':pending?'Retry same submission':'Start ingestion';
+    element('ingestion-start').textContent=submitting?'Submitting…':pending?'Retry same submission':large?'Start cached HI-Large run':'Start ingestion';
     element('ingestion-history-refresh').disabled=readOnly()?statusBusy:!login || historyBusy;
     element('ingestion-refresh-status').disabled=readOnly()?statusBusy:!login || !currentRun || polling;
     element('ingestion-connection').textContent=login?'Signed in':readOnly()?'Read-only status':!online?'Setup pending':'Sign-in required';
@@ -732,6 +758,7 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
     if(rows!==null && (!Number.isInteger(rows)||rows<1||rows>maximum)) throw new Error(`Choose a transaction limit from 1 to ${integer(maximum)}.`);
     if(version!==null && (!Number.isInteger(version)||version<1||version>100000)) throw new Error('Choose a positive whole-number dataset version.');
     const subset=element('ingestion-subset').value;
+    if(subset==='HI-Large') return {subset,rows:null,dataset_version:null,refresh:false,rerun:false,train:false};
     if(!['HI-Small','HI-Medium'].includes(subset)) throw new Error('Cloud ingestion supports HI-Small and HI-Medium only.');
     if(subset==='HI-Medium' && element('ingestion-train').checked) throw new Error('HI-Medium uses the existing model and does not support candidate training.');
     return {subset,rows,dataset_version:version,refresh:element('ingestion-refresh').checked,
@@ -740,6 +767,7 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
   element('ingestion-preview').onclick=()=>{
     try {
       const options=selectedRunOptions();
+      if(options.subset==='HI-Large') {element('ingestion-preview-output').textContent=JSON.stringify(options,null,2)+'\n\nStarts is459-g3-cloud-ingest. Acquire checks the verified HI-Large run against the live deployment and result cache, then ends at ExistingRelease; is459-g3-ingest and Glue are not started. If anything no longer matches, the run fails at Acquire instead of reprocessing.';element('ingestion-preview-panel').hidden=false;return;}
       let command='.\\scripts\\ingestion\\ingest.ps1 -NoWait';
       if(options.subset!=='HI-Small') command+=` -Subset ${options.subset}`;
       if(options.rows!==null) command+=` -Rows ${options.rows}`;
@@ -770,6 +798,7 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
         const supported=await request('/options');
         element('ingestion-subset').replaceChildren();
         for(const subset of supported.subsets) {const option=document.createElement('option');option.value=subset.value;option.textContent=subset.label;option.disabled=!subset.supported;element('ingestion-subset').appendChild(option);}
+        inventory=supported.inventory||null;renderInventory();
         message(supported.notice);await refreshHistory();
         const active=read('active');if(active) await track(active);
       } else if(await loadStatusConfig()) enterReadOnly();
@@ -789,7 +818,7 @@ document.addEventListener?.('visibilitychange',()=>{if(document.hidden) stopJour
     location.assign(config.cognito_domain+'/logout?'+new URLSearchParams({client_id:config.client_id,logout_uri:config.redirect_uri}));
   };
   element('ingestion-form').onsubmit=submit;element('ingestion-size').onchange=updateControls;
-  element('ingestion-subset').onchange=updateControls;
+  element('ingestion-subset').onchange=()=>{updateControls();renderInventory();};
   element('ingestion-refresh-status').onclick=()=>readOnly()?publicPoll():poll();
   element('ingestion-history-refresh').onclick=()=>readOnly()?publicPoll():refreshHistory();
   element('ingestion-results').onclick=async()=>{
