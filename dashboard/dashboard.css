@@ -514,3 +514,5 @@ th{font-weight:700;color:var(--text-strong);background:#15293c;font-size:12.5px;
 #network .ring-explorer>.heading>.controls{flex:none;margin-left:auto}
 /* Find account is as wide as the side panel below it (the third column of the ring layout). */
 #network .ring-explorer>.heading>.controls label{width:280px}#network .ring-explorer>.heading>.controls input{width:100%}
+.demo-banner{margin:0;padding:10px 16px;background:#fff4d6;color:#5a4300;border-bottom:1px solid #e8cf86;font-size:14px}
+.demo-banner a{color:inherit;font-weight:600}
